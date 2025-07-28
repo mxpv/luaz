@@ -20,19 +20,15 @@ const State = struct {
     pub fn deinit(self: State) void {
         c.lua_close(self.lua);
     }
-
-    /// Get the current Lua VM clock time
-    pub fn clock(self: State) f64 {
-        return c.lua_clock(self.lua);
-    }
 };
+
+/// Get the current Lua VM clock time
+pub fn clock() f64 {
+    return c.lua_clock();
+}
 
 const expect = std.testing.expect;
 
 test "Read clock" {
-    const state = State.init();
-    defer state.deinit();
-
-    const clock = state.clock();
-    try expect(clock > 0.0);
+    try expect(clock() > 0.0);
 }
