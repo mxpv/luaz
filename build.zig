@@ -17,6 +17,10 @@ pub fn build(b: *std.Build) void {
         .root_module = lib_mod,
     });
 
+    lib.addIncludePath(.{
+        .src_path = .{ .owner = b, .sub_path = "luau/VM/include/" },
+    });
+
     b.installArtifact(lib);
 
     const lib_unit_tests = b.addTest(.{
