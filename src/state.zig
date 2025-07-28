@@ -31,4 +31,3 @@ const expect = std.testing.expect;
 test clock {
     try expect(clock() > 0.0);
 }
-
