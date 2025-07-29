@@ -80,10 +80,9 @@ pub const State = struct {
     // State Management
 
     /// Initialize a new Lua state with default allocator
-    pub inline fn init() State {
-        return State{
-            .lua = c.luaL_newstate() orelse unreachable,
-        };
+    pub inline fn init() ?State {
+        const state = c.luaL_newstate();
+        return if (state) |ptr| State{ .lua = ptr } else null;
     }
 
     /// Initialize a new Lua state with custom allocator
@@ -1279,7 +1278,7 @@ test clock {
 }
 
 test "Basic stack ops" {
-    const state = State.init();
+    const state = State.init().?;
     defer state.deinit();
 
     try expect(state.getTop() == 0);
