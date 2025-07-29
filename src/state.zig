@@ -12,16 +12,17 @@ pub fn clock() f64 {
 
 /// A low level Lua state wrapper providing access to Lua VM operations
 pub const State = struct {
-    lua: *c.lua_State,
+    lua: LuaState,
 
     // Core Types
+    pub const LuaState = *c.lua_State;
     pub const Number = f64;
     pub const Integer = c_int;
     pub const Unsigned = c_uint;
-    pub const CFunction = *const fn (*c.lua_State) callconv(.C) c_int;
-    pub const Continuation = *const fn (*c.lua_State, c_int) callconv(.C) c_int;
-    pub const Alloc = *const fn (?*anyopaque, ?*anyopaque, usize, usize) callconv(.C) ?*anyopaque;
-    pub const Destructor = *const fn (*c.lua_State, ?*anyopaque) callconv(.C) void;
+    pub const CFunction = c.lua_CFunction;
+    pub const Continuation = c.lua_Continuation;
+    pub const Alloc = c.lua_Alloc;
+    pub const Destructor = c.lua_Destructor;
     pub const Vec = if (c.LUA_VECTOR_SIZE == 4) [4]f32 else [3]f32;
 
     // Constants
@@ -148,7 +149,7 @@ pub const State = struct {
 
     /// Pop n elements from the stack
     pub inline fn pop(self: State, n: i32) void {
-        self.setTop(-(n) - 1);
+        c.lua_settop(self.lua, -(n) - 1);
     }
 
     /// Push a copy of the element at index idx onto the stack
@@ -232,53 +233,53 @@ pub const State = struct {
 
     /// Check if value at index is a function
     pub inline fn isFunction(self: State, idx: i32) bool {
-        return self.getType(idx) == .function;
+        return c.lua_type(self.lua, idx) == c.LUA_TFUNCTION;
     }
 
     /// Check if value at index is a table
     pub inline fn isTable(self: State, idx: i32) bool {
-        return self.getType(idx) == .table;
+        return c.lua_type(self.lua, idx) == c.LUA_TTABLE;
     }
 
     /// Check if value at index is lightuserdata
     pub inline fn isLightUserdata(self: State, idx: i32) bool {
-        return self.getType(idx) == .lightuserdata;
+        return c.lua_type(self.lua, idx) == c.LUA_TLIGHTUSERDATA;
     }
 
     /// Check if value at index is nil
     pub inline fn isNil(self: State, idx: i32) bool {
-        return self.getType(idx) == .nil;
+        return c.lua_type(self.lua, idx) == c.LUA_TNIL;
     }
 
     /// Check if value at index is boolean
     pub inline fn isBoolean(self: State, idx: i32) bool {
-        return self.getType(idx) == .boolean;
+        return c.lua_type(self.lua, idx) == c.LUA_TBOOLEAN;
     }
 
     /// Check if value at index is vector
     pub inline fn isVector(self: State, idx: i32) bool {
-        return self.getType(idx) == .vector;
+        return c.lua_type(self.lua, idx) == c.LUA_TVECTOR;
     }
 
     /// Check if value at index is thread
     pub inline fn isThread(self: State, idx: i32) bool {
-        return self.getType(idx) == .thread;
+        return c.lua_type(self.lua, idx) == c.LUA_TTHREAD;
     }
 
     /// Check if value at index is buffer
     pub inline fn isBuffer(self: State, idx: i32) bool {
-        return self.getType(idx) == .buffer;
+        return c.lua_type(self.lua, idx) == c.LUA_TBUFFER;
     }
 
     /// Check if there's no value at index
     pub inline fn isNone(self: State, idx: i32) bool {
-        return self.getType(idx) == .none;
+        return c.lua_type(self.lua, idx) == c.LUA_TNONE;
     }
 
     /// Check if value at index is none or nil
     pub inline fn isNoneOrNil(self: State, idx: i32) bool {
-        const t = self.getType(idx);
-        return t == .none or t == .nil;
+        const t = c.lua_type(self.lua, idx);
+        return t == c.LUA_TNONE or t == c.LUA_TNIL;
     }
 
     // Value Access
@@ -338,7 +339,8 @@ pub const State = struct {
 
     /// Convert value at index to string
     pub inline fn toString(self: State, idx: i32) ?[:0]const u8 {
-        return self.toLString(idx, null);
+        const result = c.lua_tolstring(self.lua, idx, null);
+        return if (result) |str| std.mem.span(str) else null;
     }
 
     /// Get string atom at index
@@ -465,7 +467,7 @@ pub const State = struct {
 
     /// Push a C function onto the stack
     pub inline fn pushCFunction(self: State, func: CFunction, debugname: ?[*:0]const u8) void {
-        self.pushCClosureK(func, debugname, 0, null);
+        c.lua_pushcclosurek(self.lua, func, debugname, 0, null);
     }
 
     /// Pushes a new C closure onto the stack.
@@ -482,7 +484,7 @@ pub const State = struct {
     /// `lua_pushcclosure` also pops these values from the stack.
     pub inline fn pushCClosure(self: State, func: CFunction, debugname: ?[*:0]const u8, n: c_int) void {
         assert(n < 256);
-        self.pushCClosureK(func, debugname, n, null);
+        c.lua_pushcclosure(self.lua, func, debugname, n);
     }
 
     /// Push a boolean onto the stack
@@ -510,7 +512,7 @@ pub const State = struct {
 
     /// Push light userdata onto the stack
     pub inline fn pushLightUserdata(self: State, p: *anyopaque) void {
-        self.pushLightUserdataTagged(p, 0);
+        c.lua_pushlightuserdatatagged(self.lua, p, 0);
     }
 
     /// Create new tagged userdata
@@ -520,7 +522,7 @@ pub const State = struct {
 
     /// Create new userdata
     pub inline fn newUserdata(self: State, size: usize) ?*anyopaque {
-        return self.newUserdataTagged(size, 0);
+        return c.lua_newuserdatatagged(self.lua, size, 0);
     }
 
     /// Create new tagged userdata with metatable
@@ -598,7 +600,7 @@ pub const State = struct {
 
     /// Create a new empty table
     pub inline fn newTable(self: State) void {
-        self.createTable(0, 0);
+        c.lua_createtable(self.lua, 0, 0);
     }
 
     /// Set table readonly state
@@ -702,12 +704,12 @@ pub const State = struct {
 
     /// Set global variable
     pub inline fn setGlobal(self: State, name: [*:0]const u8) void {
-        self.setField(GLOBALSINDEX, name);
+        c.lua_setfield(self.lua, GLOBALSINDEX, name);
     }
 
     /// Get global variable
     pub inline fn getGlobal(self: State, name: [*:0]const u8) Type {
-        return self.getField(GLOBALSINDEX, name);
+        return @enumFromInt(c.lua_getfield(self.lua, GLOBALSINDEX, name));
     }
 
     // Load and Call
@@ -892,7 +894,7 @@ pub const State = struct {
 
     /// Get value from reference
     pub inline fn getRef(self: State, ref_id: i32) Type {
-        return self.rawGetI(REGISTRYINDEX, ref_id);
+        return @enumFromInt(c.lua_rawgeti(self.lua, REGISTRYINDEX, ref_id));
     }
 
     // Userdata Operations
@@ -1018,7 +1020,8 @@ pub const State = struct {
 
     /// Check and get string argument (without length)
     pub inline fn checkString(self: State, narg: i32) [:0]const u8 {
-        return self.checkLString(narg, null);
+        const result = c.luaL_checklstring(self.lua, narg, null);
+        return std.mem.span(result);
     }
 
     /// Get optional string argument
@@ -1029,7 +1032,8 @@ pub const State = struct {
 
     /// Get optional string argument (without length)
     pub inline fn optString(self: State, narg: i32, def: [:0]const u8) [:0]const u8 {
-        return self.optLString(narg, def, null);
+        const result = c.luaL_optlstring(self.lua, narg, def.ptr, null);
+        return std.mem.span(result);
     }
 
     /// Check and get number argument
@@ -1262,12 +1266,12 @@ pub const State = struct {
 
     /// Check argument condition
     pub inline fn argCheck(self: State, cond: bool, arg: i32, extramsg: [:0]const u8) void {
-        if (!cond) self.argError(arg, extramsg);
+        if (!cond) c.luaL_argerrorL(self.lua, arg, extramsg.ptr);
     }
 
     /// Check expected argument type
     pub inline fn argExpected(self: State, cond: bool, arg: i32, tname: [:0]const u8) void {
-        if (!cond) self.typeError(arg, tname);
+        if (!cond) c.luaL_typeerrorL(self.lua, arg, tname.ptr);
     }
 };
 

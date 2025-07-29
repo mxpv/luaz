@@ -1,4 +1,5 @@
 const std = @import("std");
+const ArgsTuple = std.meta.ArgsTuple;
 const State = @import("state.zig").State;
 
 const Error = error{
@@ -10,9 +11,15 @@ const Lua = struct {
 
     state: State,
 
-    pub fn init() !Lua {
+    pub fn init() !Self {
         return Lua{
             .state = State.init() orelse return Error.OutOfMemory,
+        };
+    }
+
+    inline fn fromState(state: State.LuaState) Self {
+        return Self{
+            .state = State{ .lua = state },
         };
     }
 
@@ -24,14 +31,16 @@ const Lua = struct {
     ///
     /// Automatically converts Zig types to their Lua equivalents:
     /// - `bool` → Lua boolean
-    /// - Integer types (`i8`, `i32`, `i64`, etc.) → Lua integer or number
+    /// - Integer types (`i8`, `i32`, `i64`, etc.) → Lua integer
     /// - Float types (`f32`, `f64`) → Lua number
-    /// - `null` or `void` → Lua nil
+    /// - `null` → Lua nil
+    /// - `void` → Pushes nothing
     /// - Optional types (`?T`) → Recursively pushes the wrapped value or nil
     /// - Tuple types → Each field pushed individually onto the stack
+    /// - Function types → Wrapped as Lua C function with automatic argument conversion
     ///
-    /// For integer types larger than `c_int`, values are automatically stored as
-    /// Lua numbers to prevent overflow.
+    /// For function types, creates a trampoline that automatically converts Lua arguments
+    /// to Zig types using the `check` function and converts the return value back to Lua.
     ///
     /// Examples:
     /// ```zig
@@ -42,6 +51,10 @@ const Lua = struct {
     /// lua.push(@as(?i32, null)); // Optional null → nil
     /// lua.push(.{1, 2, 3});   // Tuple → pushes 1, 2, 3 individually
     /// lua.push(.{});          // Empty tuple → pushes nothing
+    ///
+    /// // Function example
+    /// fn add(a: i32, b: i32) i32 { return a + b; }
+    /// lua.push(add);          // Becomes callable Lua function
     /// ```
     pub fn push(self: Self, value: anytype) void {
         const T = @TypeOf(value);
@@ -57,7 +70,10 @@ const Lua = struct {
             .float, .comptime_float => {
                 self.state.pushNumber(value);
             },
-            .null, .void => {
+            .void => {
+                // Push nothing.
+            },
+            .null => {
                 self.state.pushNil();
             },
             .optional => {
@@ -79,6 +95,36 @@ const Lua = struct {
                 }
 
                 @compileError("Non tuple structs are not yet implemented");
+            },
+            .@"fn" => {
+                if (*const T == @typeInfo(State.CFunction).optional.child) {
+                    self.state.pushCFunction(value, @typeName(T));
+                    break :blk;
+                }
+
+                const trampoline: State.CFunction = struct {
+                    fn f(state: ?State.LuaState) callconv(.C) c_int {
+                        const lua = Lua.fromState(state.?);
+
+                        // Push func arguments
+                        // See https://www.lua.org/pil/26.1.html
+                        var args: ArgsTuple(T) = undefined;
+                        inline for (std.meta.fields(ArgsTuple(T)), 0..) |field, i| {
+                            args[i] = lua.check(i + 1, field.type);
+                        }
+
+                        // Call Zig func
+                        const result = @call(.auto, value, args);
+
+                        // Push function results onto Lua stack.
+                        const current = lua.top();
+                        lua.push(result);
+
+                        return lua.top() - current;
+                    }
+                }.f;
+
+                self.state.pushCFunction(@ptrCast(&trampoline), @typeName(T));
             },
             else => {
                 @compileError("Unable to push type " ++ @typeName(T));
@@ -117,41 +163,38 @@ const Lua = struct {
         return self.state.getTop();
     }
 
-    /// Converts a value at the specified stack index to the given Zig type.
-    ///
-    /// Unlike `pop()`, this function does not modify the stack - it only reads and converts
-    /// the value at the specified index.
-    ///
-    /// Stack indexing:
-    /// - Positive indices (1, 2, 3, ...) count from the bottom of the stack
-    /// - Negative indices (-1, -2, -3, ...) count from the top of the stack
-    /// - `-1` refers to the top element, `-2` to the second from top, etc.
-    ///
-    /// Type conversion rules:
-    /// - Lua boolean → `bool` (returns `null` if not a boolean)
-    /// - Lua number/integer → Integer types with appropriate casting
-    /// - Lua number → Float types with appropriate casting
-    /// - Lua nil → Optional types (`?T`) as `null`
-    /// - Valid values → Optional types (`?T`) as wrapped values
-    ///
-    /// Examples:
-    /// ```zig
-    /// lua.push(42);
-    /// lua.push(3.14);
-    ///
-    /// const int_val = lua.toValue(i32, -2).?; // 42 (second from top)
-    /// const float_val = lua.toValue(f32, -1).?; // 3.14 (top)
-    ///
-    /// // Check for nil
-    /// const maybe_val = lua.toValue(?i32, -1); // null if nil, value if not
-    /// ```
-    ///
-    /// Arguments:
-    /// - `T`: The target Zig type for conversion
-    /// - `index`: Stack index of the value to convert
-    ///
-    /// Returns: `?T` - The converted value, or `null` if conversion failed
-    pub fn toValue(self: Self, comptime T: type, index: i32) ?T {
+    /// Internal function to check and convert a value at the specified stack index to the given Zig type.
+    /// Used by the trampoline function to validate function arguments.
+    fn check(self: Self, index: i32, comptime T: type) T {
+        const type_info = @typeInfo(T);
+        switch (type_info) {
+            .bool => {
+                return self.state.checkBoolean(index);
+            },
+            .int, .comptime_int => {
+                const lua_int = self.state.checkInteger(index);
+                return @intCast(lua_int);
+            },
+            .float, .comptime_float => {
+                const lua_num = self.state.checkNumber(index);
+                return @floatCast(lua_num);
+            },
+            .optional => {
+                if (self.state.isNil(index)) {
+                    return null;
+                } else {
+                    return self.check(index, type_info.optional.child);
+                }
+            },
+            else => {
+                @compileError("Unable to check type " ++ @typeName(T));
+            },
+        }
+    }
+
+    /// Internal function to convert a value at the specified stack index to the given Zig type.
+    /// Used internally by the pop() function.
+    fn toValue(self: Self, comptime T: type, index: i32) ?T {
         const type_info = @typeInfo(T);
         switch (type_info) {
             .bool => {
@@ -323,5 +366,34 @@ test "Push and pop tuples" {
     try expect(lua.pop(i32).? == 3); // Third element
     try expect(lua.pop(i32).? == 2); // Second element of nested tuple
     try expect(lua.pop(i32).? == 1); // First element of nested tuple
+    try expectEq(lua.top(), 0);
+}
+
+// Test functions for function push test
+fn testCFunction(state: ?State.LuaState) callconv(.C) c_int {
+    _ = state;
+    return 0;
+}
+
+fn testAdd(a: i32, b: i32) i32 {
+    return a + b;
+}
+
+test "Push C and Zig functions" {
+    const lua = try Lua.init();
+    defer lua.deinit();
+
+    // Test C function
+    lua.push(testCFunction);
+    try expect(lua.state.isFunction(-1));
+    try expect(lua.state.isCFunction(-1));
+    lua.state.pop(1);
+    try expectEq(lua.top(), 0);
+
+    // Test Zig function
+    lua.push(testAdd);
+    try expect(lua.state.isFunction(-1));
+    try expect(lua.state.isCFunction(-1)); // Zig functions are wrapped as C functions
+    lua.state.pop(1);
     try expectEq(lua.top(), 0);
 }
