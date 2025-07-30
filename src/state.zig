@@ -339,7 +339,16 @@ pub const State = struct {
         return if (result) |str| std.mem.span(str) else null;
     }
 
-    /// Convert value at index to string
+    /// Converts the Lua value at the given index to a C string.
+    /// The Lua value must be a string or a number; otherwise, the function returns `null`.
+    /// If the value is a number, then lua_tolstring also changes the actual value in the stack to a string.
+    /// (This change confuses lua_next when lua_tolstring is applied to keys during a table traversal).
+    ///
+    /// lua_tolstring returns a pointer to a string inside the Lua state.
+    /// This string always has a zero ('\0') after its last character (as in C), but can contain other zeros in its body.
+    ///
+    /// Because Lua has garbage collection, there is no guarantee that the pointer returned by lua_tolstring will be
+    /// valid after the corresponding Lua value is removed from the stack.
     pub inline fn toString(self: State, idx: i32) ?[:0]const u8 {
         const result = c.lua_tolstring(self.lua, idx, null);
         return if (result) |str| std.mem.span(str) else null;

@@ -119,6 +119,7 @@ const Lua = struct {
     /// - `bool` → Lua boolean
     /// - Integer types (`i8`, `i32`, `i64`, etc.) → Lua integer
     /// - Float types (`f32`, `f64`) → Lua number
+    /// - String types (`[]const u8`, `[:0]const u8`, `[*:0]const u8`, `[N:0]u8`) → Lua string
     /// - `null` → Lua nil
     /// - `void` → Pushes nothing
     /// - Optional types (`?T`) → Recursively pushes the wrapped value or nil
@@ -133,10 +134,17 @@ const Lua = struct {
     /// lua.push(42);           // Integer
     /// lua.push(3.14);         // Float
     /// lua.push(true);         // Boolean
+    /// lua.push("hello");      // String literal - safe to push
     /// lua.push(@as(?i32, 5)); // Optional with value
     /// lua.push(@as(?i32, null)); // Optional null → nil
     /// lua.push(.{1, 2, 3});   // Tuple → pushes 1, 2, 3 individually
     /// lua.push(.{});          // Empty tuple → pushes nothing
+    ///
+    /// // For safe string retrieval, use the specialized functions:
+    /// lua.push("world");
+    /// const owned = lua.popString(allocator); // Safe: returns owned copy
+    /// defer allocator.free(owned.?);
+    /// ```
     ///
     /// // Function example
     /// fn add(a: i32, b: i32) i32 { return a + b; }
@@ -193,6 +201,62 @@ const Lua = struct {
 
                 @compileError("Non tuple structs are not yet implemented");
             },
+            .pointer => |ptr_info| {
+                switch (ptr_info.size) {
+                    .one => {
+                        // Handle string literal pointers: *const [N:0]u8
+                        const child_type_info = @typeInfo(ptr_info.child);
+                        if (child_type_info == .array and child_type_info.array.child == u8) {
+                            // This is a pointer to a u8 array (string literal)
+                            // Check if the array is zero-terminated
+                            if (comptime std.mem.indexOf(u8, @typeName(ptr_info.child), ":0") != null) {
+                                // Zero-terminated array: *const [N:0]u8
+                                self.state.pushString(@as([:0]const u8, @ptrCast(value)));
+                            } else {
+                                // Regular array: *const [N]u8
+                                self.state.pushLString(std.mem.asBytes(value));
+                            }
+                            break :blk;
+                        }
+                        @compileError("Unable to push type " ++ @typeName(T));
+                    },
+                    .many, .slice => {
+                        // Handle strings: []const u8, [:0]const u8, [*:0]const u8
+                        if (ptr_info.child == u8) {
+                            // For slices, check if it's zero-terminated by examining the type
+                            if (comptime std.mem.indexOf(u8, @typeName(T), ":0") != null) {
+                                // Zero-terminated string: [:0]const u8, [*:0]const u8
+                                self.state.pushString(@as([:0]const u8, @ptrCast(value)));
+                            } else {
+                                // Regular slice: []const u8
+                                self.state.pushLString(value);
+                            }
+                            break :blk;
+                        }
+
+                        @compileError("Unable to push type " ++ @typeName(T));
+                    },
+                    .c => {
+                        @compileError("Unable to push type " ++ @typeName(T));
+                    },
+                }
+            },
+            .array => |array_info| {
+                // Handle string arrays: [N:0]u8, [N]u8, etc.
+                if (array_info.child == u8) {
+                    // Check if it's zero-terminated by examining the type name
+                    if (comptime std.mem.indexOf(u8, @typeName(T), ":0") != null) {
+                        // Zero-terminated array: [N:0]u8
+                        self.state.pushString(@as([:0]const u8, @ptrCast(&value)));
+                    } else {
+                        // Regular array: [N]u8
+                        self.state.pushLString(&value);
+                    }
+                    break :blk;
+                }
+
+                @compileError("Unable to push type " ++ @typeName(T));
+            },
             .@"fn" => {
                 if (*const T == @typeInfo(State.CFunction).optional.child) {
                     self.state.pushCFunction(value, @typeName(T));
@@ -240,6 +304,12 @@ const Lua = struct {
     /// - Lua number → Float types (`f32`, `f64`)
     /// - Lua nil → Optional types (`?T`) as `null`
     /// - Any valid value → Optional types (`?T`) as wrapped value
+    ///
+    /// Note: String conversion is not supported via the generic `pop` due to Lua's garbage collection.
+    /// The Lua C API returns a direct pointer to the string data inside Lua's memory. Once the value
+    /// is popped from the stack, this pointer may become invalid as the string can be garbage collected.
+    /// For safe string handling, use `popString(allocator)` instead, which returns an owned copy
+    /// (and hence requires allocation).
     ///
     /// Examples:
     /// ```zig
@@ -325,6 +395,38 @@ const Lua = struct {
                 @compileError("Unable to cast type " ++ @typeName(T));
             },
         }
+    }
+
+    /// Safely pops a string from the top of the Lua stack and returns an owned copy.
+    ///
+    /// This function addresses the garbage collection safety issue with Lua strings.
+    /// Unlike `state.toString()` which returns a pointer that may become invalid after
+    /// the Lua value is removed from the stack, this function creates a copy of the string
+    /// using the provided allocator, then pops the value from the stack. The returned
+    /// string remains valid even after the Lua value is garbage collected.
+    ///
+    /// The caller owns the returned memory and must free it using `allocator.free()`.
+    ///
+    /// Returns `null` if:
+    /// - The value at the top of the stack is not a string
+    /// - Memory allocation fails
+    /// - The stack is empty
+    ///
+    /// Example:
+    /// ```zig
+    /// lua.push("hello world");
+    /// if (lua.popString(allocator)) |owned_string| {
+    ///     defer allocator.free(owned_string);
+    ///     // Use owned_string safely - it's already been popped from stack
+    ///     std.debug.print("String: {s}\n", .{owned_string});
+    /// }
+    /// ```
+    pub fn popString(self: Self, allocator: std.mem.Allocator) ?[]u8 {
+        const lstr = self.state.toString(-1) orelse return null;
+        const copy = allocator.dupe(u8, lstr) catch null;
+        self.state.pop(1);
+
+        return copy;
     }
 
     /// Executes pre-compiled Luau bytecode and returns the result.
@@ -688,6 +790,49 @@ test "eval compilation error" {
 
     const compile_error = lua.eval("return 1 + '", .{}, i32);
     try expect(compile_error == Error.Compile);
+
+    try expectEq(lua.top(), 0);
+}
+
+test "string support" {
+    const lua = try Lua.init();
+    defer lua.deinit();
+
+    lua.push("hello");
+    try expect(lua.state.isString(-1));
+    lua.state.pop(1);
+
+    lua.setGlobal("message", "world");
+    _ = lua.state.getGlobal("message");
+    try expect(std.mem.eql(u8, lua.state.toString(-1).?, "world"));
+    lua.state.pop(1);
+
+    try expectEq(lua.top(), 0);
+}
+
+test "safe string handling with allocator" {
+    const lua = try Lua.init();
+    defer lua.deinit();
+
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    lua.push("hello world");
+    const str1 = lua.popString(allocator).?;
+    defer allocator.free(str1);
+    try expect(std.mem.eql(u8, str1, "hello world"));
+
+    lua.push("goodbye world");
+    const str2 = lua.popString(allocator).?;
+    defer allocator.free(str2);
+    try expect(std.mem.eql(u8, str2, "goodbye world"));
+
+    lua.setGlobal("greeting", "안녕하세요");
+    _ = lua.state.getGlobal("greeting");
+    const str3 = lua.popString(allocator).?;
+    defer allocator.free(str3);
+    try expect(std.mem.eql(u8, str3, "안녕하세요"));
 
     try expectEq(lua.top(), 0);
 }
