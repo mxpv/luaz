@@ -30,6 +30,8 @@ pub const State = struct {
     pub const REGISTRYINDEX = c.LUA_REGISTRYINDEX;
     pub const ENVIRONINDEX = c.LUA_ENVIRONINDEX;
     pub const GLOBALSINDEX = c.LUA_GLOBALSINDEX;
+    pub const REFNIL = c.LUA_REFNIL;
+    pub const NOREF = c.LUA_NOREF;
 
     // Enums
     pub const Status = enum(c_int) {

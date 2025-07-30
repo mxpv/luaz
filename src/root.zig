@@ -27,6 +27,47 @@ const Lua = struct {
         self.state.deinit();
     }
 
+    /// A reference to a Lua value.
+    ///
+    /// Holds a reference ID that can be used to retrieve the value later.
+    /// Must be explicitly released using deinit() to avoid memory leaks.
+    pub const Ref = struct {
+        lua: State,
+        ref: c_int,
+
+        /// Releases the Lua reference, allowing the referenced value to be garbage collected.
+        pub fn deinit(self: Ref) void {
+            self.lua.unref(self.ref);
+        }
+
+        /// Checks if the reference is valid (not nil or invalid).
+        pub inline fn isValid(self: Ref) bool {
+            return self.ref != State.REFNIL and self.ref != State.NOREF;
+        }
+
+        /// Checks if the referenced value is a function.
+        pub inline fn isFunction(self: Ref) bool {
+            return self.lua.isFunction(self.ref);
+        }
+
+        /// Checks if the referenced value is a table.
+        pub inline fn isTable(self: Ref) bool {
+            return self.lua.isTable(self.ref);
+        }
+    };
+
+    /// Creates a reference to a value on the stack.
+    ///
+    /// Does not consume the value.
+    fn createRef(self: Self, index: i32) Ref {
+        const ref = self.state.ref(index);
+
+        return Ref{
+            .lua = self.state,
+            .ref = ref,
+        };
+    }
+
     /// Pushes a Zig value onto the Lua stack.
     ///
     /// Automatically converts Zig types to their Lua equivalents:
@@ -89,6 +130,17 @@ const Lua = struct {
                 if (info.is_tuple) {
                     inline for (info.fields, 0..) |_, i| {
                         self.push(value[i]);
+                    }
+
+                    break :blk;
+                }
+
+                // Handle Ref type
+                if (T == Ref) {
+                    if (value.isValid()) {
+                        _ = self.state.rawGetI(State.REGISTRYINDEX, value.ref);
+                    } else {
+                        self.state.pushNil();
                     }
 
                     break :blk;
@@ -396,4 +448,44 @@ test "Push C and Zig functions" {
     try expect(lua.state.isCFunction(-1)); // Zig functions are wrapped as C functions
     lua.state.pop(1);
     try expectEq(lua.top(), 0);
+}
+
+test "Ref types" {
+    const lua = try Lua.init();
+    defer lua.deinit();
+
+    lua.push(testAdd);
+    try expectEq(lua.top(), 1); // C function
+
+    const ref = lua.createRef(-1);
+    defer ref.deinit();
+
+    try expectEq(lua.top(), 1); // Ref should not consume the value
+
+    try expect(ref.isValid());
+    try expect(ref.isFunction());
+    try expect(!ref.isTable());
+
+    lua.state.pop(1);
+    try expectEq(lua.top(), 0);
+}
+
+test "Push Ref to stack" {
+    const lua = try Lua.init();
+    defer lua.deinit();
+
+    // Push original function and create ref
+    lua.push(testAdd);
+    const ref = lua.createRef(-1);
+    defer ref.deinit();
+
+    // Clear the stack
+    lua.state.pop(1);
+    try expectEq(lua.top(), 0);
+
+    // Push the ref back to stack
+    lua.push(ref);
+    try expectEq(lua.top(), 1);
+
+    try expect(lua.state.isFunction(-1));
 }
