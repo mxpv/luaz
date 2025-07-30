@@ -221,7 +221,7 @@ const Lua = struct {
                     }
                 }.f;
 
-                self.state.pushCFunction(@ptrCast(&trampoline), @typeName(T));
+                self.state.pushCFunction(trampoline, @typeName(T));
             },
             else => {
                 @compileError("Unable to push type " ++ @typeName(T));
@@ -590,6 +590,15 @@ test "Push C and Zig functions" {
     try expect(lua.state.isCFunction(-1)); // Zig functions are wrapped as C functions
     lua.state.pop(1);
     try expectEq(lua.top(), 0);
+}
+
+test "call zig func" {
+    const lua = try Lua.init();
+    defer lua.deinit();
+
+    lua.setGlobal("add", testAdd);
+    const sum = try lua.eval("return add(10, 20)", .{}, u32);
+    try expectEq(sum, 30);
 }
 
 test "Ref types" {
