@@ -57,6 +57,11 @@ const Lua = struct {
         pub inline fn isTable(self: Ref) bool {
             return self.lua.state.isTable(self.ref);
         }
+
+        /// Returns the registry reference ID if valid, otherwise null.
+        inline fn getRef(self: Ref) ?c_int {
+            return if (self.isValid()) self.ref else null;
+        }
     };
 
     /// Creates a reference to a value on the stack.
@@ -190,6 +195,11 @@ const Lua = struct {
             defer self.ref.lua.state.pop(1); // Pop table
 
             return self.ref.lua.pop(T);
+        }
+
+        /// Returns the registry reference ID if valid, otherwise null.
+        inline fn getRef(self: Table) ?c_int {
+            return self.ref.getRef();
         }
     };
 
@@ -347,21 +357,10 @@ const Lua = struct {
                     break :blk;
                 }
 
-                // Handle Ref type
-                if (T == Ref) {
-                    if (value.isValid()) {
-                        _ = self.state.rawGetI(State.REGISTRYINDEX, value.ref);
-                    } else {
-                        self.state.pushNil();
-                    }
-
-                    break :blk;
-                }
-
-                // Handle Table type
-                if (T == Table) {
-                    if (value.ref.isValid()) {
-                        _ = self.state.rawGetI(State.REGISTRYINDEX, value.ref.ref);
+                // Handle Ref and Table types
+                if (T == Ref or T == Table) {
+                    if (value.getRef()) |index| {
+                        _ = self.state.rawGetI(State.REGISTRYINDEX, index);
                     } else {
                         self.state.pushNil();
                     }
