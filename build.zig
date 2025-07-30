@@ -68,6 +68,8 @@ pub fn build(b: *std.Build) void {
 
         const lib = b.addLibrary(.{ .name = "luau_compiler", .root_module = mod, .linkage = .static });
 
+        lib.installHeader(b.path("luau/Compiler/include/luacode.h"), "luacode.h");
+
         lib.linkLibCpp();
 
         break :blk lib;
@@ -132,6 +134,7 @@ pub fn build(b: *std.Build) void {
         });
 
         unit_tests.linkLibrary(luau_vm);
+        unit_tests.linkLibrary(luau_compiler);
         unit_tests.linkLibCpp();
 
         const run_tests = b.addRunArtifact(unit_tests);

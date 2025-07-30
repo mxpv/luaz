@@ -1,8 +1,10 @@
 const std = @import("std");
 const ArgsTuple = std.meta.ArgsTuple;
-const State = @import("state.zig").State;
 
-const Error = error{
+pub const State = @import("state.zig").State;
+pub const Compiler = @import("compile.zig").Compiler;
+
+pub const Error = error{
     OutOfMemory,
 };
 
