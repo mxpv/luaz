@@ -347,11 +347,13 @@ const Lua = struct {
                 }
             },
             .@"struct" => |info| {
-                // Tuples are treated as a sequence of values.
-                // See https://ziglang.org/documentation/master/#toc-Tuples
+                // Tuples are represented as indexed tables (arrays).
+                // Each tuple element is accessible by index starting from 1 (Lua convention).
                 if (info.is_tuple) {
+                    self.state.createTable(@intCast(info.fields.len), 0);
                     inline for (info.fields, 0..) |_, i| {
                         self.push(value[i]);
+                        self.state.rawSetI(-2, @intCast(i + 1)); // Set table[i+1] = value, pop value
                     }
 
                     break :blk;
@@ -771,15 +773,44 @@ test "Push and pop tuples" {
 
     // Test empty tuple
     lua.push(.{});
-    try expectEq(lua.top(), 0); // Empty tuple pushes nothing
+    try expectEq(lua.top(), 1); // Empty tuple creates an empty table
+    try expect(lua.state.isTable(-1));
+    lua.state.pop(1);
 
-    // Test multiple element tuple
+    // Test multiple element tuple - now creates a table
     lua.push(.{ 123, 3.14, true });
-    try expect(lua.pop(bool).?); // Last element (top of stack)
-    try expectEq(lua.pop(f32).?, 3.14); // Second element
-    try expectEq(lua.pop(i32).?, 123); // First element
-
+    try expectEq(lua.top(), 1); // Tuple creates one table
+    try expect(lua.state.isTable(-1));
+    
+    // Verify elements are accessible by index (1-based)
+    _ = lua.state.rawGetI(-1, 1);
+    try expectEq(lua.pop(i32).?, 123); // First element at index 1
+    
+    _ = lua.state.rawGetI(-1, 2);
+    try expectEq(lua.pop(f32).?, 3.14); // Second element at index 2
+    
+    _ = lua.state.rawGetI(-1, 3);
+    try expect(lua.pop(bool).?); // Third element at index 3
+    
+    lua.state.pop(1); // Pop the table
     try expectEq(lua.top(), 0);
+}
+
+test "Tuple as indexed table accessibility from Lua" {
+    const lua = try Lua.init();
+    defer lua.deinit();
+
+    // Push a tuple and make it available as global
+    lua.push(.{ 42, 3.14, "hello", true });
+    lua.state.setGlobal("tupleTable");
+    
+    // Access elements from Lua using 1-based indexing
+    try expectEq(try lua.eval("return tupleTable[1]", .{}, i32), 42);
+    try expectEq(try lua.eval("return tupleTable[2]", .{}, f32), 3.14);
+    try expect(try lua.eval("return tupleTable[4]", .{}, bool));
+    
+    // Verify tuple table length
+    try expectEq(try lua.eval("return #tupleTable", .{}, i32), 4);
 }
 
 // Test functions for function push test
@@ -790,6 +821,10 @@ fn testCFunction(state: ?State.LuaState) callconv(.C) c_int {
 
 fn testAdd(a: i32, b: i32) i32 {
     return a + b;
+}
+
+fn testTupleReturn(a: i32, b: f32) struct { i32, f32, bool } {
+    return .{ a * 2, b * 2.0, a > 10 };
 }
 
 test "Push functions" {
@@ -812,6 +847,21 @@ test "Call Zig function from Lua" {
     lua.setGlobal("add", testAdd);
     const sum = try lua.eval("return add(10, 20)", .{}, i32);
     try expectEq(sum, 30);
+}
+
+test "Call Zig function returning tuple from Lua" {
+    const lua = try Lua.init();
+    defer lua.deinit();
+
+    lua.setGlobal("tupleFunc", testTupleReturn);
+    
+    // Function returns a tuple as a table (array)
+    try lua.eval("result = tupleFunc(15, 3.5)", .{}, void);
+    
+    // Verify the returned tuple is a table with indexed elements
+    try expectEq(try lua.eval("return result[1]", .{}, i32), 30); // 15 * 2
+    try expectEq(try lua.eval("return result[2]", .{}, f32), 7.0); // 3.5 * 2.0
+    try expect(try lua.eval("return result[3]", .{}, bool)); // 15 > 10 = true
 }
 
 test "Ref types" {
