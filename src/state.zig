@@ -717,8 +717,8 @@ pub const State = struct {
     // Load and Call
 
     /// Load Luau bytecode
-    pub inline fn load(self: State, chunkname: [*:0]const u8, data: [*]const u8, size: usize, env: c_int) Status {
-        return @enumFromInt(c.luau_load(self.lua, chunkname, data, size, env));
+    pub inline fn load(self: State, chunkname: [:0]const u8, data: []const u8, env: c_int) Status {
+        return @enumFromInt(c.luau_load(self.lua, chunkname, data.ptr, data.len, env));
     }
 
     /// Call a function

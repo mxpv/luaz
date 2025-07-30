@@ -6,6 +6,7 @@ pub const Compiler = @import("compile.zig").Compiler;
 
 pub const Error = error{
     OutOfMemory,
+    Compile,
 };
 
 const Lua = struct {
@@ -251,6 +252,10 @@ const Lua = struct {
     ///
     /// Returns: `?T` - The converted value, or `null` if conversion failed
     pub inline fn pop(self: Self, comptime T: type) ?T {
+        if (T == void) {
+            return;
+        }
+
         defer self.state.pop(1);
         return self.toValue(T, -1);
     }
@@ -276,11 +281,10 @@ const Lua = struct {
                 return @floatCast(lua_num);
             },
             .optional => {
-                if (self.state.isNil(index)) {
-                    return null;
-                } else {
-                    return self.check(index, type_info.optional.child);
-                }
+                return if (self.state.isNil(index))
+                    null
+                else
+                    self.check(index, type_info.optional.child);
             },
             else => {
                 @compileError("Unable to check type " ++ @typeName(T));
@@ -300,30 +304,124 @@ const Lua = struct {
                     null;
             },
             .int, .comptime_int => {
-                if (self.state.toIntegerX(index)) |integer| {
-                    return @intCast(integer);
-                } else {
-                    return null;
-                }
+                return if (self.state.toIntegerX(index)) |integer|
+                    @intCast(integer)
+                else
+                    null;
             },
             .float, .comptime_float => {
-                if (self.state.toNumberX(index)) |number| {
-                    return @floatCast(number);
-                } else {
-                    return null;
-                }
+                return if (self.state.toNumberX(index)) |number|
+                    @floatCast(number)
+                else
+                    null;
             },
             .optional => {
-                if (self.state.isNil(index)) {
-                    return null;
-                } else {
-                    return self.toValue(type_info.optional.child, index);
-                }
+                return if (self.state.isNil(index))
+                    null
+                else
+                    self.toValue(type_info.optional.child, index);
             },
             else => {
                 @compileError("Unable to cast type " ++ @typeName(T));
             },
         }
+    }
+
+    /// Executes pre-compiled Luau bytecode and returns the result.
+    ///
+    /// Loads the provided bytecode onto the Lua stack and executes it as a function.
+    /// The bytecode should be valid Luau bytecode (not LuaJit).
+    ///
+    /// The return type `T` specifies what type to expect from the executed code:
+    /// - `void` - Executes code that returns nothing
+    /// - `i32`, `f64`, `bool`, etc. - Converts the return value to the specified type
+    /// - `?T` - Optional types, returns `null` if conversion fails
+    ///
+    /// Examples:
+    /// ```zig
+    /// // Execute bytecode that returns a number
+    /// const result = try lua.exec(bytecode, i32);
+    ///
+    /// // Execute bytecode that returns nothing
+    /// try lua.exec(bytecode, void);
+    ///
+    /// // Execute bytecode with optional return type
+    /// const maybe_result = try lua.exec(bytecode, ?f64);
+    /// ```
+    ///
+    /// Returns: The result of executing the bytecode, converted to type `T`
+    /// Errors: `Error.OutOfMemory` if the VM runs out of memory during execution
+    pub fn exec(self: Self, blob: []const u8, comptime T: type) !T {
+        // Push byte code onto stack
+        {
+            const status = self.state.load("", blob, 0);
+
+            // Load can either succeed or get an OOM error
+            // See https://github.com/luau-lang/luau/blob/66202dc4ac15f39a6ce8f732e2be19b636ee2af1/VM/src/lvmload.cpp#L643
+            switch (status) {
+                .ok => {},
+                .errmem => return Error.OutOfMemory,
+                else => unreachable,
+            }
+
+            std.debug.assert(self.state.isFunction(-1));
+        }
+
+        // Execute Lua func
+        {
+            const nret = if (T == void) 0 else 1;
+
+            self.state.call(0, nret);
+
+            return self.pop(T).?;
+        }
+    }
+
+    /// Compiles and executes Luau source code, returning the result.
+    ///
+    /// Takes Luau source code as a string, compiles it to bytecode using the provided
+    /// compilation options, and then executes the resulting bytecode. This is a
+    /// convenience function that combines compilation and execution in one step.
+    ///
+    /// The return type `T` specifies what type to expect from the executed code:
+    /// - `void` - Executes code that returns nothing
+    /// - `i32`, `f64`, `bool`, etc. - Converts the return value to the specified type
+    /// - `?T` - Optional types, returns `null` if conversion fails
+    ///
+    /// Examples:
+    /// ```zig
+    /// // Execute simple arithmetic
+    /// const result = try lua.eval("return 2 + 3", .{}, i32); // Returns 5
+    ///
+    /// // Execute code with no return value
+    /// try lua.eval("print('Hello, World!')", .{}, void);
+    ///
+    /// // Execute with compilation options
+    /// const result = try lua.eval("return math.sqrt(16)", .{ .optLevel = 2 }, f64);
+    ///
+    /// // Execute with optional return type
+    /// const maybe_result = try lua.eval("return getValue()", .{}, ?i32);
+    /// ```
+    ///
+    /// Parameters:
+    /// - `source`: Luau source code to compile and execute
+    /// - `opts`: Compilation options (see `Compiler.Opts` for available options)
+    /// - `T`: Expected return type
+    ///
+    /// Returns: The result of executing the compiled code, converted to type `T`
+    /// Errors:
+    /// - `Error.Compile` if the source code contains syntax errors
+    /// - `Error.OutOfMemory` if compilation or execution runs out of memory
+    pub fn eval(self: Self, source: []const u8, opts: Compiler.Opts, comptime T: type) !T {
+        const result = try Compiler.compile(source, opts);
+        defer result.deinit();
+
+        if (result == .err) {
+            return Error.Compile;
+        }
+
+        const blob = result.ok;
+        return self.exec(blob, T);
     }
 };
 
@@ -551,6 +649,36 @@ test "Global variables" {
     try expectEq(lua.getGlobal("maybe", ?i32).?, 123);
 
     try expectEq(lua.getGlobal("nonexistent", i32), null);
+
+    try expectEq(lua.top(), 0);
+}
+
+test "eval function" {
+    const lua = try Lua.init();
+    defer lua.deinit();
+
+    const result = try lua.eval("return 2 + 3", .{}, i32);
+    try expectEq(result, 5);
+
+    try lua.eval("x = 42", .{}, void);
+    try expectEq(lua.getGlobal("x", i32).?, 42);
+
+    const flag = try lua.eval("return true", .{}, bool);
+    try expect(flag == true);
+
+    // Test with compilation options
+    const optimized = try lua.eval("return 10 * 5", .{ .optLevel = 2 }, i32);
+    try expectEq(optimized, 50);
+
+    try expectEq(lua.top(), 0);
+}
+
+test "eval compilation error" {
+    const lua = try Lua.init();
+    defer lua.deinit();
+
+    const compile_error = lua.eval("return 1 + '", .{}, i32);
+    try expect(compile_error == Error.Compile);
 
     try expectEq(lua.top(), 0);
 }

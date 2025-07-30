@@ -26,7 +26,7 @@ pub const Compiler = struct {
     };
 
     /// Compilation options for controlling Luau compiler behavior.
-    pub const Options = struct {
+    pub const Opts = struct {
         /// Optimization level.
         ///
         /// 0 - no optimization
@@ -58,7 +58,7 @@ pub const Compiler = struct {
     /// Compiles Lua source code to bytecode using the Luau compiler.
     /// Returns either compiled bytecode or an error message.
     /// In both cases, memory must be freed using Result.deinit().
-    pub fn compile(source: []const u8, opts: Options) !Result {
+    pub fn compile(source: []const u8, opts: Opts) !Result {
         var options = c.lua_CompileOptions{
             .optimizationLevel = opts.optLevel,
             .debugLevel = opts.dbgLevel,
