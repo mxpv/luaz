@@ -142,16 +142,33 @@ const Lua = struct {
         /// If the table has a `__newindex` metamethod, it will be called.
         /// Use this for general table manipulation where metamethods should be honored.
         ///
-        /// The key can be any type supported by the `push()` function:
-        /// - Integers, floats, booleans
-        /// - Strings (`[]const u8`, `[:0]const u8`, etc.)
-        /// - Other Lua-compatible types
+        /// Both keys and values support automatic type conversion:
+        /// - Keys: Integers, floats, booleans, strings, optionals, functions, references
+        /// - Values: All types supported by the type system (integers, floats, booleans, 
+        ///   strings, optionals, tuples, vectors, functions, references, tables)
         ///
         /// Examples:
         /// ```zig
-        /// try table.set("name", "Alice");     // table["name"] = "Alice"
-        /// try table.set(42, "answer");        // table[42] = "answer"
-        /// try table.set(true, 100);           // table[true] = 100
+        /// // Basic key-value pairs
+        /// try table.set("name", "Alice");         // String key, string value
+        /// try table.set(42, "answer");            // Integer key, string value
+        /// try table.set(true, 100);               // Boolean key, integer value
+        /// try table.set(3.14, "pi");              // Float key, string value
+        ///
+        /// // Complex value types
+        /// try table.set("coords", .{10, 20, 30}); // Tuple becomes nested table
+        /// try table.set("flag", @as(?bool, null)); // Optional null becomes nil
+        /// try table.set("vector", @Vector(3, f32){1, 2, 3}); // Luau vector
+        ///
+        /// // Function values
+        /// fn helper() i32 { return 42; }
+        /// try table.set("helper", helper);        // Store function in table
+        ///
+        /// // Nested tables
+        /// const inner = lua.createTable(0, 2);
+        /// defer inner.deinit();
+        /// try inner.set("x", 5);
+        /// try table.set("inner", inner);          // Store table in table
         /// ```
         ///
         /// Errors: `Error.OutOfMemory` if stack allocation fails
@@ -172,15 +189,41 @@ const Lua = struct {
         /// If the table has an `__index` metamethod, it will be called.
         /// Use this for general table access where metamethods should be honored.
         ///
+        /// Keys support automatic type conversion (integers, floats, booleans, strings, etc.).
+        /// Values are converted from Lua to the requested Zig type with support for:
+        /// - Lua boolean → `bool`
+        /// - Lua number/integer → Integer types (`i8`, `i32`, `i64`, etc.)
+        /// - Lua number → Float types (`f32`, `f64`)
+        /// - Lua vector → Vector types (`@Vector(N, f32)`)
+        /// - Lua nil → Optional types (`?T`) as `null`
+        /// - Any valid value → Optional types (`?T`) as wrapped value
+        ///
         /// Returns `null` if the key doesn't exist or the value cannot be converted to type `T`.
         ///
-        /// The key can be any type supported by the `push()` function.
+        /// Note: String conversion is not supported via `get` due to Lua's garbage collection.
+        /// For safe string handling, use Lua code with `eval()` or the low-level State API.
         ///
         /// Examples:
         /// ```zig
-        /// const name = try table.get("name", []u8);   // Get table["name"] as string
-        /// const answer = try table.get(42, i32);      // Get table[42] as i32
-        /// const flag = try table.get(true, bool);     // Get table[true] as bool
+        /// // Basic type retrieval
+        /// const name = try table.get("name", i32);    // Get integer value
+        /// const answer = try table.get(42, f64);      // Get float value
+        /// const flag = try table.get(true, bool);     // Get boolean value
+        /// const pos = try table.get("pos", @Vector(3, f32)); // Get vector value
+        ///
+        /// // Optional types (handle missing values gracefully)
+        /// const maybe_value = try table.get("missing", ?i32);  // null if missing
+        /// const nullable = try table.get("nil_field", ?i32);   // null if nil
+        ///
+        /// // Different key types
+        /// const by_string = try table.get("key", i32);     // String key
+        /// const by_number = try table.get(42, i32);        // Integer key  
+        /// const by_float = try table.get(3.14, i32);       // Float key
+        /// const by_bool = try table.get(true, i32);        // Boolean key
+        ///
+        /// // Working with nested structures
+        /// // After: table.set("coords", .{10, 20, 30})
+        /// // The tuple becomes a nested table accessible by index
         /// ```
         ///
         /// Returns: `?T` - The converted value, or `null` if not found or conversion failed
@@ -240,15 +283,43 @@ const Lua = struct {
 
     /// Sets a global variable in the Lua environment.
     ///
-    /// Pushes the value onto the stack and assigns it to the specified global variable name.
-    /// The value is automatically converted using the same rules as the `push` function.
+    /// Automatically converts Zig values to their Lua equivalents and assigns them to the 
+    /// specified global variable name. Supports all the same type conversions as the internal
+    /// type system:
+    ///
+    /// - `bool` → Lua boolean
+    /// - Integer types (`i8`, `i32`, `i64`, etc.) → Lua integer
+    /// - Float types (`f32`, `f64`) → Lua number
+    /// - String types (`[]const u8`, `[:0]const u8`, `[*:0]const u8`, `[N:0]u8`) → Lua string
+    /// - `null` → Lua nil
+    /// - Optional types (`?T`) → Recursively converts the wrapped value or nil
+    /// - Tuple types → Lua table with array semantics (1-based indexing)
+    /// - Vector types (`@Vector(N, f32)`) → Luau native vector (N must match LUA_VECTOR_SIZE)
+    /// - Function types → Wrapped as Lua C function with automatic argument conversion
+    /// - `Ref` and `Table` types → Pushes the referenced Lua value
     ///
     /// Examples:
     /// ```zig
-    /// lua.setGlobal("x", 42);           // Set global x = 42
-    /// lua.setGlobal("name", "hello");   // Set global name = "hello"
-    /// lua.setGlobal("flag", true);      // Set global flag = true
-    /// lua.setGlobal("func", myFunction);// Set global func to a Zig function
+    /// // Basic types
+    /// lua.setGlobal("x", 42);              // Integer
+    /// lua.setGlobal("pi", 3.14159);        // Float
+    /// lua.setGlobal("flag", true);         // Boolean
+    /// lua.setGlobal("message", "hello");   // String
+    ///
+    /// // Optional types
+    /// lua.setGlobal("value", @as(?i32, 5));    // Optional with value
+    /// lua.setGlobal("empty", @as(?i32, null)); // Optional null → nil
+    ///
+    /// // Tuples (become Lua arrays)
+    /// lua.setGlobal("coords", .{10, 20, 30});  // table[1]=10, table[2]=20, table[3]=30
+    /// lua.setGlobal("empty", .{});             // Empty table
+    ///
+    /// // Functions
+    /// fn add(a: i32, b: i32) i32 { return a + b; }
+    /// lua.setGlobal("add", add);               // Callable from Lua: add(5, 3)
+    ///
+    /// // Vectors (Luau native)
+    /// lua.setGlobal("position", @Vector(3, f32){1.0, 2.0, 3.0});
     /// ```
     pub fn setGlobal(self: Self, key: [:0]const u8, value: anytype) void {
         self.push(value);
@@ -257,21 +328,44 @@ const Lua = struct {
 
     /// Gets a global variable from the Lua environment and converts it to the specified Zig type.
     ///
-    /// Retrieves the global variable and attempts to convert it to type `T` using the same
-    /// conversion rules as the `pop` function. Supports the same type conversions as `pop`:
+    /// Retrieves the global variable and attempts to convert it to type `T` using automatic
+    /// type conversion. Supports conversion from Lua values to Zig types:
+    ///
     /// - Lua boolean → `bool`
     /// - Lua number/integer → Integer types (`i8`, `i32`, `i64`, etc.)
     /// - Lua number → Float types (`f32`, `f64`)
+    /// - Lua vector → Vector types (`@Vector(N, f32)`) where N matches LUA_VECTOR_SIZE
     /// - Lua nil → Optional types (`?T`) as `null`
     /// - Any valid value → Optional types (`?T`) as wrapped value
     ///
     /// Returns `null` if the global doesn't exist or cannot be converted to the requested type.
     ///
+    /// Note: String conversion is not supported via `getGlobal` due to Lua's garbage collection.
+    /// The Lua C API returns a direct pointer to string data that may become invalid. For safe
+    /// string handling, access strings through Lua code using `eval()` or work directly with
+    /// the low-level State API if you understand the memory management implications.
+    ///
     /// Examples:
     /// ```zig
-    /// const x = lua.getGlobal("x", i32);        // Get global x as i32
-    /// const name = lua.getGlobal("name", []u8); // Get global name as string
-    /// const flag = lua.getGlobal("flag", bool); // Get global flag as bool
+    /// // Basic type retrieval
+    /// const x = lua.getGlobal("x", i32);         // Get integer global
+    /// const pi = lua.getGlobal("pi", f64);       // Get float global  
+    /// const flag = lua.getGlobal("flag", bool);  // Get boolean global
+    ///
+    /// // Optional types (handle missing or nil values)
+    /// const maybe_value = lua.getGlobal("missing", ?i32);  // Returns null if missing
+    /// const nullable = lua.getGlobal("nil_value", ?i32);   // Returns null if nil in Lua
+    /// const has_value = lua.getGlobal("exists", ?i32);     // Returns wrapped value if exists
+    ///
+    /// // Vector types (Luau native vectors)
+    /// const pos = lua.getGlobal("position", @Vector(3, f32)); // Get 3D vector
+    /// const color = lua.getGlobal("color", @Vector(4, f32));  // Get 4D vector (if configured)
+    ///
+    /// // Type conversion examples
+    /// lua.setGlobal("number", 42);
+    /// const as_int = lua.getGlobal("number", i32);      // 42
+    /// const as_float = lua.getGlobal("number", f64);    // 42.0
+    /// const as_optional = lua.getGlobal("number", ?i32); // 42 (wrapped)
     /// ```
     ///
     /// Returns: `?T` - The converted value, or `null` if not found or conversion failed
@@ -280,47 +374,9 @@ const Lua = struct {
         return self.pop(T);
     }
 
-    /// Pushes a Zig value onto the Lua stack.
-    ///
-    /// Automatically converts Zig types to their Lua equivalents:
-    /// - `bool` → Lua boolean
-    /// - Integer types (`i8`, `i32`, `i64`, etc.) → Lua integer
-    /// - Float types (`f32`, `f64`) → Lua number
-    /// - String types (`[]const u8`, `[:0]const u8`, `[*:0]const u8`, `[N:0]u8`) → Lua string
-    /// - `null` → Lua nil
-    /// - `void` → Pushes nothing
-    /// - Optional types (`?T`) → Recursively pushes the wrapped value or nil
-    /// - Tuple types → Each field pushed individually onto the stack
-    /// - Vector types (`@Vector(N, f32)`) → Luau native vector (N must match LUA_VECTOR_SIZE)
-    /// - Function types → Wrapped as Lua C function with automatic argument conversion
-    /// - `Ref` types → Pushes the referenced Lua value onto the stack
-    /// - `Table` types → Pushes the table onto the stack
-    ///
-    /// For function types, creates a trampoline that automatically converts Lua arguments
-    /// to Zig types using the `check` function and converts the return value back to Lua.
-    ///
-    /// Examples:
-    /// ```zig
-    /// lua.push(42);           // Integer
-    /// lua.push(3.14);         // Float
-    /// lua.push(true);         // Boolean
-    /// lua.push("hello");      // String literal - safe to push
-    /// lua.push(@as(?i32, 5)); // Optional with value
-    /// lua.push(@as(?i32, null)); // Optional null → nil
-    /// lua.push(.{1, 2, 3});   // Tuple → pushes 1, 2, 3 individually
-    /// lua.push(.{});          // Empty tuple → pushes nothing
-    ///
-    /// // For safe string retrieval, use the specialized functions:
-    /// lua.push("world");
-    /// const owned = lua.popString(allocator); // Safe: returns owned copy
-    /// defer allocator.free(owned.?);
-    /// ```
-    ///
-    /// // Function example
-    /// fn add(a: i32, b: i32) i32 { return a + b; }
-    /// lua.push(add);          // Becomes callable Lua function
-    /// ```
-    pub fn push(self: Self, value: anytype) void {
+    /// Internal function to push a Zig value onto the Lua stack.
+    /// Used internally by setGlobal and other high-level functions.
+    fn push(self: Self, value: anytype) void {
         const T = @TypeOf(value);
         const type_info = @typeInfo(T);
 
@@ -484,36 +540,9 @@ const Lua = struct {
         }
     }
 
-    /// Pops a value from the top of the Lua stack and converts it to the specified Zig type.
-    ///
-    /// Returns `null` if the value at the top of the stack cannot be converted to type `T`.
-    /// The value is automatically removed from the stack regardless of conversion success.
-    ///
-    /// Supported type conversions:
-    /// - Lua boolean → `bool`
-    /// - Lua number/integer → Integer types (`i8`, `i32`, `i64`, etc.)
-    /// - Lua number → Float types (`f32`, `f64`)
-    /// - Lua vector → Vector types (`@Vector(N, f32)`) where N matches LUA_VECTOR_SIZE
-    /// - Lua nil → Optional types (`?T`) as `null`
-    /// - Any valid value → Optional types (`?T`) as wrapped value
-    ///
-    /// Note: String conversion is not supported via the generic `pop` due to Lua's garbage collection.
-    /// The Lua C API returns a direct pointer to the string data inside Lua's memory. Once the value
-    /// is popped from the stack, this pointer may become invalid as the string can be garbage collected.
-    /// For safe string handling, use `popString(allocator)` instead, which returns an owned copy
-    /// (and hence requires allocation).
-    ///
-    /// Examples:
-    /// ```zig
-    /// lua.push(42);
-    /// const value = lua.pop(i32).?; // 42
-    ///
-    /// lua.push(null);
-    /// const optional = lua.pop(?i32); // null
-    /// ```
-    ///
-    /// Returns: `?T` - The converted value, or `null` if conversion failed
-    pub inline fn pop(self: Self, comptime T: type) ?T {
+    /// Internal function to pop a value from the Lua stack and convert it to a Zig type.
+    /// Used internally by getGlobal and other high-level functions.
+    inline fn pop(self: Self, comptime T: type) ?T {
         if (T == void) {
             return;
         }
@@ -651,31 +680,9 @@ const Lua = struct {
         }
     }
 
-    /// Safely pops a string from the top of the Lua stack and returns an owned copy.
-    ///
-    /// This function addresses the garbage collection safety issue with Lua strings.
-    /// Unlike `state.toString()` which returns a pointer that may become invalid after
-    /// the Lua value is removed from the stack, this function creates a copy of the string
-    /// using the provided allocator, then pops the value from the stack. The returned
-    /// string remains valid even after the Lua value is garbage collected.
-    ///
-    /// The caller owns the returned memory and must free it using `allocator.free()`.
-    ///
-    /// Returns `null` if:
-    /// - The value at the top of the stack is not a string
-    /// - Memory allocation fails
-    /// - The stack is empty
-    ///
-    /// Example:
-    /// ```zig
-    /// lua.push("hello world");
-    /// if (lua.popString(allocator)) |owned_string| {
-    ///     defer allocator.free(owned_string);
-    ///     // Use owned_string safely - it's already been popped from stack
-    ///     std.debug.print("String: {s}\n", .{owned_string});
-    /// }
-    /// ```
-    pub fn popString(self: Self, allocator: std.mem.Allocator) ?[]u8 {
+    /// Internal function to safely pop a string from the Lua stack and return an owned copy.
+    /// Used internally for string handling in high-level functions.
+    fn popString(self: Self, allocator: std.mem.Allocator) ?[]u8 {
         const lstr = self.state.toString(-1) orelse return null;
         const copy = allocator.dupe(u8, lstr) catch null;
         self.state.pop(1);

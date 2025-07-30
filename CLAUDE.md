@@ -33,18 +33,16 @@ directories.
 
 ### High-Level API (`src/root.zig`)
 The main `Lua` struct provides an idiomatic Zig interface with automatic type conversions:
-- `push()` - Converts Zig values to Lua (integers, floats, bools, optionals, tuples, functions, tables)
-- `pop()` - Converts Lua values back to Zig types
-- `setGlobal()`/`getGlobal()` - Global variable access
+- `setGlobal()`/`getGlobal()` - Global variable access with automatic type conversion
 - `eval()` - Compile and execute Lua source code in one step
 - `exec()` - Execute pre-compiled bytecode
 - `createTable()` - Create new Lua tables with optional size hints
 
 ### Type System Integration
-The library provides seamless conversion between Zig and Lua types:
+The library provides seamless conversion between Zig and Lua types through its high-level API:
 - Zig functions are automatically wrapped as callable Lua functions with argument type checking
 - Optional types (`?T`) map to Lua nil values
-- Tuples are pushed as multiple stack values
+- Tuples are converted to Lua tables with array semantics
 - Reference system (`Ref`) allows holding Lua values across function calls
 - Table wrapper (`Table`) provides safe access to Lua tables with automatic type conversion
 
