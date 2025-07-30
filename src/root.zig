@@ -291,6 +291,7 @@ const Lua = struct {
     /// - `void` → Pushes nothing
     /// - Optional types (`?T`) → Recursively pushes the wrapped value or nil
     /// - Tuple types → Each field pushed individually onto the stack
+    /// - Vector types (`@Vector(N, f32)`) → Luau native vector (N must match LUA_VECTOR_SIZE)
     /// - Function types → Wrapped as Lua C function with automatic argument conversion
     /// - `Ref` types → Pushes the referenced Lua value onto the stack
     /// - `Table` types → Pushes the table onto the stack
@@ -371,6 +372,25 @@ const Lua = struct {
                 }
 
                 @compileError("Non tuple structs are not yet implemented");
+            },
+            .vector => |vector_info| {
+                // Use Luau's native vector support
+                if (vector_info.child != f32) {
+                    @compileError("Luau vectors only support f32 elements, got " ++ @typeName(vector_info.child));
+                }
+                
+                // Only support vectors of LUA_VECTOR_SIZE
+                if (vector_info.len != State.VECTOR_SIZE) {
+                    @compileError("Luau configured for " ++ 
+                        std.fmt.comptimePrint("{d}", .{State.VECTOR_SIZE}) ++ 
+                        "-component vectors, but got " ++ 
+                        std.fmt.comptimePrint("{d}", .{vector_info.len}) ++ 
+                        "-component vector");
+                }
+                
+                // Convert Zig vector to array for pushVector
+                const vec_array: [State.VECTOR_SIZE]f32 = @bitCast(value);
+                self.state.pushVector(vec_array);
             },
             .pointer => |ptr_info| {
                 switch (ptr_info.size) {
@@ -473,6 +493,7 @@ const Lua = struct {
     /// - Lua boolean → `bool`
     /// - Lua number/integer → Integer types (`i8`, `i32`, `i64`, etc.)
     /// - Lua number → Float types (`f32`, `f64`)
+    /// - Lua vector → Vector types (`@Vector(N, f32)`) where N matches LUA_VECTOR_SIZE
     /// - Lua nil → Optional types (`?T`) as `null`
     /// - Any valid value → Optional types (`?T`) as wrapped value
     ///
@@ -541,6 +562,28 @@ const Lua = struct {
                 else
                     self.check(index, type_info.optional.child);
             },
+            .vector => |vector_info| {
+                if (vector_info.child != f32) {
+                    @compileError("Luau vectors only support f32 elements, got " ++ @typeName(vector_info.child));
+                }
+                
+                // Only support vectors of LUA_VECTOR_SIZE
+                if (vector_info.len != State.VECTOR_SIZE) {
+                    @compileError("Luau configured for " ++ 
+                        std.fmt.comptimePrint("{d}", .{State.VECTOR_SIZE}) ++ 
+                        "-component vectors, but got " ++ 
+                        std.fmt.comptimePrint("{d}", .{vector_info.len}) ++ 
+                        "-component vector");
+                }
+                
+                const lua_vec = self.state.checkVector(index);
+                
+                if (State.VECTOR_SIZE == 4) {
+                    return @Vector(4, f32){ lua_vec[0], lua_vec[1], lua_vec[2], lua_vec[3] };
+                } else {
+                    return @Vector(3, f32){ lua_vec[0], lua_vec[1], lua_vec[2] };
+                }
+            },
             else => {
                 @compileError("Unable to check type " ++ @typeName(T));
             },
@@ -575,6 +618,32 @@ const Lua = struct {
                     null
                 else
                     self.toValue(type_info.optional.child, index);
+            },
+            .vector => |vector_info| {
+                if (vector_info.child != f32) {
+                    @compileError("Luau vectors only support f32 elements, got " ++ @typeName(vector_info.child));
+                }
+                
+                // Only support vectors of LUA_VECTOR_SIZE
+                if (vector_info.len != State.VECTOR_SIZE) {
+                    @compileError("Luau configured for " ++ 
+                        std.fmt.comptimePrint("{d}", .{State.VECTOR_SIZE}) ++ 
+                        "-component vectors, but got " ++ 
+                        std.fmt.comptimePrint("{d}", .{vector_info.len}) ++ 
+                        "-component vector");
+                }
+                
+                if (!self.state.isVector(index)) {
+                    return null;
+                }
+                
+                const lua_vec = self.state.toVector(index) orelse return null;
+                
+                if (State.VECTOR_SIZE == 4) {
+                    return @Vector(4, f32){ lua_vec[0], lua_vec[1], lua_vec[2], lua_vec[3] };
+                } else {
+                    return @Vector(3, f32){ lua_vec[0], lua_vec[1], lua_vec[2] };
+                }
             },
             else => {
                 @compileError("Unable to cast type " ++ @typeName(T));
@@ -1015,5 +1084,20 @@ test "Push Table to stack" {
     try expectEq(lua.pop(i32), 42);
 
     lua.state.pop(1); // Pop the table
+    try expectEq(lua.top(), 0);
+}
+
+test "Push and pop Vector types" {
+    const lua = try Lua.init();
+    defer lua.deinit();
+
+    const vec3 = @Vector(3, f32){ 1.0, 2.0, 3.0 };
+    lua.push(vec3);
+    try expect(lua.state.isVector(-1));
+    const popped_vec3 = lua.pop(@Vector(3, f32)).?;
+    try expectEq(popped_vec3[0], 1.0);
+    try expectEq(popped_vec3[1], 2.0);
+    try expectEq(popped_vec3[2], 3.0);
+
     try expectEq(lua.top(), 0);
 }

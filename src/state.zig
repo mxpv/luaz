@@ -23,7 +23,7 @@ pub const State = struct {
     pub const Continuation = c.lua_Continuation;
     pub const Alloc = c.lua_Alloc;
     pub const Destructor = c.lua_Destructor;
-    pub const Vec = if (c.LUA_VECTOR_SIZE == 4) [4]f32 else [3]f32;
+    pub const VECTOR_SIZE = c.LUA_VECTOR_SIZE;
 
     // Constants
     pub const MULTRET = c.LUA_MULTRET;
@@ -323,7 +323,7 @@ pub const State = struct {
     }
 
     /// Get vector value at index
-    pub inline fn toVector(self: State, idx: i32) ?*const Vec {
+    pub inline fn toVector(self: State, idx: i32) ?*const [c.LUA_VECTOR_SIZE]f32 {
         const ptr = c.lua_tovector(self.lua, idx);
         return if (ptr) |p| @ptrCast(p) else null;
     }
@@ -448,11 +448,11 @@ pub const State = struct {
     }
 
     /// Push a vector onto the stack
-    pub inline fn pushVector(self: State, x: f32, y: f32, z: f32, w: f32) void {
+    pub inline fn pushVector(self: State, vec: [c.LUA_VECTOR_SIZE]f32) void {
         if (c.LUA_VECTOR_SIZE == 4) {
-            c.lua_pushvector(self.lua, x, y, z, w);
+            c.lua_pushvector(self.lua, vec[0], vec[1], vec[2], vec[3]);
         } else {
-            c.lua_pushvector(self.lua, x, y, z);
+            c.lua_pushvector(self.lua, vec[0], vec[1], vec[2]);
         }
     }
 
@@ -1088,13 +1088,13 @@ pub const State = struct {
     }
 
     /// Check and get vector argument
-    pub inline fn checkVector(self: State, narg: i32) *const Vec {
+    pub inline fn checkVector(self: State, narg: i32) *const [c.LUA_VECTOR_SIZE]f32 {
         const ptr = c.luaL_checkvector(self.lua, narg);
         return @ptrCast(ptr);
     }
 
     /// Get optional vector argument
-    pub inline fn optVector(self: State, narg: i32, def: *const Vec) *const Vec {
+    pub inline fn optVector(self: State, narg: i32, def: *const [c.LUA_VECTOR_SIZE]f32) *const [c.LUA_VECTOR_SIZE]f32 {
         const ptr = c.luaL_optvector(self.lua, narg, @ptrCast(def));
         return @ptrCast(ptr);
     }
