@@ -1307,3 +1307,4 @@ test "Basic stack ops" {
     state.setTop(0);
     try expect(state.getTop() == 0);
 }
+

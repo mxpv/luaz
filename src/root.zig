@@ -751,6 +751,63 @@ const Lua = struct {
         const blob = result.ok;
         return self.exec(blob, T);
     }
+
+    /// Dump the current stack contents to a string for debugging
+    ///
+    /// Creates a formatted string representation of all values currently on the Lua stack,
+    /// showing their stack indices, types, and string representations. Uses Lua's `toString`
+    /// to convert values to strings, showing "nil" for values that cannot be converted.
+    ///
+    /// Format for each stack entry: `  {index} [{type}] {value}`
+    ///
+    /// Examples:
+    /// ```zig
+    /// var lua = try Lua.init();
+    /// defer lua.deinit();
+    ///
+    /// lua.push(42.5);
+    /// lua.push(true);
+    /// lua.push("hello");
+    /// lua.push(@as(?i32, null));
+    ///
+    /// const dump = try lua.dumpStack(allocator);
+    /// defer allocator.free(dump);
+    /// // Output:
+    /// // Lua stack dump (size: 4):
+    /// //   4 [nil] nil
+    /// //   3 [string] hello
+    /// //   2 [boolean] true
+    /// //   1 [number] 42.5
+    /// ```
+    ///
+    /// Returns: Allocated string containing the stack dump. Caller owns the memory.
+    /// Errors: `std.mem.Allocator.Error` if memory allocation fails
+    pub fn dumpStack(self: Self, allocator: std.mem.Allocator) ![]u8 {
+        var list = std.ArrayList(u8).init(allocator);
+        defer list.deinit();
+
+        const writer = list.writer();
+        const stack_size = self.state.getTop();
+
+        if (stack_size == 0) {
+            try writer.writeAll("Lua stack is empty\n");
+        } else {
+            try writer.print("Lua stack dump (size: {}):\n", .{stack_size});
+        }
+
+        var n = stack_size;
+        while (n > 0) {
+            const stack_type = self.state.getType(n);
+            const type_name = self.state.typeName(stack_type);
+            const str_value = self.state.toString(n) orelse "nil";
+
+            try writer.print("  {} [{s}] {s}\n", .{ n, type_name, str_value });
+
+            n -= 1;
+        }
+
+        return list.toOwnedSlice();
+    }
 };
 
 const expect = std.testing.expect;
@@ -968,6 +1025,36 @@ test "Eval function" {
     try expectEq(try globals.get("x", i32), 42);
 
     try expectEq(lua.top(), 0);
+}
+
+test "dumpStack" {
+    const lua = try Lua.init();
+    defer lua.deinit();
+
+    // Test empty stack
+    const empty_dump = try lua.dumpStack(std.testing.allocator);
+    defer std.testing.allocator.free(empty_dump);
+    try expect(std.mem.indexOf(u8, empty_dump, "Lua stack is empty") != null);
+
+    // Test stack with values
+    lua.push(@as(f64, 42.5));
+    lua.push(true);
+    lua.push("hello");
+    lua.push(@as(?i32, null));
+
+    const stack_size_before = lua.top();
+
+    try expectEq(stack_size_before, 4);
+
+    const dump = try lua.dumpStack(std.testing.allocator);
+    defer std.testing.allocator.free(dump);
+
+    try expectEq(lua.top(), stack_size_before);
+
+    try expect(std.mem.indexOf(u8, dump, "Lua stack dump (size: 4)") != null);
+    try expect(std.mem.indexOf(u8, dump, "42.5") != null);
+    try expect(std.mem.indexOf(u8, dump, "hello") != null);
+    try expect(std.mem.indexOf(u8, dump, "nil") != null);
 }
 
 test "Compilation error handling" {
