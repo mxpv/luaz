@@ -264,26 +264,27 @@ const Lua = struct {
     /// Examples:
     /// ```zig
     /// // Create empty table with no size hints
-    /// const table = lua.createTable(0, 0);
+    /// const table = lua.createTable(.{});
     /// defer table.deinit();
     ///
     /// // Create table expecting 10 array elements
-    /// const array_table = lua.createTable(10, 0);
+    /// const array_table = lua.createTable(.{ .arr = 10 });
     /// defer array_table.deinit();
     ///
     /// // Create table expecting 5 hash elements
-    /// const hash_table = lua.createTable(0, 5);
+    /// const hash_table = lua.createTable(.{ .rec = 5 });
     /// defer hash_table.deinit();
     ///
     /// // Create table expecting both array and hash elements
-    /// const mixed_table = lua.createTable(10, 5);
+    /// const mixed_table = lua.createTable(.{ .arr = 10, .rec = 5 });
     /// defer mixed_table.deinit();
     /// ```
     ///
     /// Returns: `Table` - A wrapper around the newly created Lua table
-    pub inline fn createTable(self: Self, arr: u32, rec: u32) Table {
-        self.state.createTable(arr, rec);
+    pub inline fn createTable(self: Self, opts: struct { arr: u32 = 0, rec: u32 = 0 }) Table {
+        self.state.createTable(opts.arr, opts.rec);
         defer self.state.pop(1);
+
         return Table{ .ref = self.createRef(-1) };
     }
 
@@ -1016,7 +1017,7 @@ test "Table basic operations" {
     const lua = try Lua.init();
     defer lua.deinit();
 
-    const table = lua.createTable(0, 0);
+    const table = lua.createTable(.{});
     defer table.deinit();
 
     // Test raw operations (bypass metamethods)
@@ -1044,7 +1045,7 @@ test "Push Table to stack" {
     const lua = try Lua.init();
     defer lua.deinit();
 
-    const table = lua.createTable(0, 0);
+    const table = lua.createTable(.{});
     defer table.deinit();
 
     // Set a value in the table
