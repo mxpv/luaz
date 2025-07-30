@@ -35,12 +35,12 @@ const Lua = struct {
     /// Holds a reference ID that can be used to retrieve the value later.
     /// Must be explicitly released using deinit() to avoid memory leaks.
     pub const Ref = struct {
-        lua: State,
+        lua: Lua,
         ref: c_int,
 
         /// Releases the Lua reference, allowing the referenced value to be garbage collected.
         pub fn deinit(self: Ref) void {
-            self.lua.unref(self.ref);
+            self.lua.state.unref(self.ref);
         }
 
         /// Checks if the reference is valid (not nil or invalid).
@@ -50,25 +50,182 @@ const Lua = struct {
 
         /// Checks if the referenced value is a function.
         pub inline fn isFunction(self: Ref) bool {
-            return self.lua.isFunction(self.ref);
+            return self.lua.state.isFunction(self.ref);
         }
 
         /// Checks if the referenced value is a table.
         pub inline fn isTable(self: Ref) bool {
-            return self.lua.isTable(self.ref);
+            return self.lua.state.isTable(self.ref);
         }
     };
 
     /// Creates a reference to a value on the stack.
     ///
     /// Does not consume the value.
-    fn createRef(self: Self, index: i32) Ref {
-        const ref = self.state.ref(index);
-
+    inline fn createRef(self: Self, index: i32) Ref {
         return Ref{
-            .lua = self.state,
-            .ref = ref,
+            .lua = self,
+            .ref = self.state.ref(index),
         };
+    }
+
+    /// High-level table wrapper providing safe access to Lua tables.
+    ///
+    /// Holds a reference to a Lua table and provides methods for getting and setting
+    /// table values with automatic type conversion. Must be explicitly released
+    /// using deinit() to avoid memory leaks.
+    pub const Table = struct {
+        ref: Ref,
+
+        /// Releases the table reference, allowing the table to be garbage collected.
+        pub fn deinit(self: Table) void {
+            self.ref.deinit();
+        }
+
+        /// Sets a table element by integer index using raw access (bypasses `__newindex` metamethod).
+        ///
+        /// Directly assigns `table[index] = value` without invoking metamethods.
+        /// This is faster than `set()` but doesn't respect custom table behavior.
+        ///
+        /// Examples:
+        /// ```zig
+        /// try table.setRaw(1, 42);        // table[1] = 42
+        /// try table.setRaw(5, "hello");   // table[5] = "hello"
+        /// try table.setRaw(-1, true);     // table[-1] = true
+        /// ```
+        ///
+        /// Errors: `Error.OutOfMemory` if stack allocation fails
+        pub fn setRaw(self: Table, index: i32, value: anytype) !void {
+            try self.ref.lua.checkStack(2);
+
+            self.ref.lua.push(self.ref); // Push table ref
+            self.ref.lua.push(value); // Push value
+            self.ref.lua.state.rawSetI(-2, index); // Set table and pop value
+            self.ref.lua.state.pop(1); // Pop table
+        }
+
+        /// Gets a table element by integer index using raw access (bypasses __index metamethod).
+        ///
+        /// Directly retrieves `table[index]` without invoking metamethods.
+        /// This is faster than `get()` but doesn't respect custom table behavior.
+        ///
+        /// Returns `null` if the index doesn't exist or the value cannot be converted to type `T`.
+        ///
+        /// Examples:
+        /// ```zig
+        /// const value = try table.getRaw(1, i32);     // Get table[1] as i32
+        /// const text = try table.getRaw(5, []u8);     // Get table[5] as string
+        /// const flag = try table.getRaw(-1, bool);    // Get table[-1] as bool
+        /// ```
+        ///
+        /// Returns: `?T` - The converted value, or `null` if not found or conversion failed
+        /// Errors: `Error.OutOfMemory` if stack allocation fails
+        pub fn getRaw(self: Table, index: i32, comptime T: type) !?T {
+            try self.ref.lua.checkStack(2);
+
+            self.ref.lua.push(self.ref); // Push table ref
+            _ = self.ref.lua.state.rawGetI(-1, index); // Push value of t[i] onto stack.
+
+            defer self.ref.lua.state.pop(1); // Pop table
+
+            return self.ref.lua.pop(T);
+        }
+
+        /// Sets a table element by key with full Lua semantics (invokes __newindex metamethod).
+        ///
+        /// Assigns `table[key] = value` following Lua's complete access protocol.
+        /// If the table has a `__newindex` metamethod, it will be called.
+        /// Use this for general table manipulation where metamethods should be honored.
+        ///
+        /// The key can be any type supported by the `push()` function:
+        /// - Integers, floats, booleans
+        /// - Strings (`[]const u8`, `[:0]const u8`, etc.)
+        /// - Other Lua-compatible types
+        ///
+        /// Examples:
+        /// ```zig
+        /// try table.set("name", "Alice");     // table["name"] = "Alice"
+        /// try table.set(42, "answer");        // table[42] = "answer"
+        /// try table.set(true, 100);           // table[true] = 100
+        /// ```
+        ///
+        /// Errors: `Error.OutOfMemory` if stack allocation fails
+        pub fn set(self: Table, key: anytype, value: anytype) !void {
+            try self.ref.lua.checkStack(3);
+
+            self.ref.lua.push(self.ref); // Push table ref
+            self.ref.lua.push(key); // Push key
+            self.ref.lua.push(value); // Push value
+
+            self.ref.lua.state.setTable(-3); // Set table[key] = value and pop key and value
+            self.ref.lua.state.pop(1); // Pop table
+        }
+
+        /// Gets a table element by key with full Lua semantics (invokes __index metamethod).
+        ///
+        /// Retrieves `table[key]` following Lua's complete access protocol.
+        /// If the table has an `__index` metamethod, it will be called.
+        /// Use this for general table access where metamethods should be honored.
+        ///
+        /// Returns `null` if the key doesn't exist or the value cannot be converted to type `T`.
+        ///
+        /// The key can be any type supported by the `push()` function.
+        ///
+        /// Examples:
+        /// ```zig
+        /// const name = try table.get("name", []u8);   // Get table["name"] as string
+        /// const answer = try table.get(42, i32);      // Get table[42] as i32
+        /// const flag = try table.get(true, bool);     // Get table[true] as bool
+        /// ```
+        ///
+        /// Returns: `?T` - The converted value, or `null` if not found or conversion failed
+        /// Errors: `Error.OutOfMemory` if stack allocation fails
+        pub fn get(self: Table, key: anytype, comptime T: type) !?T {
+            try self.ref.lua.checkStack(2);
+
+            self.ref.lua.push(self.ref); // Push table ref
+            self.ref.lua.push(key); // Push key
+
+            _ = self.ref.lua.state.getTable(-2); // Pop key and push "table[key]" onto stack
+            defer self.ref.lua.state.pop(1); // Pop table
+
+            return self.ref.lua.pop(T);
+        }
+    };
+
+    /// Creates a new Lua table and returns a high-level Table wrapper.
+    ///
+    /// Creates an empty table with optional size hints for optimization.
+    /// The hints help Lua preallocate memory for better performance:
+    /// - `arr`: Expected number of array elements (sequential integer keys starting from 1)
+    /// - `rec`: Expected number of hash table elements (non-sequential keys)
+    ///
+    /// The returned Table must be explicitly released using `deinit()` to avoid memory leaks.
+    ///
+    /// Examples:
+    /// ```zig
+    /// // Create empty table with no size hints
+    /// const table = lua.createTable(0, 0);
+    /// defer table.deinit();
+    ///
+    /// // Create table expecting 10 array elements
+    /// const array_table = lua.createTable(10, 0);
+    /// defer array_table.deinit();
+    ///
+    /// // Create table expecting 5 hash elements
+    /// const hash_table = lua.createTable(0, 5);
+    /// defer hash_table.deinit();
+    ///
+    /// // Create table expecting both array and hash elements
+    /// const mixed_table = lua.createTable(10, 5);
+    /// defer mixed_table.deinit();
+    /// ```
+    ///
+    /// Returns: `Table` - A wrapper around the newly created Lua table
+    pub inline fn createTable(self: Self, arr: u32, rec: u32) Table {
+        self.state.createTable(arr, rec);
+        defer self.state.pop(1);
+        return Table{ .ref = self.createRef(-1) };
     }
 
     /// Sets a global variable in the Lua environment.
@@ -125,6 +282,8 @@ const Lua = struct {
     /// - Optional types (`?T`) → Recursively pushes the wrapped value or nil
     /// - Tuple types → Each field pushed individually onto the stack
     /// - Function types → Wrapped as Lua C function with automatic argument conversion
+    /// - `Ref` types → Pushes the referenced Lua value onto the stack
+    /// - `Table` types → Pushes the table onto the stack
     ///
     /// For function types, creates a trampoline that automatically converts Lua arguments
     /// to Zig types using the `check` function and converts the return value back to Lua.
@@ -192,6 +351,17 @@ const Lua = struct {
                 if (T == Ref) {
                     if (value.isValid()) {
                         _ = self.state.rawGetI(State.REGISTRYINDEX, value.ref);
+                    } else {
+                        self.state.pushNil();
+                    }
+
+                    break :blk;
+                }
+
+                // Handle Table type
+                if (T == Table) {
+                    if (value.ref.isValid()) {
+                        _ = self.state.rawGetI(State.REGISTRYINDEX, value.ref.ref);
                     } else {
                         self.state.pushNil();
                     }
@@ -332,6 +502,20 @@ const Lua = struct {
 
     pub inline fn top(self: Self) i32 {
         return self.state.getTop();
+    }
+
+    /// Ensures the Lua stack has space for at least `sz` more elements.
+    ///
+    /// This function checks if the stack can grow to accommodate the specified
+    /// number of additional elements. Returns an error if the stack cannot be grown.
+    ///
+    /// Used internally by table operations to ensure stack safety before pushing values.
+    ///
+    /// Errors: `Error.OutOfMemory` if stack cannot be grown
+    inline fn checkStack(self: Self, sz: i32) !void {
+        if (!self.state.checkStack(sz)) {
+            return Error.OutOfMemory;
+        }
     }
 
     /// Internal function to check and convert a value at the specified stack index to the given Zig type.
@@ -834,5 +1018,57 @@ test "safe string handling with allocator" {
     defer allocator.free(str3);
     try expect(std.mem.eql(u8, str3, "안녕하세요"));
 
+    try expectEq(lua.top(), 0);
+}
+
+test "Table basic operations" {
+    const lua = try Lua.init();
+    defer lua.deinit();
+
+    const table = lua.createTable(0, 0);
+    defer table.deinit();
+
+    // Test raw operations (bypass metamethods)
+    try table.setRaw(1, 42);
+    try expectEq(try table.getRaw(1, i32), 42);
+
+    try table.setRaw(2, true);
+    try expectEq(try table.getRaw(2, bool), true);
+
+    // Test non-raw operations (invoke metamethods)
+    try table.set("key", 123);
+    try expectEq(try table.get("key", i32), 123);
+
+    try table.set("flag", false);
+    try expectEq(try table.get("flag", bool), false);
+
+    // Test non-existent keys
+    try expectEq(try table.getRaw(999, i32), null);
+    try expectEq(try table.get("missing", i32), null);
+
+    try expectEq(lua.top(), 0);
+}
+
+test "Push Table to stack" {
+    const lua = try Lua.init();
+    defer lua.deinit();
+
+    const table = lua.createTable(0, 0);
+    defer table.deinit();
+
+    // Set a value in the table
+    try table.set("test", 42);
+
+    // Push the table onto the stack
+    lua.push(table);
+    try expectEq(lua.top(), 1);
+    try expect(lua.state.isTable(-1));
+
+    // Verify we can access the table value through the pushed table
+    lua.push("test");
+    _ = lua.state.getTable(-2);
+    try expectEq(lua.pop(i32), 42);
+
+    lua.state.pop(1); // Pop the table
     try expectEq(lua.top(), 0);
 }
