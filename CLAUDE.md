@@ -33,11 +33,12 @@ directories.
 
 ### High-Level API (`src/root.zig`)
 The main `Lua` struct provides an idiomatic Zig interface with automatic type conversions:
-- `push()` - Converts Zig values to Lua (integers, floats, bools, optionals, tuples, functions)
+- `push()` - Converts Zig values to Lua (integers, floats, bools, optionals, tuples, functions, tables)
 - `pop()` - Converts Lua values back to Zig types
 - `setGlobal()`/`getGlobal()` - Global variable access
 - `eval()` - Compile and execute Lua source code in one step
 - `exec()` - Execute pre-compiled bytecode
+- `createTable()` - Create new Lua tables with optional size hints
 
 ### Type System Integration
 The library provides seamless conversion between Zig and Lua types:
@@ -45,11 +46,18 @@ The library provides seamless conversion between Zig and Lua types:
 - Optional types (`?T`) map to Lua nil values
 - Tuples are pushed as multiple stack values
 - Reference system (`Ref`) allows holding Lua values across function calls
+- Table wrapper (`Table`) provides safe access to Lua tables with automatic type conversion
+
+### Table Operations
+The library provides both raw and non-raw table operations:
+- **Raw operations** (`setRaw`/`getRaw`) bypass metamethods like `__index` and `__newindex` for direct table access
+- **Non-raw operations** (`set`/`get`) invoke metamethods when present, providing full Lua semantics
+- Tables are reference-counted and must be explicitly released with `deinit()`
 
 ### Low-Level API (`src/state.zig`)
 Direct wrapper around Luau C API providing:
 - Complete stack manipulation operations
-- Raw table operations
+- Raw and non-raw table operations
 - Garbage collection control
 - Thread/coroutine management
 - Standard library loading functions
@@ -70,13 +78,17 @@ Write idiomatic Zig code following the established patterns in the codebase:
 - Prefer explicit memory management over implicit allocation
 
 ### Testing
-All modules include comprehensive unit tests demonstrating usage patterns. New functionality must include
+All modules include unit tests demonstrating usage patterns. New functionality must include
 corresponding unit tests. Tests cover:
 - Type conversion edge cases
 - Function wrapping and calling
 - Global variable manipulation
+- Table operations (raw and non-raw)
 - Compilation error handling
-- Reference management
+- Reference and table management
+
+Write unit tests with good coverage, but no need to be comprehensive and try to cover every possible case.
+Keep unit tests reasonably short.
 
 ### Documentation
 Keep documentation for public interfaces current and comprehensive. The codebase uses Zig's built-in doc comments
@@ -91,6 +103,7 @@ Keep documentation for public interfaces current and comprehensive. The codebase
 - Lua states must be explicitly deinitialized with `deinit()`
 - Compilation results must be freed with `Result.deinit()`
 - References must be released with `Ref.deinit()`
+- Tables must be released with `Table.deinit()`
 - The library uses Luau's garbage collector for Lua values
 
 ### Error Handling

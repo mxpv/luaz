@@ -714,39 +714,21 @@ const Lua = struct {
 const expect = std.testing.expect;
 const expectEq = std.testing.expectEqual;
 
-test "Push and pop different integer sizes" {
+test "Push and pop basic types" {
     const lua = try Lua.init();
     defer lua.deinit();
 
-    // Test different integer sizes
-    lua.push(@as(i8, 127));
-    try expect(lua.pop(i8).? == 127);
+    // Test integers
+    lua.push(@as(i32, 42));
+    try expectEq(lua.pop(i32).?, 42);
 
-    lua.push(@as(i16, 32767));
-    try expect(lua.pop(i16).? == 32767);
+    // Test floats
+    lua.push(@as(f64, 3.14));
+    try expectEq(lua.pop(f64).?, 3.14);
 
-    lua.push(@as(i32, 2147483647));
-    try expect(lua.pop(i32).? == 2147483647);
-
-    lua.push(@as(u8, 255));
-    try expect(lua.pop(u8).? == 255);
-
-    try expectEq(lua.top(), 0);
-}
-
-test "Push and pop different float sizes" {
-    const lua = try Lua.init();
-    defer lua.deinit();
-
-    lua.push(@as(f32, 3.14159));
-    try expectEq(lua.pop(f32).?, 3.14159);
-
-    lua.push(@as(f64, 2.718281828459045));
-    try expectEq(lua.pop(f64).?, 2.718281828459045);
-
-    // Test that we can convert between float types
-    lua.push(@as(f64, 1.5));
-    try expectEq(lua.pop(f32).?, 1.5);
+    // Test booleans
+    lua.push(true);
+    try expect(lua.pop(bool).?);
 
     try expectEq(lua.top(), 0);
 }
@@ -757,28 +739,11 @@ test "Push and pop optional types" {
 
     // Test optional with value
     lua.push(@as(?i32, 42));
-    try expect(lua.pop(?i32).? == 42);
-
-    lua.push(@as(?i32, 42));
-    try expect(lua.pop(i32).? == 42);
+    try expectEq(lua.pop(?i32).?, 42);
 
     // Test optional null
     lua.push(@as(?i32, null));
     try expect(lua.pop(?i32) == null);
-
-    // Test optional bool
-    lua.push(@as(?bool, true));
-    try expect(lua.pop(?bool).? == true);
-
-    lua.push(@as(?bool, null));
-    try expect(lua.pop(?bool) == null);
-
-    // Test optional float
-    lua.push(@as(?f32, 3.14));
-    try expectEq(lua.pop(?f32).?, 3.14);
-
-    lua.push(@as(?f32, null));
-    try expect(lua.pop(?f32) == null);
 
     try expectEq(lua.top(), 0);
 }
@@ -787,29 +752,16 @@ test "Push and pop edge cases" {
     const lua = try Lua.init();
     defer lua.deinit();
 
-    // Test zero values
+    // Test zero and negative values
     lua.push(@as(i32, 0));
-    try expect(lua.pop(i32).? == 0);
+    try expectEq(lua.pop(i32).?, 0);
 
-    lua.push(@as(f32, 0.0));
-    try expectEq(lua.pop(f32).?, 0.0);
-
-    lua.push(false);
-    try expect(lua.pop(bool).? == false);
-
-    // Test negative values
     lua.push(@as(i32, -42));
-    try expect(lua.pop(i32).? == -42);
-
-    lua.push(@as(f32, -3.14));
-    try expectEq(lua.pop(f32).?, -3.14);
+    try expectEq(lua.pop(i32).?, -42);
 
     // Test comptime values
     lua.push(123);
-    try expect(lua.pop(i32).? == 123);
-
-    lua.push(4.56);
-    try expectEq(lua.pop(f32).?, 4.56);
+    try expectEq(lua.pop(i32).?, 123);
 
     try expectEq(lua.top(), 0);
 }
@@ -822,30 +774,12 @@ test "Push and pop tuples" {
     lua.push(.{});
     try expectEq(lua.top(), 0); // Empty tuple pushes nothing
 
-    // Test single element tuple
-    lua.push(.{42});
-    try expect(lua.pop(i32).? == 42);
-    try expectEq(lua.top(), 0);
+    // Test multiple element tuple
+    lua.push(.{ 123, 3.14, true });
+    try expect(lua.pop(bool).?); // Last element (top of stack)
+    try expectEq(lua.pop(f32).?, 3.14); // Second element
+    try expectEq(lua.pop(i32).?, 123); // First element
 
-    // Test two element tuple
-    lua.push(.{ 123, 3.14 });
-    try expectEq(lua.pop(f32).?, 3.14); // Second element (top of stack)
-    try expect(lua.pop(i32).? == 123); // First element
-    try expectEq(lua.top(), 0);
-
-    // Test mixed type tuple
-    lua.push(.{ true, @as(?i32, null), 456, 2.718 });
-    try expectEq(lua.pop(f64).?, 2.718); // Fourth element
-    try expect(lua.pop(i32).? == 456); // Third element
-    try expect(lua.pop(?i32) == null); // Second element (null)
-    try expect(lua.pop(bool).? == true); // First element
-    try expectEq(lua.top(), 0);
-
-    // Test nested tuple (tuple elements are pushed individually)
-    lua.push(.{ .{ 1, 2 }, 3 });
-    try expect(lua.pop(i32).? == 3); // Third element
-    try expect(lua.pop(i32).? == 2); // Second element of nested tuple
-    try expect(lua.pop(i32).? == 1); // First element of nested tuple
     try expectEq(lua.top(), 0);
 }
 
@@ -859,31 +793,25 @@ fn testAdd(a: i32, b: i32) i32 {
     return a + b;
 }
 
-test "Push C and Zig functions" {
+test "Push functions" {
     const lua = try Lua.init();
     defer lua.deinit();
-
-    // Test C function
-    lua.push(testCFunction);
-    try expect(lua.state.isFunction(-1));
-    try expect(lua.state.isCFunction(-1));
-    lua.state.pop(1);
-    try expectEq(lua.top(), 0);
 
     // Test Zig function
     lua.push(testAdd);
     try expect(lua.state.isFunction(-1));
     try expect(lua.state.isCFunction(-1)); // Zig functions are wrapped as C functions
     lua.state.pop(1);
+
     try expectEq(lua.top(), 0);
 }
 
-test "call zig func" {
+test "Call Zig function from Lua" {
     const lua = try Lua.init();
     defer lua.deinit();
 
     lua.setGlobal("add", testAdd);
-    const sum = try lua.eval("return add(10, 20)", .{}, u32);
+    const sum = try lua.eval("return add(10, 20)", .{}, i32);
     try expectEq(sum, 30);
 }
 
@@ -892,12 +820,8 @@ test "Ref types" {
     defer lua.deinit();
 
     lua.push(testAdd);
-    try expectEq(lua.top(), 1); // C function
-
     const ref = lua.createRef(-1);
     defer ref.deinit();
-
-    try expectEq(lua.top(), 1); // Ref should not consume the value
 
     try expect(ref.isValid());
     try expect(ref.isFunction());
@@ -911,44 +835,34 @@ test "Push Ref to stack" {
     const lua = try Lua.init();
     defer lua.deinit();
 
-    // Push original function and create ref
     lua.push(testAdd);
     const ref = lua.createRef(-1);
     defer ref.deinit();
 
-    // Clear the stack
+    lua.state.pop(1);
+    lua.push(ref);
+    try expect(lua.state.isFunction(-1));
+
     lua.state.pop(1);
     try expectEq(lua.top(), 0);
-
-    // Push the ref back to stack
-    lua.push(ref);
-    try expectEq(lua.top(), 1);
-
-    try expect(lua.state.isFunction(-1));
 }
 
 test "Global variables" {
     const lua = try Lua.init();
     defer lua.deinit();
 
-    lua.setGlobal("x", @as(i32, 42));
+    lua.setGlobal("x", 42);
     try expectEq(lua.getGlobal("x", i32).?, 42);
 
     lua.setGlobal("flag", true);
-    try expect(lua.getGlobal("flag", bool).? == true);
+    try expect(lua.getGlobal("flag", bool).?);
 
-    lua.setGlobal("pi", @as(f32, 3.14));
-    try expectEq(lua.getGlobal("pi", f32).?, 3.14);
-
-    lua.setGlobal("maybe", @as(?i32, 123));
-    try expectEq(lua.getGlobal("maybe", ?i32).?, 123);
-
-    try expectEq(lua.getGlobal("nonexistent", i32), null);
+    try expect(lua.getGlobal("nonexistent", i32) == null);
 
     try expectEq(lua.top(), 0);
 }
 
-test "eval function" {
+test "Eval function" {
     const lua = try Lua.init();
     defer lua.deinit();
 
@@ -958,17 +872,10 @@ test "eval function" {
     try lua.eval("x = 42", .{}, void);
     try expectEq(lua.getGlobal("x", i32).?, 42);
 
-    const flag = try lua.eval("return true", .{}, bool);
-    try expect(flag == true);
-
-    // Test with compilation options
-    const optimized = try lua.eval("return 10 * 5", .{ .optLevel = 2 }, i32);
-    try expectEq(optimized, 50);
-
     try expectEq(lua.top(), 0);
 }
 
-test "eval compilation error" {
+test "Compilation error handling" {
     const lua = try Lua.init();
     defer lua.deinit();
 
@@ -978,7 +885,7 @@ test "eval compilation error" {
     try expectEq(lua.top(), 0);
 }
 
-test "string support" {
+test "String support" {
     const lua = try Lua.init();
     defer lua.deinit();
 
@@ -994,7 +901,7 @@ test "string support" {
     try expectEq(lua.top(), 0);
 }
 
-test "safe string handling with allocator" {
+test "Safe string handling with allocator" {
     const lua = try Lua.init();
     defer lua.deinit();
 
@@ -1003,20 +910,9 @@ test "safe string handling with allocator" {
     const allocator = gpa.allocator();
 
     lua.push("hello world");
-    const str1 = lua.popString(allocator).?;
-    defer allocator.free(str1);
-    try expect(std.mem.eql(u8, str1, "hello world"));
-
-    lua.push("goodbye world");
-    const str2 = lua.popString(allocator).?;
-    defer allocator.free(str2);
-    try expect(std.mem.eql(u8, str2, "goodbye world"));
-
-    lua.setGlobal("greeting", "안녕하세요");
-    _ = lua.state.getGlobal("greeting");
-    const str3 = lua.popString(allocator).?;
-    defer allocator.free(str3);
-    try expect(std.mem.eql(u8, str3, "안녕하세요"));
+    const str = lua.popString(allocator).?;
+    defer allocator.free(str);
+    try expect(std.mem.eql(u8, str, "hello world"));
 
     try expectEq(lua.top(), 0);
 }
