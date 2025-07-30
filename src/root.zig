@@ -68,6 +68,48 @@ const Lua = struct {
         };
     }
 
+    /// Sets a global variable in the Lua environment.
+    ///
+    /// Pushes the value onto the stack and assigns it to the specified global variable name.
+    /// The value is automatically converted using the same rules as the `push` function.
+    ///
+    /// Examples:
+    /// ```zig
+    /// lua.setGlobal("x", 42);           // Set global x = 42
+    /// lua.setGlobal("name", "hello");   // Set global name = "hello"
+    /// lua.setGlobal("flag", true);      // Set global flag = true
+    /// lua.setGlobal("func", myFunction);// Set global func to a Zig function
+    /// ```
+    pub fn setGlobal(self: Self, key: [:0]const u8, value: anytype) void {
+        self.push(value);
+        self.state.setField(State.GLOBALSINDEX, key);
+    }
+
+    /// Gets a global variable from the Lua environment and converts it to the specified Zig type.
+    ///
+    /// Retrieves the global variable and attempts to convert it to type `T` using the same
+    /// conversion rules as the `pop` function. Supports the same type conversions as `pop`:
+    /// - Lua boolean → `bool`
+    /// - Lua number/integer → Integer types (`i8`, `i32`, `i64`, etc.)
+    /// - Lua number → Float types (`f32`, `f64`)
+    /// - Lua nil → Optional types (`?T`) as `null`
+    /// - Any valid value → Optional types (`?T`) as wrapped value
+    ///
+    /// Returns `null` if the global doesn't exist or cannot be converted to the requested type.
+    ///
+    /// Examples:
+    /// ```zig
+    /// const x = lua.getGlobal("x", i32);        // Get global x as i32
+    /// const name = lua.getGlobal("name", []u8); // Get global name as string
+    /// const flag = lua.getGlobal("flag", bool); // Get global flag as bool
+    /// ```
+    ///
+    /// Returns: `?T` - The converted value, or `null` if not found or conversion failed
+    pub fn getGlobal(self: Self, key: [:0]const u8, comptime T: type) ?T {
+        _ = self.state.getField(State.GLOBALSINDEX, key);
+        return self.pop(T);
+    }
+
     /// Pushes a Zig value onto the Lua stack.
     ///
     /// Automatically converts Zig types to their Lua equivalents:
@@ -488,4 +530,25 @@ test "Push Ref to stack" {
     try expectEq(lua.top(), 1);
 
     try expect(lua.state.isFunction(-1));
+}
+
+test "Global variables" {
+    const lua = try Lua.init();
+    defer lua.deinit();
+
+    lua.setGlobal("x", @as(i32, 42));
+    try expectEq(lua.getGlobal("x", i32).?, 42);
+
+    lua.setGlobal("flag", true);
+    try expect(lua.getGlobal("flag", bool).? == true);
+
+    lua.setGlobal("pi", @as(f32, 3.14));
+    try expectEq(lua.getGlobal("pi", f32).?, 3.14);
+
+    lua.setGlobal("maybe", @as(?i32, 123));
+    try expectEq(lua.getGlobal("maybe", ?i32).?, 123);
+
+    try expectEq(lua.getGlobal("nonexistent", i32), null);
+
+    try expectEq(lua.top(), 0);
 }
