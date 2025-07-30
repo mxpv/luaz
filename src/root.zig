@@ -144,7 +144,7 @@ const Lua = struct {
         ///
         /// Both keys and values support automatic type conversion:
         /// - Keys: Integers, floats, booleans, strings, optionals, functions, references
-        /// - Values: All types supported by the type system (integers, floats, booleans, 
+        /// - Values: All types supported by the type system (integers, floats, booleans,
         ///   strings, optionals, tuples, vectors, functions, references, tables)
         ///
         /// Examples:
@@ -217,7 +217,7 @@ const Lua = struct {
         ///
         /// // Different key types
         /// const by_string = try table.get("key", i32);     // String key
-        /// const by_number = try table.get(42, i32);        // Integer key  
+        /// const by_number = try table.get(42, i32);        // Integer key
         /// const by_float = try table.get(3.14, i32);       // Float key
         /// const by_bool = try table.get(true, i32);        // Boolean key
         ///
@@ -283,7 +283,7 @@ const Lua = struct {
 
     /// Sets a global variable in the Lua environment.
     ///
-    /// Automatically converts Zig values to their Lua equivalents and assigns them to the 
+    /// Automatically converts Zig values to their Lua equivalents and assigns them to the
     /// specified global variable name. Supports all the same type conversions as the internal
     /// type system:
     ///
@@ -349,7 +349,7 @@ const Lua = struct {
     /// ```zig
     /// // Basic type retrieval
     /// const x = lua.getGlobal("x", i32);         // Get integer global
-    /// const pi = lua.getGlobal("pi", f64);       // Get float global  
+    /// const pi = lua.getGlobal("pi", f64);       // Get float global
     /// const flag = lua.getGlobal("flag", bool);  // Get boolean global
     ///
     /// // Optional types (handle missing or nil values)
@@ -434,16 +434,16 @@ const Lua = struct {
                 if (vector_info.child != f32) {
                     @compileError("Luau vectors only support f32 elements, got " ++ @typeName(vector_info.child));
                 }
-                
+
                 // Only support vectors of LUA_VECTOR_SIZE
                 if (vector_info.len != State.VECTOR_SIZE) {
-                    @compileError("Luau configured for " ++ 
-                        std.fmt.comptimePrint("{d}", .{State.VECTOR_SIZE}) ++ 
-                        "-component vectors, but got " ++ 
-                        std.fmt.comptimePrint("{d}", .{vector_info.len}) ++ 
+                    @compileError("Luau configured for " ++
+                        std.fmt.comptimePrint("{d}", .{State.VECTOR_SIZE}) ++
+                        "-component vectors, but got " ++
+                        std.fmt.comptimePrint("{d}", .{vector_info.len}) ++
                         "-component vector");
                 }
-                
+
                 // Convert Zig vector to array for pushVector
                 const vec_array: [State.VECTOR_SIZE]f32 = @bitCast(value);
                 self.state.pushVector(vec_array);
@@ -595,18 +595,18 @@ const Lua = struct {
                 if (vector_info.child != f32) {
                     @compileError("Luau vectors only support f32 elements, got " ++ @typeName(vector_info.child));
                 }
-                
+
                 // Only support vectors of LUA_VECTOR_SIZE
                 if (vector_info.len != State.VECTOR_SIZE) {
-                    @compileError("Luau configured for " ++ 
-                        std.fmt.comptimePrint("{d}", .{State.VECTOR_SIZE}) ++ 
-                        "-component vectors, but got " ++ 
-                        std.fmt.comptimePrint("{d}", .{vector_info.len}) ++ 
+                    @compileError("Luau configured for " ++
+                        std.fmt.comptimePrint("{d}", .{State.VECTOR_SIZE}) ++
+                        "-component vectors, but got " ++
+                        std.fmt.comptimePrint("{d}", .{vector_info.len}) ++
                         "-component vector");
                 }
-                
+
                 const lua_vec = self.state.checkVector(index);
-                
+
                 if (State.VECTOR_SIZE == 4) {
                     return @Vector(4, f32){ lua_vec[0], lua_vec[1], lua_vec[2], lua_vec[3] };
                 } else {
@@ -652,22 +652,22 @@ const Lua = struct {
                 if (vector_info.child != f32) {
                     @compileError("Luau vectors only support f32 elements, got " ++ @typeName(vector_info.child));
                 }
-                
+
                 // Only support vectors of LUA_VECTOR_SIZE
                 if (vector_info.len != State.VECTOR_SIZE) {
-                    @compileError("Luau configured for " ++ 
-                        std.fmt.comptimePrint("{d}", .{State.VECTOR_SIZE}) ++ 
-                        "-component vectors, but got " ++ 
-                        std.fmt.comptimePrint("{d}", .{vector_info.len}) ++ 
+                    @compileError("Luau configured for " ++
+                        std.fmt.comptimePrint("{d}", .{State.VECTOR_SIZE}) ++
+                        "-component vectors, but got " ++
+                        std.fmt.comptimePrint("{d}", .{vector_info.len}) ++
                         "-component vector");
                 }
-                
+
                 if (!self.state.isVector(index)) {
                     return null;
                 }
-                
+
                 const lua_vec = self.state.toVector(index) orelse return null;
-                
+
                 if (State.VECTOR_SIZE == 4) {
                     return @Vector(4, f32){ lua_vec[0], lua_vec[1], lua_vec[2], lua_vec[3] };
                 } else {
@@ -857,17 +857,17 @@ test "Push and pop tuples" {
     lua.push(.{ 123, 3.14, true });
     try expectEq(lua.top(), 1); // Tuple creates one table
     try expect(lua.state.isTable(-1));
-    
+
     // Verify elements are accessible by index (1-based)
     _ = lua.state.rawGetI(-1, 1);
     try expectEq(lua.pop(i32).?, 123); // First element at index 1
-    
+
     _ = lua.state.rawGetI(-1, 2);
     try expectEq(lua.pop(f32).?, 3.14); // Second element at index 2
-    
+
     _ = lua.state.rawGetI(-1, 3);
     try expect(lua.pop(bool).?); // Third element at index 3
-    
+
     lua.state.pop(1); // Pop the table
     try expectEq(lua.top(), 0);
 }
@@ -879,12 +879,12 @@ test "Tuple as indexed table accessibility from Lua" {
     // Push a tuple and make it available as global
     lua.push(.{ 42, 3.14, "hello", true });
     lua.state.setGlobal("tupleTable");
-    
+
     // Access elements from Lua using 1-based indexing
     try expectEq(try lua.eval("return tupleTable[1]", .{}, i32), 42);
     try expectEq(try lua.eval("return tupleTable[2]", .{}, f32), 3.14);
     try expect(try lua.eval("return tupleTable[4]", .{}, bool));
-    
+
     // Verify tuple table length
     try expectEq(try lua.eval("return #tupleTable", .{}, i32), 4);
 }
@@ -930,10 +930,10 @@ test "Call Zig function returning tuple from Lua" {
     defer lua.deinit();
 
     lua.setGlobal("tupleFunc", testTupleReturn);
-    
+
     // Function returns a tuple as a table (array)
     try lua.eval("result = tupleFunc(15, 3.5)", .{}, void);
-    
+
     // Verify the returned tuple is a table with indexed elements
     try expectEq(try lua.eval("return result[1]", .{}, i32), 30); // 15 * 2
     try expectEq(try lua.eval("return result[2]", .{}, f32), 7.0); // 3.5 * 2.0
