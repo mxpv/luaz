@@ -39,8 +39,14 @@ const Lua = struct {
         ref: c_int,
 
         /// Releases the Lua reference, allowing the referenced value to be garbage collected.
+        ///
+        /// Note: For references obtained from `globals()`, calling `deinit()` is not required
+        /// and will be a no-op since the globals table is a special pseudo-index that doesn't
+        /// need explicit memory management.
         pub fn deinit(self: Ref) void {
-            self.lua.state.unref(self.ref);
+            if (self.ref != State.GLOBALSINDEX) {
+                self.lua.state.unref(self.ref);
+            }
         }
 
         /// Checks if the reference is valid (not nil or invalid).
@@ -281,101 +287,53 @@ const Lua = struct {
         return Table{ .ref = self.createRef(-1) };
     }
 
-    /// Sets a global variable in the Lua environment.
+    /// Returns a table wrapper for the Lua global environment.
     ///
-    /// Automatically converts Zig values to their Lua equivalents and assigns them to the
-    /// specified global variable name. Supports all the same type conversions as the internal
-    /// type system:
+    /// Provides access to the global table (_G) where all global variables are stored.
+    /// This is the primary way to interact with global variables in the Lua environment.
     ///
-    /// - `bool` → Lua boolean
-    /// - Integer types (`i8`, `i32`, `i64`, etc.) → Lua integer
-    /// - Float types (`f32`, `f64`) → Lua number
-    /// - String types (`[]const u8`, `[:0]const u8`, `[*:0]const u8`, `[N:0]u8`) → Lua string
-    /// - `null` → Lua nil
-    /// - Optional types (`?T`) → Recursively converts the wrapped value or nil
-    /// - Tuple types → Lua table with array semantics (1-based indexing)
-    /// - Vector types (`@Vector(N, f32)`) → Luau native vector (N must match LUA_VECTOR_SIZE)
-    /// - Function types → Wrapped as Lua C function with automatic argument conversion
-    /// - `Ref` and `Table` types → Pushes the referenced Lua value
+    /// The returned table supports all standard table operations:
+    /// - `set(key, value)` - Set global variables with full Lua semantics
+    /// - `get(key, T)` - Get global variables with automatic type conversion
+    /// - `setRaw(index, value)` - Set by integer index (bypass metamethods)
+    /// - `getRaw(index, T)` - Get by integer index (bypass metamethods)
+    ///
+    /// Memory management: The globals table reference does not need to be explicitly
+    /// released with `deinit()` as it's a special pseudo-index, but calling `deinit()`
+    /// is safe and will be a no-op.
     ///
     /// Examples:
     /// ```zig
-    /// // Basic types
-    /// lua.setGlobal("x", 42);              // Integer
-    /// lua.setGlobal("pi", 3.14159);        // Float
-    /// lua.setGlobal("flag", true);         // Boolean
-    /// lua.setGlobal("message", "hello");   // String
+    /// const globals = lua.globals();
     ///
-    /// // Optional types
-    /// lua.setGlobal("value", @as(?i32, 5));    // Optional with value
-    /// lua.setGlobal("empty", @as(?i32, null)); // Optional null → nil
+    /// // Set global variables
+    /// try globals.set("x", 42);
+    /// try globals.set("message", "hello");
+    /// try globals.set("coords", .{10, 20, 30});
     ///
-    /// // Tuples (become Lua arrays)
-    /// lua.setGlobal("coords", .{10, 20, 30});  // table[1]=10, table[2]=20, table[3]=30
-    /// lua.setGlobal("empty", .{});             // Empty table
+    /// // Get global variables
+    /// const x = try globals.get("x", i32);           // Returns 42
+    /// const missing = try globals.get("missing", ?i32); // Returns null
     ///
-    /// // Functions
+    /// // Access from Lua code
+    /// try lua.eval("print(x)", .{}, void);           // Prints: 42
+    /// try lua.eval("print(message)", .{}, void);     // Prints: hello
+    ///
+    /// // Functions are also globals
     /// fn add(a: i32, b: i32) i32 { return a + b; }
-    /// lua.setGlobal("add", add);               // Callable from Lua: add(5, 3)
-    ///
-    /// // Vectors (Luau native)
-    /// lua.setGlobal("position", @Vector(3, f32){1.0, 2.0, 3.0});
-    /// ```
-    pub fn setGlobal(self: Self, key: [:0]const u8, value: anytype) void {
-        self.push(value);
-        self.state.setField(State.GLOBALSINDEX, key);
-    }
-
-    /// Gets a global variable from the Lua environment and converts it to the specified Zig type.
-    ///
-    /// Retrieves the global variable and attempts to convert it to type `T` using automatic
-    /// type conversion. Supports conversion from Lua values to Zig types:
-    ///
-    /// - Lua boolean → `bool`
-    /// - Lua number/integer → Integer types (`i8`, `i32`, `i64`, etc.)
-    /// - Lua number → Float types (`f32`, `f64`)
-    /// - Lua vector → Vector types (`@Vector(N, f32)`) where N matches LUA_VECTOR_SIZE
-    /// - Lua nil → Optional types (`?T`) as `null`
-    /// - Any valid value → Optional types (`?T`) as wrapped value
-    ///
-    /// Returns `null` if the global doesn't exist or cannot be converted to the requested type.
-    ///
-    /// Note: String conversion is not supported via `getGlobal` due to Lua's garbage collection.
-    /// The Lua C API returns a direct pointer to string data that may become invalid. For safe
-    /// string handling, access strings through Lua code using `eval()` or work directly with
-    /// the low-level State API if you understand the memory management implications.
-    ///
-    /// Examples:
-    /// ```zig
-    /// // Basic type retrieval
-    /// const x = lua.getGlobal("x", i32);         // Get integer global
-    /// const pi = lua.getGlobal("pi", f64);       // Get float global
-    /// const flag = lua.getGlobal("flag", bool);  // Get boolean global
-    ///
-    /// // Optional types (handle missing or nil values)
-    /// const maybe_value = lua.getGlobal("missing", ?i32);  // Returns null if missing
-    /// const nullable = lua.getGlobal("nil_value", ?i32);   // Returns null if nil in Lua
-    /// const has_value = lua.getGlobal("exists", ?i32);     // Returns wrapped value if exists
-    ///
-    /// // Vector types (Luau native vectors)
-    /// const pos = lua.getGlobal("position", @Vector(3, f32)); // Get 3D vector
-    /// const color = lua.getGlobal("color", @Vector(4, f32));  // Get 4D vector (if configured)
-    ///
-    /// // Type conversion examples
-    /// lua.setGlobal("number", 42);
-    /// const as_int = lua.getGlobal("number", i32);      // 42
-    /// const as_float = lua.getGlobal("number", f64);    // 42.0
-    /// const as_optional = lua.getGlobal("number", ?i32); // 42 (wrapped)
+    /// try globals.set("add", add);
+    /// const sum = try lua.eval("return add(5, 3)", .{}, i32); // Returns 8
     /// ```
     ///
-    /// Returns: `?T` - The converted value, or `null` if not found or conversion failed
-    pub fn getGlobal(self: Self, key: [:0]const u8, comptime T: type) ?T {
-        _ = self.state.getField(State.GLOBALSINDEX, key);
-        return self.pop(T);
+    /// Returns: `Table` - A wrapper around the Lua global environment table
+    pub inline fn globals(self: Self) Table {
+        return Table{
+            .ref = Ref{ .lua = self, .ref = State.GLOBALSINDEX },
+        };
     }
 
     /// Internal function to push a Zig value onto the Lua stack.
-    /// Used internally by setGlobal and other high-level functions.
+    /// Used internally by table operations and other high-level functions.
     fn push(self: Self, value: anytype) void {
         const T = @TypeOf(value);
         const type_info = @typeInfo(T);
@@ -418,8 +376,14 @@ const Lua = struct {
 
                 // Handle Ref and Table types
                 if (T == Ref or T == Table) {
+                    // Push reference to stack
                     if (value.getRef()) |index| {
-                        _ = self.state.rawGetI(State.REGISTRYINDEX, index);
+                        if (index != State.GLOBALSINDEX) {
+                            _ = self.state.rawGetI(State.REGISTRYINDEX, index);
+                        } else {
+                            // Globals table is a special pseudo-index, push it directly
+                            self.state.pushValue(index);
+                        }
                     } else {
                         self.state.pushNil();
                     }
@@ -541,7 +505,7 @@ const Lua = struct {
     }
 
     /// Internal function to pop a value from the Lua stack and convert it to a Zig type.
-    /// Used internally by getGlobal and other high-level functions.
+    /// Used internally by table operations and other high-level functions.
     inline fn pop(self: Self, comptime T: type) ?T {
         if (T == void) {
             return;
@@ -920,7 +884,8 @@ test "Call Zig function from Lua" {
     const lua = try Lua.init();
     defer lua.deinit();
 
-    lua.setGlobal("add", testAdd);
+    const globals = lua.globals();
+    try globals.set("add", testAdd);
     const sum = try lua.eval("return add(10, 20)", .{}, i32);
     try expectEq(sum, 30);
 }
@@ -929,7 +894,8 @@ test "Call Zig function returning tuple from Lua" {
     const lua = try Lua.init();
     defer lua.deinit();
 
-    lua.setGlobal("tupleFunc", testTupleReturn);
+    const globals = lua.globals();
+    try globals.set("tupleFunc", testTupleReturn);
 
     // Function returns a tuple as a table (array)
     try lua.eval("result = tupleFunc(15, 3.5)", .{}, void);
@@ -976,13 +942,15 @@ test "Global variables" {
     const lua = try Lua.init();
     defer lua.deinit();
 
-    lua.setGlobal("x", 42);
-    try expectEq(lua.getGlobal("x", i32).?, 42);
+    const globals = lua.globals();
 
-    lua.setGlobal("flag", true);
-    try expect(lua.getGlobal("flag", bool).?);
+    try globals.set("x", 42);
+    try expectEq(try globals.get("x", i32), 42);
 
-    try expect(lua.getGlobal("nonexistent", i32) == null);
+    try globals.set("flag", true);
+    try expect((try globals.get("flag", bool)).?);
+
+    try expectEq(try globals.get("nonexistent", i32), null);
 
     try expectEq(lua.top(), 0);
 }
@@ -995,7 +963,8 @@ test "Eval function" {
     try expectEq(result, 5);
 
     try lua.eval("x = 42", .{}, void);
-    try expectEq(lua.getGlobal("x", i32).?, 42);
+    const globals = lua.globals();
+    try expectEq(try globals.get("x", i32), 42);
 
     try expectEq(lua.top(), 0);
 }
@@ -1018,7 +987,8 @@ test "String support" {
     try expect(lua.state.isString(-1));
     lua.state.pop(1);
 
-    lua.setGlobal("message", "world");
+    const globals = lua.globals();
+    try globals.set("message", "world");
     _ = lua.state.getGlobal("message");
     try expect(std.mem.eql(u8, lua.state.toString(-1).?, "world"));
     lua.state.pop(1);
@@ -1105,6 +1075,31 @@ test "Push and pop Vector types" {
     try expectEq(popped_vec3[0], 1.0);
     try expectEq(popped_vec3[1], 2.0);
     try expectEq(popped_vec3[2], 3.0);
+
+    try expectEq(lua.top(), 0);
+}
+
+test "Globals table access" {
+    const lua = try Lua.init();
+    defer lua.deinit();
+
+    const globals = lua.globals();
+
+    // Set values through the globals table
+    try globals.set("testValue", 42);
+    try globals.set("testFlag", true);
+
+    // Access the same values through the globals table
+    try expectEq(try globals.get("testValue", i32), 42);
+    try expectEq(try globals.get("testFlag", bool), true);
+
+    // Set more values through the globals table
+    try globals.set("newValue", 123);
+    try globals.set("newFlag", false);
+
+    // Verify through Lua eval
+    try expectEq(try lua.eval("return newValue", .{}, i32), 123);
+    try expectEq(try lua.eval("return newFlag", .{}, bool), false);
 
     try expectEq(lua.top(), 0);
 }
