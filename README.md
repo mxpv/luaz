@@ -4,8 +4,9 @@
 
 # luaz
 
-luaz is a zero-cost wrapper library for Luau. Unlike other libraries, it focuses specifically on Luau, providing
-idiomatic Zig bindings that leverage Luau's unique features and performance characteristics.
+`luaz` is a zero-cost wrapper library for [`Luau`](https://github.com/luau-lang/luau).
+Unlike other libraries, it focuses specifically on Luau, providing idiomatic Zig bindings that leverage Luau's unique
+features and performance characteristics.
 
 The build system provides the `luau-compiler` out of the box, making it easy to compile and embed Luau scripts
 directly into your Zig applications.
