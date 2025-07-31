@@ -3,7 +3,7 @@ const assert = std.debug.assert;
 
 const LazyPath = std.Build.LazyPath;
 
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
@@ -20,13 +20,17 @@ pub fn build(b: *std.Build) void {
         .check_fmt = b.step("check-fmt", "Check formatting"),
         // Luau tools
         .luau_compile = b.step("luau-compile", "Run Luau compiler"),
+        .luau_analysis = b.step("luau-analyze", "Run Luau analyze"),
+        // Luau libs
+        .luau_vm = b.step("luau-vm", "Build Luau VM lib"),
+        .luau_codegen = b.step("luau-codegen", "Build Luau codegen lib"),
     };
 
     // Luau VM lib
     const luau_vm = blk: {
         const mod = b.createModule(.{ .target = target, .optimize = optimize });
 
-        addSrcFiles(b, mod, "luau/VM/src", flags) catch @panic("Failed to add source files");
+        try addSrcFiles(b, mod, "luau/VM/src", flags);
 
         mod.addCMacro("LUA_USE_LONGJMP", "1");
 
@@ -41,6 +45,8 @@ pub fn build(b: *std.Build) void {
 
         b.installArtifact(lib);
 
+        steps.luau_vm.dependOn(&lib.step);
+
         break :blk lib;
     };
 
@@ -48,7 +54,7 @@ pub fn build(b: *std.Build) void {
     const luau_codegen = blk: {
         const mod = b.createModule(.{ .target = target, .optimize = optimize });
 
-        addSrcFiles(b, mod, "luau/CodeGen/src", flags) catch @panic("Failed to add CodeGen source files");
+        try addSrcFiles(b, mod, "luau/CodeGen/src", flags);
 
         mod.addIncludePath(b.path("luau/CodeGen/include"));
         mod.addIncludePath(b.path("luau/Common/include"));
@@ -63,15 +69,17 @@ pub fn build(b: *std.Build) void {
 
         b.installArtifact(lib);
 
+        steps.luau_codegen.dependOn(&lib.step);
+
         break :blk lib;
     };
 
-    // Luau compiler + AST libs
+    // Luau compiler lib
     const luau_compiler = blk: {
         const mod = b.createModule(.{ .target = target, .optimize = optimize });
 
-        addSrcFiles(b, mod, "luau/Compiler/src", flags) catch @panic("Failed to add CodeGen source files");
-        addSrcFiles(b, mod, "luau/Ast/src", flags) catch @panic("");
+        try addSrcFiles(b, mod, "luau/Compiler/src", flags);
+        try addSrcFiles(b, mod, "luau/Ast/src", flags);
 
         mod.addCMacro("LUA_USE_LONGJMP", "1");
 
@@ -103,23 +111,54 @@ pub fn build(b: *std.Build) void {
             .flags = flags,
         });
 
-        exe.addIncludePath(b.path("luau/Common/include"));
-        exe.addIncludePath(b.path("luau/CLI/include"));
-        exe.addIncludePath(b.path("luau/CodeGen/include"));
-        exe.addIncludePath(b.path("luau/Compiler/include"));
-        exe.addIncludePath(b.path("luau/Ast/include"));
+        addLuauIncludes(b, exe.root_module);
 
         exe.linkLibrary(luau_vm);
         exe.linkLibrary(luau_codegen);
         exe.linkLibrary(luau_compiler);
 
-        const run_binary = b.addRunArtifact(exe);
+        const run = b.addRunArtifact(exe);
 
         if (b.args) |args| {
-            run_binary.addArgs(args);
+            run.addArgs(args);
         }
 
-        steps.luau_compile.dependOn(&run_binary.step);
+        steps.luau_compile.dependOn(&run.step);
+    }
+
+    // Luau analyze binary
+    {
+        const exe = b.addExecutable(.{ .name = "luau-analyze", .target = target, .optimize = optimize });
+
+        try addSrcFiles(b, exe.root_module, "luau/Analysis/src", flags);
+        try addSrcFiles(b, exe.root_module, "luau/EqSat/src", flags);
+        try addSrcFiles(b, exe.root_module, "luau/Config/src", flags);
+        try addSrcFiles(b, exe.root_module, "luau/Require/Navigator/src", flags);
+
+        exe.addCSourceFiles(.{
+            .files = &[_][]const u8{
+                // Analyze CLI
+                "luau/CLI/src/Analyze.cpp",
+                "luau/CLI/src/AnalyzeRequirer.cpp",
+                "luau/CLI/src/FileUtils.cpp",
+                "luau/CLI/src/Flags.cpp",
+                "luau/CLI/src/VfsNavigator.cpp",
+            },
+            .flags = flags,
+        });
+
+        addLuauIncludes(b, exe.root_module);
+
+        exe.linkLibCpp();
+        exe.linkLibrary(luau_vm);
+        exe.linkLibrary(luau_compiler);
+
+        const run = b.addRunArtifact(exe);
+        if (b.args) |args| {
+            run.addArgs(args);
+        }
+
+        steps.luau_analysis.dependOn(&run.step);
     }
 
     // Main module
@@ -154,7 +193,7 @@ pub fn build(b: *std.Build) void {
         steps.docs.dependOn(&install_docs.step);
     }
 
-    // Tests
+    // zig build test
     {
         const unit_tests = b.addTest(.{
             .root_module = b.createModule(.{
@@ -209,4 +248,26 @@ fn addSrcFiles(b: *std.Build, mod: *std.Build.Module, path: []const u8, flags: [
         .files = files.items,
         .flags = flags,
     });
+}
+
+fn addLuauIncludes(b: *std.Build, mod: *std.Build.Module) void {
+    mod.addIncludePath(b.path("luau/Common/include"));
+
+    mod.addIncludePath(b.path("luau/VM/include"));
+    mod.addIncludePath(b.path("luau/Runtime/include"));
+
+    mod.addIncludePath(b.path("luau/Analysis/include"));
+    mod.addIncludePath(b.path("luau/Config/include"));
+
+    mod.addIncludePath(b.path("luau/EqSat/include"));
+    mod.addIncludePath(b.path("luau/Navigator/include"));
+
+    mod.addIncludePath(b.path("luau/Ast/include"));
+    mod.addIncludePath(b.path("luau/Compiler/include"));
+    mod.addIncludePath(b.path("luau/CodeGen/include"));
+
+    mod.addIncludePath(b.path("luau/Require/Navigator/include"));
+    mod.addIncludePath(b.path("luau/Require/Runtime/include"));
+
+    mod.addIncludePath(b.path("luau/CLI/include"));
 }
