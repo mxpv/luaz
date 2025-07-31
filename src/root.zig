@@ -584,8 +584,9 @@ const Lua = struct {
         }
     }
 
-    /// Internal function to convert a value at the specified stack index to the given Zig type.
-    /// Used internally by the pop() function.
+    /// Internal function to convert a single Lua value at the specified stack index to a Zig type.
+    /// This function always expects to handle exactly one Lua stack slot and does not handle composite types like tuples.
+    /// For composite types, use higher-level functions that manage multiple stack slots appropriately.
     fn toValue(self: Self, comptime T: type, index: i32) ?T {
         const type_info = @typeInfo(T);
         switch (type_info) {
@@ -664,6 +665,7 @@ const Lua = struct {
     /// - `void` - Executes code that returns nothing
     /// - `i32`, `f64`, `bool`, etc. - Converts the return value to the specified type
     /// - `?T` - Optional types, returns `null` if conversion fails
+    /// - `struct { T1, T2, ... }` - Tuple types for multiple return values
     ///
     /// Examples:
     /// ```zig
@@ -675,6 +677,9 @@ const Lua = struct {
     ///
     /// // Execute bytecode with optional return type
     /// const maybe_result = try lua.exec(bytecode, ?f64);
+    ///
+    /// // Execute bytecode that returns multiple values as a tuple
+    /// const tuple = try lua.exec(bytecode, struct { i32, f64, bool });
     /// ```
     ///
     /// Returns: The result of executing the bytecode, converted to type `T`
@@ -697,11 +702,31 @@ const Lua = struct {
 
         // Execute Lua func
         {
-            const nret = if (T == void) 0 else 1;
+            const type_info = @typeInfo(T);
+            const nret = switch (type_info) {
+                .void => 0,
+                .@"struct" => |info| if (info.is_tuple) @as(i32, @intCast(info.fields.len)) else 1,
+                else => 1,
+            };
 
             self.state.call(0, nret);
 
-            return self.pop(T).?;
+            switch (type_info) {
+                .void => return,
+                .@"struct" => |info| {
+                    if (info.is_tuple) {
+                        var result: T = undefined;
+                        // Pop tuple elements in reverse order (stack is LIFO)
+                        inline for (0..info.fields.len) |i| {
+                            const field_index = info.fields.len - 1 - i;
+                            result[field_index] = self.pop(info.fields[field_index].type).?;
+                        }
+                        return result;
+                    }
+                    return self.pop(T).?;
+                },
+                else => return self.pop(T).?,
+            }
         }
     }
 
@@ -715,6 +740,7 @@ const Lua = struct {
     /// - `void` - Executes code that returns nothing
     /// - `i32`, `f64`, `bool`, etc. - Converts the return value to the specified type
     /// - `?T` - Optional types, returns `null` if conversion fails
+    /// - `struct { T1, T2, ... }` - Tuple types for multiple return values
     ///
     /// Examples:
     /// ```zig
@@ -729,6 +755,9 @@ const Lua = struct {
     ///
     /// // Execute with optional return type
     /// const maybe_result = try lua.eval("return getValue()", .{}, ?i32);
+    ///
+    /// // Execute code that returns multiple values as a tuple
+    /// const tuple = try lua.eval("return 42, 3.14, true", .{}, struct { i32, f64, bool });
     /// ```
     ///
     /// Parameters:
@@ -1023,6 +1052,19 @@ test "Eval function" {
     try lua.eval("x = 42", .{}, void);
     const globals = lua.globals();
     try expectEq(try globals.get("x", i32), 42);
+
+    try expectEq(lua.top(), 0);
+}
+
+test "Eval function with tuple return values" {
+    const lua = try Lua.init();
+    defer lua.deinit();
+
+    // Test eval with tuple return
+    const tuple = try lua.eval("return 10, 2.5, false", .{}, struct { i32, f64, bool });
+    try expectEq(tuple[0], 10);
+    try expectEq(tuple[1], 2.5);
+    try expect(!tuple[2]);
 
     try expectEq(lua.top(), 0);
 }
