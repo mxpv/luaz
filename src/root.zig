@@ -246,6 +246,36 @@ const Lua = struct {
             return self.ref.lua.pop(T);
         }
 
+        /// Calls a function stored in the table.
+        ///
+        /// Retrieves a function from the table using the provided key and calls it with the given arguments.
+        /// The function must exist in the table and be callable, otherwise the call will fail.
+        ///
+        /// Examples:
+        /// ```zig
+        /// // Call a function with no arguments
+        /// const result = try table.call("myFunc", .{}, i32);
+        ///
+        /// // Call a function with multiple arguments
+        /// const result = try table.call("add", .{10, 20}, i32);
+        ///
+        /// // Call a function returning multiple values
+        /// const result = try table.call("getCoords", .{}, struct { f64, f64 });
+        /// ```
+        ///
+        /// Errors: `Error.OutOfMemory` if stack allocation fails
+        pub fn call(self: Table, key: anytype, args: anytype, comptime R: type) !R {
+            try self.ref.lua.checkStack(3);
+
+            self.ref.lua.push(self.ref); // Push table ref
+            self.ref.lua.push(key); // Push key
+            _ = self.ref.lua.state.getTable(-2); // Get function from table, pop key
+
+            defer self.ref.lua.state.pop(-1); // Pop table in the end.
+
+            return self.ref.lua.call(args, R);
+        }
+
         /// Returns the registry reference ID if valid, otherwise null.
         inline fn getRef(self: Table) ?c_int {
             return self.ref.getRef();
@@ -740,34 +770,63 @@ const Lua = struct {
             std.debug.assert(self.state.isFunction(-1));
         }
 
-        // Execute Lua func
-        {
-            const type_info = @typeInfo(T);
-            const nret = switch (type_info) {
-                .void => 0,
-                .@"struct" => |info| if (info.is_tuple) @as(i32, @intCast(info.fields.len)) else 1,
-                else => 1,
-            };
+        return self.call(.{}, T);
+    }
 
-            self.state.call(0, nret);
-
-            switch (type_info) {
-                .void => return,
+    fn call(self: Self, args: anytype, comptime R: type) R {
+        // Count and push args.
+        const argCount = blk: {
+            const args_type_info = @typeInfo(@TypeOf(args));
+            switch (args_type_info) {
+                .void => break :blk 0,
                 .@"struct" => |info| {
                     if (info.is_tuple) {
-                        var result: T = undefined;
-                        // Pop tuple elements in reverse order (stack is LIFO)
-                        inline for (0..info.fields.len) |i| {
-                            const field_index = info.fields.len - 1 - i;
-                            result[field_index] = self.pop(info.fields[field_index].type).?;
+                        // Push tuple elements in order
+                        inline for (args) |arg| {
+                            self.push(arg);
                         }
-                        return result;
+                        break :blk @as(u32, @intCast(info.fields.len));
+                    } else {
+                        self.push(args);
+                        break :blk 1;
                     }
-                    return self.pop(T).?;
                 },
-                else => return self.pop(T).?,
+                else => {
+                    self.push(args);
+                    break :blk 1;
+                },
+            }
+        };
+
+        // Count how many ret args to expect
+        const retCount = blk: {
+            const ret_type_info = @typeInfo(R);
+            switch (ret_type_info) {
+                .void => break :blk 0,
+                .@"struct" => |info| break :blk if (info.is_tuple) @as(i32, @intCast(info.fields.len)) else 1,
+                else => break :blk 1,
+            }
+        };
+
+        self.state.call(argCount, retCount);
+
+        // Fetch ret args
+        const ret_type_info = @typeInfo(R);
+        if (ret_type_info == .void) {
+            return;
+        } else if (ret_type_info == .@"struct") {
+            const info = ret_type_info.@"struct";
+            if (info.is_tuple) {
+                var result: R = undefined;
+                // Pop tuple elements in reverse order (stack is LIFO)
+                inline for (0..info.fields.len) |i| {
+                    const field_index = info.fields.len - 1 - i;
+                    result[field_index] = self.pop(info.fields[field_index].type).?;
+                }
+                return result;
             }
         }
+        return self.pop(R).?;
     }
 
     /// Compiles and executes Luau source code, returning the result.
@@ -1219,6 +1278,21 @@ test "Push Table to stack" {
     try expectEq(lua.pop(i32), 42);
 
     lua.state.pop(1); // Pop the table
+    try expectEq(lua.top(), 0);
+}
+
+test "Table call func" {
+    const lua = try Lua.init();
+    defer lua.deinit();
+
+    _ = try lua.eval(
+        \\function add(a, b) return a + b end
+    , .{}, void);
+
+    const globals = lua.globals();
+
+    const result = try globals.call("add", .{ 10, 20 }, i32);
+    try expectEq(result, 30);
     try expectEq(lua.top(), 0);
 }
 
