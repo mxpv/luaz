@@ -37,6 +37,9 @@ jobs:
 
     - run: zig build test --summary all
 
+    - run: zig build luau-compile -- --help
+    - run: zig build luau-analyze -- --help
+
   format:
     name: Formatting
     timeout-minutes: 30
