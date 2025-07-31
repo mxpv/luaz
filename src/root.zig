@@ -80,9 +80,6 @@ const Lua = struct {
         };
     }
 
-    /// High-level table wrapper providing safe access to Lua tables.
-    ///
-    /// Holds a reference to a Lua table and provides methods for getting and setting
     /// table values with automatic type conversion. Must be explicitly released
     /// using deinit() to avoid memory leaks.
     pub const Table = struct {
@@ -363,6 +360,67 @@ const Lua = struct {
         };
     }
 
+    /// High-level function wrapper providing access to Lua functions.
+    ///
+    /// Holds a reference to a Lua function and provides methods for calling the function
+    /// with automatic type conversion. This is an alternative to using `Table.call("funcName", ...)`
+    /// when you have a direct reference to the function.
+    ///
+    /// The Function reference must be explicitly released using `deinit()` to avoid memory leaks.
+    ///
+    /// Examples:
+    /// ```zig
+    /// // Get function from global namespace
+    /// _ = try lua.eval("function multiply(a, b) return a * b end", .{}, void);
+    /// const globals = lua.globals();
+    /// const func = try globals.get("multiply", Lua.Function);
+    /// defer func.?.deinit(); // Must call deinit to release reference
+    ///
+    /// // Call function with arguments
+    /// const result = try func.?.call(.{6, 7}, i32); // Returns 42
+    ///
+    /// // Alternative to Table.call approach:
+    /// // const result = try globals.call("multiply", .{6, 7}, i32);
+    /// ```
+    pub const Function = struct {
+        ref: Ref,
+
+        pub fn deinit(self: Function) void {
+            self.ref.deinit();
+        }
+
+        /// Calls the function with the provided arguments and returns the result.
+        ///
+        /// Pushes the function onto the stack, followed by the arguments, then calls the function
+        /// and returns the result converted to the specified type.
+        ///
+        /// Examples:
+        /// ```zig
+        /// // Call a function with no arguments
+        /// const result = try func.call(.{}, i32);
+        ///
+        /// // Call a function with multiple arguments
+        /// const result = try func.call(.{10, 20}, i32);
+        ///
+        /// // Call a function returning multiple values
+        /// const result = try func.call(.{}, struct { f64, f64 });
+        /// ```
+        ///
+        /// Errors: `Error.OutOfMemory` if stack allocation fails
+        pub fn call(self: @This(), args: anytype, comptime R: type) !R {
+            try self.ref.lua.checkStack(2);
+
+            self.ref.lua.push(self.ref); // Push function ref
+
+            return self.ref.lua.call(args, R);
+        }
+
+        /// Returns the registry reference ID if valid, otherwise null.
+        inline fn getRef(self: Function) ?c_int {
+            return self.ref.getRef();
+        }
+    };
+
     /// Internal function to push a Zig value onto the Lua stack.
     /// Used internally by table operations and other high-level functions.
     fn push(self: Self, value: anytype) void {
@@ -406,7 +464,7 @@ const Lua = struct {
                 }
 
                 // Handle Ref and Table types
-                if (T == Ref or T == Table) {
+                if (T == Ref or T == Table or T == Function) {
                     // Push reference to stack
                     if (value.getRef()) |index| {
                         if (index != State.GLOBALSINDEX) {
@@ -719,6 +777,27 @@ const Lua = struct {
                     },
                     else => return null,
                 }
+            },
+            .@"struct" => {
+                // Handle reference types: Ref, Table, Function
+                if (T == Ref) {
+                    // Create a reference to any value on the stack
+                    return self.createRef(index);
+                } else if (T == Table) {
+                    // Create a Table reference if the value is a table
+                    if (!self.state.isTable(index)) {
+                        return null;
+                    }
+                    return Table{ .ref = self.createRef(index) };
+                } else if (T == Function) {
+                    // Create a Function reference if the value is a function
+                    if (!self.state.isFunction(index)) {
+                        return null;
+                    }
+                    return Function{ .ref = self.createRef(index) };
+                }
+
+                @compileError("Unsupported struct type " ++ @typeName(T));
             },
             else => {
                 @compileError("Unable to cast type " ++ @typeName(T));
@@ -1365,4 +1444,22 @@ test "string arguments in Zig functions" {
 
     const len = try lua.eval("return strlen('hello')", .{}, i32);
     try expectEq(len, 5);
+}
+
+test "function call from global namespace" {
+    const lua = try Lua.init();
+    defer lua.deinit();
+
+    _ = try lua.eval(
+        \\function sum(a, b) return a + b end
+    , .{}, void);
+
+    const globals = lua.globals();
+    const func = try globals.get("sum", Lua.Function);
+    try expect(func != null);
+    defer func.?.deinit();
+
+    const result = try func.?.call(.{ 15, 25 }, i32);
+    try expectEq(result, 40);
+    try expectEq(lua.top(), 0);
 }
