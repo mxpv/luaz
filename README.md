@@ -8,8 +8,11 @@
 Unlike other libraries, it focuses specifically on Luau, providing idiomatic Zig bindings that leverage Luau's unique
 features and performance characteristics.
 
-The build system provides the `luau-compiler` out of the box, making it easy to compile and embed Luau scripts
-directly into your Zig applications.
+The build system provides prebuilt Luau tools out of the box:
+- `luau-compiler`: Compile Luau source to bytecode
+- `luau-analyzer`: Typecheck and lint Luau code
+
+These tools make it easy to compile, analyze, and embed Luau scripts directly into your Zig applications.
 
 ## ✨ Features
 
@@ -17,8 +20,44 @@ directly into your Zig applications.
 - Zig functions automatically callable from Lua.
 - Native `Vector` type support.
 - Supports Luau code generation for improved performance on supported platforms.
-- Built-in Luau compiler (`luau-compile` tool) provided by the build system.
+- Built-in Luau tools (`luau-compile` and `luau-analyze`) provided by the build system.
 - Excellent test coverage and API documentation.
+
+## 🛠️ Using Luau Tools
+
+The build system provides prebuilt Luau tools that can be invoked directly:
+
+### Analyzer
+```bash
+$ zig build luau-analyze -- --help
+Usage: /Users/.../luaz/.zig-cache/o/.../luau-analyze [--mode] [options] [file list]
+
+Available modes:
+  omitted: typecheck and lint input files
+  --annotate: typecheck input files and output source with type annotations
+
+Available options:
+  --formatter=plain: report analysis errors in Luacheck-compatible format
+  --formatter=gnu: report analysis errors in GNU-compatible format
+  --mode=strict: default to strict mode when typechecking
+  --timetrace: record compiler time tracing information into trace.json
+```
+
+### Compiler
+```bash
+$ zig build luau-compile -- --help
+Usage: /Users/.../luaz/.zig-cache/o/.../luau-compile [--mode] [options] [file list]
+
+Available modes:
+   binary, text, remarks, codegen
+
+Available options:
+  -h, --help: Display this usage message.
+  -O<n>: compile with optimization level n (default 1, n should be between 0 and 2).
+  -g<n>: compile with debug level n (default 1, n should be between 0 and 2).
+  --target=<target>: compile code for specific architecture (a64, x64, a64_nf, x64_ms).
+  ...
+```
 
 ## 🔗 Related Projects
 
