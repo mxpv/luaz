@@ -13,6 +13,15 @@ pub fn build(b: *std.Build) void {
         "-DLUACODE_API=extern\"C\"",
     };
 
+    // All build steps
+    const steps = .{
+        .@"test" = b.step("test", "Run unit tests"),
+        .docs = b.step("docs", "Install docs"),
+        .check_fmt = b.step("check-fmt", "Check formatting"),
+        // Luau tools
+        .luau_compile = b.step("luau-compile", "Run Luau compiler"),
+    };
+
     // Luau VM lib
     const luau_vm = blk: {
         const mod = b.createModule(.{ .target = target, .optimize = optimize });
@@ -110,8 +119,7 @@ pub fn build(b: *std.Build) void {
             run_binary.addArgs(args);
         }
 
-        const step = b.step("luau-compile", "Run Luau compiler");
-        step.dependOn(&run_binary.step);
+        steps.luau_compile.dependOn(&run_binary.step);
     }
 
     // Main module
@@ -143,8 +151,7 @@ pub fn build(b: *std.Build) void {
             .install_subdir = "docs",
         });
 
-        const docs_step = b.step("docs", "Install documentation");
-        docs_step.dependOn(&install_docs.step);
+        steps.docs.dependOn(&install_docs.step);
     }
 
     // Tests
@@ -163,9 +170,14 @@ pub fn build(b: *std.Build) void {
         unit_tests.linkLibCpp();
 
         const run_tests = b.addRunArtifact(unit_tests);
+        steps.@"test".dependOn(&run_tests.step);
+    }
 
-        const test_step = b.step("test", "Run unit tests");
-        test_step.dependOn(&run_tests.step);
+    // zig build check-fmt
+    {
+        const run_fmt = b.addFmt(.{ .check = true, .paths = &.{"."} });
+
+        steps.check_fmt.dependOn(&run_fmt.step);
     }
 }
 
