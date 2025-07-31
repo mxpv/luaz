@@ -33,10 +33,11 @@ directories.
 
 ### High-Level API (`src/root.zig`)
 The main `Lua` struct provides an idiomatic Zig interface with automatic type conversions:
-- `setGlobal()`/`getGlobal()` - Global variable access with automatic type conversion
+- `globals()` - Access to the global environment table for setting/getting global variables
 - `eval()` - Compile and execute Lua source code in one step
 - `exec()` - Execute pre-compiled bytecode
 - `createTable()` - Create new Lua tables with optional size hints
+- `dumpStack()` - Debug utility to inspect the current Lua stack state
 
 ### Type System Integration
 The library provides seamless conversion between Zig and Lua types through its high-level API:
@@ -47,10 +48,12 @@ The library provides seamless conversion between Zig and Lua types through its h
 - Table wrapper (`Table`) provides safe access to Lua tables with automatic type conversion
 
 ### Table Operations
-The library provides both raw and non-raw table operations:
+The library provides comprehensive table operations through the `Table` type:
 - **Raw operations** (`setRaw`/`getRaw`) bypass metamethods like `__index` and `__newindex` for direct table access
 - **Non-raw operations** (`set`/`get`) invoke metamethods when present, providing full Lua semantics
-- Tables are reference-counted and must be explicitly released with `deinit()`
+- **Function calling** (`call`) retrieves and calls functions stored in tables with automatic argument and return type handling
+- Global access via `lua.globals()` returns a `Table` for interacting with the global environment
+- Tables are reference-counted and must be explicitly released with `deinit()` (except globals table)
 
 ### Low-Level API (`src/state.zig`)
 Direct wrapper around Luau C API providing:
@@ -82,6 +85,7 @@ corresponding unit tests. Tests cover:
 - Function wrapping and calling
 - Global variable manipulation
 - Table operations (raw and non-raw)
+- Table function calling with various argument patterns
 - Compilation error handling
 - Reference and table management
 
