@@ -25,17 +25,14 @@ jobs:
       with:
         submodules: recursive
 
-    - uses: actions/cache@v4
+    - uses: ./.github/actions/setup-zig
       with:
-        path: .zig-install
-        key: zig-${{ matrix.zig-version }}-${{ runner.os }}-${{ runner.arch }}
-
-    - run: ./.github/scripts/install-zig.sh ${{ matrix.zig-version }}
+        version: ${{ matrix.zig-version }}
 
     - uses: actions/cache@v4
       with:
         path: .zig-cache
         key: zig-cache-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('build.zig', 'build.zig.zon') }}
 
-    - run: zig build test
+    - run: zig build test --summary all
 
