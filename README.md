@@ -4,6 +4,8 @@
 
 # luaz
 
+[![CI](https://github.com/mxpv/luaz/actions/workflows/ci.yml/badge.svg)](https://github.com/mxpv/luaz/actions/workflows/ci.yml)
+
 `luaz` is a zero-cost wrapper library for [`Luau`](https://github.com/luau-lang/luau).
 Unlike other libraries, it focuses specifically on Luau, providing idiomatic Zig bindings that leverage Luau's unique
 features and performance characteristics.
