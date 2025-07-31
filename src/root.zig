@@ -483,7 +483,7 @@ const Lua = struct {
                         // See https://www.lua.org/pil/26.1.html
                         var args: ArgsTuple(T) = undefined;
                         inline for (std.meta.fields(ArgsTuple(T)), 0..) |field, i| {
-                            args[i] = lua.check(i + 1, field.type);
+                            args[i] = lua.checkArg(i + 1, field.type);
                         }
 
                         // Call Zig func
@@ -536,7 +536,7 @@ const Lua = struct {
 
     /// Internal function to check and convert a value at the specified stack index to the given Zig type.
     /// Used by the trampoline function to validate function arguments.
-    fn check(self: Self, index: i32, comptime T: type) T {
+    fn checkArg(self: Self, index: i32, comptime T: type) T {
         const type_info = @typeInfo(T);
         switch (type_info) {
             .bool => {
@@ -554,19 +554,19 @@ const Lua = struct {
                 return if (self.state.isNil(index))
                     null
                 else
-                    self.check(index, type_info.optional.child);
+                    self.checkArg(index, type_info.optional.child);
             },
-            .vector => |vector_info| {
-                if (vector_info.child != f32) {
-                    @compileError("Luau vectors only support f32 elements, got " ++ @typeName(vector_info.child));
+            .vector => |info| {
+                if (info.child != f32) {
+                    @compileError("Luau vectors only support f32 elements, got " ++ @typeName(info.child));
                 }
 
                 // Only support vectors of LUA_VECTOR_SIZE
-                if (vector_info.len != State.VECTOR_SIZE) {
+                if (info.len != State.VECTOR_SIZE) {
                     @compileError("Luau configured for " ++
                         std.fmt.comptimePrint("{d}", .{State.VECTOR_SIZE}) ++
                         "-component vectors, but got " ++
-                        std.fmt.comptimePrint("{d}", .{vector_info.len}) ++
+                        std.fmt.comptimePrint("{d}", .{info.len}) ++
                         "-component vector");
                 }
 
@@ -578,6 +578,28 @@ const Lua = struct {
                     return @Vector(3, f32){ lua_vec[0], lua_vec[1], lua_vec[2] };
                 }
             },
+            .pointer => |ptr_info| {
+                switch (ptr_info.size) {
+                    .slice => {
+                        // Handle string slices: []const u8, [:0]const u8
+                        if (ptr_info.child == u8) {
+                            const lua_str = self.state.checkString(index);
+
+                            // Return appropriate slice type
+                            if (comptime std.mem.indexOf(u8, @typeName(T), ":0") != null) {
+                                // Zero-terminated slice: [:0]const u8
+                                return lua_str;
+                            } else {
+                                // Regular slice: []const u8
+                                return lua_str[0..lua_str.len];
+                            }
+                        }
+
+                        @compileError("Unable to check type " ++ @typeName(T));
+                    },
+                    else => @compileError("Unable to check type " ++ @typeName(T)),
+                }
+            },
             else => {
                 @compileError("Unable to check type " ++ @typeName(T));
             },
@@ -585,6 +607,7 @@ const Lua = struct {
     }
 
     /// Internal function to convert a single Lua value at the specified stack index to a Zig type.
+    ///
     /// This function always expects to handle exactly one Lua stack slot and does not handle composite types like tuples.
     /// For composite types, use higher-level functions that manage multiple stack slots appropriately.
     fn toValue(self: Self, comptime T: type, index: i32) ?T {
@@ -614,17 +637,17 @@ const Lua = struct {
                 else
                     self.toValue(type_info.optional.child, index);
             },
-            .vector => |vector_info| {
-                if (vector_info.child != f32) {
-                    @compileError("Luau vectors only support f32 elements, got " ++ @typeName(vector_info.child));
+            .vector => |info| {
+                if (info.child != f32) {
+                    @compileError("Luau vectors only support f32 elements, got " ++ @typeName(info.child));
                 }
 
                 // Only support vectors of LUA_VECTOR_SIZE
-                if (vector_info.len != State.VECTOR_SIZE) {
+                if (info.len != State.VECTOR_SIZE) {
                     @compileError("Luau configured for " ++
                         std.fmt.comptimePrint("{d}", .{State.VECTOR_SIZE}) ++
                         "-component vectors, but got " ++
-                        std.fmt.comptimePrint("{d}", .{vector_info.len}) ++
+                        std.fmt.comptimePrint("{d}", .{info.len}) ++
                         "-component vector");
                 }
 
@@ -634,26 +657,43 @@ const Lua = struct {
 
                 const lua_vec = self.state.toVector(index) orelse return null;
 
-                if (State.VECTOR_SIZE == 4) {
-                    return @Vector(4, f32){ lua_vec[0], lua_vec[1], lua_vec[2], lua_vec[3] };
-                } else {
-                    return @Vector(3, f32){ lua_vec[0], lua_vec[1], lua_vec[2] };
+                return if (State.VECTOR_SIZE == 4)
+                    @Vector(4, f32){ lua_vec[0], lua_vec[1], lua_vec[2], lua_vec[3] }
+                else
+                    @Vector(3, f32){ lua_vec[0], lua_vec[1], lua_vec[2] };
+            },
+            .pointer => |ptr_info| {
+                switch (ptr_info.size) {
+                    .slice => {
+                        // Handle string slices: []const u8, [:0]const u8
+                        if (ptr_info.child == u8) {
+                            // Check if the value is actually a string to avoid conversion
+                            // Use getType instead of isString because isString returns true for numbers too
+                            if (self.state.getType(index) != .string) {
+                                return null;
+                            }
+
+                            const lua_str = self.state.toString(index) orelse return null;
+
+                            // Return appropriate slice type
+                            if (comptime std.mem.indexOf(u8, @typeName(T), ":0") != null) {
+                                // Zero-terminated slice: [:0]const u8
+                                return lua_str;
+                            } else {
+                                // Regular slice: []const u8 - convert from [:0]const u8 to []const u8
+                                return lua_str[0..lua_str.len];
+                            }
+                        }
+
+                        return null;
+                    },
+                    else => return null,
                 }
             },
             else => {
                 @compileError("Unable to cast type " ++ @typeName(T));
             },
         }
-    }
-
-    /// Internal function to safely pop a string from the Lua stack and return an owned copy.
-    /// Used internally for string handling in high-level functions.
-    fn popString(self: Self, allocator: std.mem.Allocator) ?[]u8 {
-        const lstr = self.state.toString(-1) orelse return null;
-        const copy = allocator.dupe(u8, lstr) catch null;
-        self.state.pop(1);
-
-        return copy;
     }
 
     /// Executes pre-compiled Luau bytecode and returns the result.
@@ -954,6 +994,10 @@ fn testTupleReturn(a: i32, b: f32) struct { i32, f32, bool } {
     return .{ a * 2, b * 2.0, a > 10 };
 }
 
+fn testStringArg(msg: []const u8) i32 {
+    return @intCast(msg.len);
+}
+
 test "Push functions" {
     const lua = try Lua.init();
     defer lua.deinit();
@@ -1126,22 +1170,6 @@ test "String support" {
     try expectEq(lua.top(), 0);
 }
 
-test "Safe string handling with allocator" {
-    const lua = try Lua.init();
-    defer lua.deinit();
-
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    lua.push("hello world");
-    const str = lua.popString(allocator).?;
-    defer allocator.free(str);
-    try expect(std.mem.eql(u8, str, "hello world"));
-
-    try expectEq(lua.top(), 0);
-}
-
 test "Table basic operations" {
     const lua = try Lua.init();
     defer lua.deinit();
@@ -1232,4 +1260,35 @@ test "Globals table access" {
     try expectEq(try lua.eval("return newFlag", .{}, bool), false);
 
     try expectEq(lua.top(), 0);
+}
+
+test "String toValue" {
+    const lua = try Lua.init();
+    defer lua.deinit();
+
+    // Test string retrieval
+    lua.push("hello world");
+    const str_slice = lua.toValue([]const u8, -1);
+    try expect(str_slice != null);
+    try expect(std.mem.eql(u8, str_slice.?, "hello world"));
+    lua.state.pop(1);
+
+    // Test that numbers don't get converted to strings
+    lua.push(@as(i32, 42));
+    const not_string = lua.toValue([]const u8, -1);
+    try expect(not_string == null);
+    lua.state.pop(1);
+
+    try expectEq(lua.top(), 0);
+}
+
+test "String arguments in Zig functions" {
+    const lua = try Lua.init();
+    defer lua.deinit();
+
+    const globals = lua.globals();
+    try globals.set("strlen", testStringArg);
+
+    const len = try lua.eval("return strlen('hello')", .{}, i32);
+    try expectEq(len, 5);
 }
