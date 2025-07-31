@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Tests
+
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        zig-version: ['0.14.1']
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - uses: actions/cache@v4
+      with:
+        path: .zig-install
+        key: zig-${{ matrix.zig-version }}-${{ runner.os }}-${{ runner.arch }}
+
+    - run: ./.github/scripts/install-zig.sh ${{ matrix.zig-version }}
+
+    - uses: actions/cache@v4
+      with:
+        path: .zig-cache
+        key: zig-cache-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('build.zig', 'build.zig.zon') }}
+
+    - run: zig build test
+
