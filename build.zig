@@ -28,8 +28,9 @@ pub fn build(b: *std.Build) void {
         const lib = b.addLibrary(.{ .name = "luau_vm", .root_module = mod, .linkage = .static });
 
         lib.installHeadersDirectory(b.path("luau/VM/include"), "", .{});
-
         lib.linkLibCpp();
+
+        b.installArtifact(lib);
 
         break :blk lib;
     };
@@ -51,6 +52,8 @@ pub fn build(b: *std.Build) void {
         lib.linkLibCpp();
         lib.linkLibrary(luau_vm);
 
+        b.installArtifact(lib);
+
         break :blk lib;
     };
 
@@ -71,8 +74,9 @@ pub fn build(b: *std.Build) void {
         const lib = b.addLibrary(.{ .name = "luau_compiler", .root_module = mod, .linkage = .static });
 
         lib.installHeader(b.path("luau/Compiler/include/luacode.h"), "luacode.h");
-
         lib.linkLibCpp();
+
+        b.installArtifact(lib);
 
         break :blk lib;
     };
@@ -123,6 +127,24 @@ pub fn build(b: *std.Build) void {
         // TODO: Make these optional
         mod.linkLibrary(luau_codegen);
         mod.linkLibrary(luau_compiler);
+
+        const lib = b.addLibrary(.{
+            .name = "luaz",
+            .root_module = mod,
+            .linkage = .static,
+        });
+
+        b.installArtifact(lib);
+
+        // Docs
+        const install_docs = b.addInstallDirectory(.{
+            .source_dir = lib.getEmittedDocs(),
+            .install_dir = .prefix,
+            .install_subdir = "docs",
+        });
+
+        const docs_step = b.step("docs", "Install documentation");
+        docs_step.dependOn(&install_docs.step);
     }
 
     // Tests
