@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo.png" />
+</p>
+
 # luaz
 
 luaz is a zero-cost wrapper library for Luau. Unlike other libraries, it focuses specifically on Luau, providing
