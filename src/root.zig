@@ -30,6 +30,46 @@ const Lua = struct {
         self.state.deinit();
     }
 
+    /// Enable Luau's JIT code generator for improved function execution performance.
+    ///
+    /// This method checks if code generation is supported on the current platform and
+    /// initializes the code generator if available. Once enabled, functions can be
+    /// compiled to native machine code using `Function.compile()`.
+    ///
+    /// The code generator provides significant performance improvements for
+    /// compute-intensive Lua functions by compiling them to native machine code
+    /// instead of interpreting bytecode.
+    ///
+    /// Returns:
+    /// - `true` if codegen is supported and was successfully enabled
+    /// - `false` if codegen is not supported on this platform
+    ///
+    /// Notes:
+    /// - Should only be called once per Lua state
+    /// - Safe to call multiple times (subsequent calls are no-ops)
+    /// - Must be called before using `Function.compile()`
+    ///
+    /// Example:
+    /// ```zig
+    /// const lua = try Lua.init();
+    /// defer lua.deinit();
+    ///
+    /// if (lua.enable_codegen()) {
+    ///     // Code generation is now available
+    ///     // Functions can be compiled with func.compile()
+    /// } else {
+    ///     // Code generation not supported, functions will use interpreter
+    /// }
+    /// ```
+    pub fn enable_codegen(self: Self) bool {
+        if (State.codegenSupported()) {
+            State.codegenCreate(self.state);
+            return true;
+        }
+
+        return false;
+    }
+
     /// A reference to a Lua value.
     ///
     /// Holds a reference ID that can be used to retrieve the value later.
@@ -413,6 +453,45 @@ const Lua = struct {
             self.ref.lua.push(self.ref); // Push function ref
 
             return self.ref.lua.call(args, R);
+        }
+
+        /// Compile this function using Luau's JIT code generator for improved performance.
+        ///
+        /// This method compiles the function (and any nested functions it contains) to native
+        /// machine code using Luau's code generator. Compiled functions execute significantly
+        /// faster than interpreted bytecode.
+        ///
+        /// Prerequisites:
+        /// - `enable_codegen()` must be called successfully first
+        ///
+        /// Notes:
+        /// - This is a one-time operation - functions remain compiled for their lifetime
+        /// - Compilation happens immediately and synchronously
+        /// - Nested functions within this function are also compiled
+        /// - Has no effect if the function is already compiled
+        ///
+        /// Example:
+        /// ```zig
+        /// // Enable code generator
+        /// if (lua.enable_codegen()) {
+        ///     // Load a function and get reference
+        ///     _ = try lua.eval("function fibonacci(n) return n < 2 and n or fibonacci(n-1) + fibonacci(n-2) end", .{}, void);
+        ///     const globals = lua.globals();
+        ///     const fib = try globals.get("fibonacci", Lua.Function);
+        ///     defer fib.?.deinit();
+        ///
+        ///     // Compile for better performance
+        ///     fib.?.compile();
+        ///
+        ///     // Function calls now use compiled native code
+        ///     const result = try fib.?.call(.{10}, i32);
+        /// }
+        /// ```
+        pub fn compile(self: @This()) void {
+            self.ref.lua.push(self.ref); // Push function ref
+            defer self.ref.lua.state.pop(1); // Remove from stack
+
+            self.ref.lua.state.codegenCompile(-1);
         }
 
         /// Returns the registry reference ID if valid, otherwise null.
@@ -1462,4 +1541,27 @@ test "function call from global namespace" {
     const result = try func.?.call(.{ 15, 25 }, i32);
     try expectEq(result, 40);
     try expectEq(lua.top(), 0);
+}
+
+test "function compile" {
+    const lua = try Lua.init();
+    defer lua.deinit();
+
+    // Enable code generator if supported
+    if (lua.enable_codegen()) {
+        // Load a simple function
+        _ = try lua.eval("function multiply(a, b) return a * b end", .{}, void);
+        const globals = lua.globals();
+        const func = try globals.get("multiply", Lua.Function);
+        try expect(func != null);
+        defer func.?.deinit();
+
+        // Compile for better performance
+        func.?.compile();
+
+        // Function calls now use compiled native code
+        const result = try func.?.call(.{ 6, 7 }, i32);
+        try expectEq(result, 42);
+        try expectEq(lua.top(), 0);
+    }
 }

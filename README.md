@@ -8,9 +8,10 @@ directly into your Zig applications.
 
 ## ✨ Features
 
-- Zero-cost ergonomic Lua API with automatic type conversions.
-- Native Vector type support.
-- Zig functions automatically callable from Lua with type checking.
+- Minimal yet flexible zero-cost API.
+- Zig functions automatically callable from Lua.
+- Native `Vector` type support.
+- Supports Luau code generation for improved performance on supported platforms.
 - Built-in Luau compiler (`luau-compile` tool) provided by the build system.
 - Excellent test coverage and API documentation.
 

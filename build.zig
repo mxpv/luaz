@@ -46,6 +46,8 @@ pub fn build(b: *std.Build) void {
 
         const lib = b.addLibrary(.{ .name = "luau_codegen", .root_module = mod, .linkage = .static });
 
+        lib.installHeader(b.path("luau/CodeGen/include/luacodegen.h"), "luacodegen.h");
+
         lib.linkLibCpp();
         lib.linkLibrary(luau_vm);
 
@@ -134,6 +136,7 @@ pub fn build(b: *std.Build) void {
         });
 
         unit_tests.linkLibrary(luau_vm);
+        unit_tests.linkLibrary(luau_codegen);
         unit_tests.linkLibrary(luau_compiler);
         unit_tests.linkLibCpp();
 

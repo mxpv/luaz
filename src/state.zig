@@ -3,6 +3,7 @@ const assert = std.debug.assert;
 const c = @cImport({
     @cInclude("lua.h");
     @cInclude("lualib.h");
+    @cInclude("luacodegen.h");
 });
 
 /// Get the current Lua VM clock time
@@ -1284,6 +1285,24 @@ pub const State = struct {
     pub inline fn argExpected(self: State, cond: bool, arg: i32, tname: [:0]const u8) void {
         if (!cond) c.luaL_typeerrorL(self.lua, arg, tname.ptr);
     }
+
+    // Code Generation
+
+    /// Check if Luau code generator is supported
+    pub inline fn codegenSupported() bool {
+        return c.luau_codegen_supported() != 0;
+    }
+
+    /// Create an instance of Luau code generator.
+    /// You must check that this feature is supported using codegenSupported() first.
+    pub inline fn codegenCreate(self: State) void {
+        c.luau_codegen_create(self.lua);
+    }
+
+    /// Build target function and all inner functions at the given index
+    pub inline fn codegenCompile(self: State, idx: i32) void {
+        c.luau_codegen_compile(self.lua, idx);
+    }
 };
 
 const expect = std.testing.expect;
@@ -1306,4 +1325,10 @@ test "basic stack operations" {
 
     state.setTop(0);
     try expect(state.getTop() == 0);
+}
+
+test "codegen supported check" {
+    const supported = State.codegenSupported();
+    // Just verify the function can be called - support depends on build configuration
+    _ = supported;
 }
