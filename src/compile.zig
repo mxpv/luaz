@@ -32,27 +32,27 @@ pub const Compiler = struct {
         /// 0 - no optimization
         /// 1 - baseline optimization level that doesn't prevent debuggability
         /// 2 - includes optimizations that harm debuggability such as inlining
-        optLevel: u8 = 1,
+        opt_level: u8 = 1,
 
         /// Debug level.
         ///
         /// 0 - no debugging support
         /// 1 - line info & function names only; sufficient for backtraces
         /// 2 - full debug info with local & upvalue names; necessary for debugger
-        dbgLevel: u8 = 1,
+        dbg_level: u8 = 1,
 
         /// Type information is used to guide native code generation decisions
         /// information includes testable types for function arguments, locals, upvalues and some temporaries
         /// 0 - generate for native modules
         /// 1 - generate for all modules
-        typeInfoLevel: u8 = 0,
+        type_info_level: u8 = 0,
 
         /// Coverage support level.
         ///
         /// 0 - no code coverage support
         /// 1 - statement coverage
         /// 2 - statement and expression coverage (verbose)
-        coverageLevel: u8 = 0,
+        coverage_level: u8 = 0,
     };
 
     /// Compiles Lua source code to bytecode using the Luau compiler.
@@ -60,10 +60,10 @@ pub const Compiler = struct {
     /// In both cases, memory must be freed using Result.deinit().
     pub fn compile(source: []const u8, opts: Opts) !Result {
         var options = c.lua_CompileOptions{
-            .optimizationLevel = opts.optLevel,
-            .debugLevel = opts.dbgLevel,
-            .typeInfoLevel = opts.typeInfoLevel,
-            .coverageLevel = opts.coverageLevel,
+            .optimizationLevel = opts.opt_level,
+            .debugLevel = opts.dbg_level,
+            .typeInfoLevel = opts.type_info_level,
+            .coverageLevel = opts.coverage_level,
         };
 
         var sz: usize = 0;
@@ -87,8 +87,8 @@ pub const Compiler = struct {
     }
 };
 
-test "Compile Luau code" {
-    const result = try Compiler.compile("return 1 + 1", .{ .optLevel = 2 });
+test "compile Luau code" {
+    const result = try Compiler.compile("return 1 + 1", .{ .opt_level = 2 });
     defer result.deinit();
 
     try std.testing.expect(result == .ok);
@@ -97,7 +97,7 @@ test "Compile Luau code" {
     try std.testing.expect(bytecode.len > 0);
 }
 
-test "Compile error" {
+test "compile error" {
     const result = try Compiler.compile("return 1 + '", .{});
     defer result.deinit();
 

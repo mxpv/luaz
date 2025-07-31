@@ -775,7 +775,7 @@ const Lua = struct {
 
     fn call(self: Self, args: anytype, comptime R: type) R {
         // Count and push args.
-        const argCount = blk: {
+        const arg_count = blk: {
             const args_type_info = @typeInfo(@TypeOf(args));
             switch (args_type_info) {
                 .void => break :blk 0,
@@ -799,7 +799,7 @@ const Lua = struct {
         };
 
         // Count how many ret args to expect
-        const retCount = blk: {
+        const ret_count = blk: {
             const ret_type_info = @typeInfo(R);
             switch (ret_type_info) {
                 .void => break :blk 0,
@@ -808,7 +808,7 @@ const Lua = struct {
             }
         };
 
-        self.state.call(argCount, retCount);
+        self.state.call(arg_count, ret_count);
 
         // Fetch ret args
         const ret_type_info = @typeInfo(R);
@@ -850,7 +850,7 @@ const Lua = struct {
     /// try lua.eval("print('Hello, World!')", .{}, void);
     ///
     /// // Execute with compilation options
-    /// const result = try lua.eval("return math.sqrt(16)", .{ .optLevel = 2 }, f64);
+    /// const result = try lua.eval("return math.sqrt(16)", .{ .opt_level = 2 }, f64);
     ///
     /// // Execute with optional return type
     /// const maybe_result = try lua.eval("return getValue()", .{}, ?i32);
@@ -941,7 +941,7 @@ const Lua = struct {
 const expect = std.testing.expect;
 const expectEq = std.testing.expectEqual;
 
-test "Push and pop basic types" {
+test "push and pop basic types" {
     const lua = try Lua.init();
     defer lua.deinit();
 
@@ -960,7 +960,7 @@ test "Push and pop basic types" {
     try expectEq(lua.top(), 0);
 }
 
-test "Push and pop optional types" {
+test "push and pop optional types" {
     const lua = try Lua.init();
     defer lua.deinit();
 
@@ -975,7 +975,7 @@ test "Push and pop optional types" {
     try expectEq(lua.top(), 0);
 }
 
-test "Push and pop edge cases" {
+test "push and pop edge cases" {
     const lua = try Lua.init();
     defer lua.deinit();
 
@@ -993,7 +993,7 @@ test "Push and pop edge cases" {
     try expectEq(lua.top(), 0);
 }
 
-test "Push and pop tuples" {
+test "push and pop tuples" {
     const lua = try Lua.init();
     defer lua.deinit();
 
@@ -1022,7 +1022,7 @@ test "Push and pop tuples" {
     try expectEq(lua.top(), 0);
 }
 
-test "Tuple as indexed table accessibility from Lua" {
+test "tuple as indexed table accessibility from Lua" {
     const lua = try Lua.init();
     defer lua.deinit();
 
@@ -1057,7 +1057,7 @@ fn testStringArg(msg: []const u8) i32 {
     return @intCast(msg.len);
 }
 
-test "Push functions" {
+test "push functions" {
     const lua = try Lua.init();
     defer lua.deinit();
 
@@ -1070,7 +1070,7 @@ test "Push functions" {
     try expectEq(lua.top(), 0);
 }
 
-test "Call Zig function from Lua" {
+test "call Zig function from Lua" {
     const lua = try Lua.init();
     defer lua.deinit();
 
@@ -1080,7 +1080,7 @@ test "Call Zig function from Lua" {
     try expectEq(sum, 30);
 }
 
-test "Call Zig function returning tuple from Lua" {
+test "call Zig function returning tuple from Lua" {
     const lua = try Lua.init();
     defer lua.deinit();
 
@@ -1096,7 +1096,7 @@ test "Call Zig function returning tuple from Lua" {
     try expect(try lua.eval("return result[3]", .{}, bool)); // 15 > 10 = true
 }
 
-test "Ref types" {
+test "ref types" {
     const lua = try Lua.init();
     defer lua.deinit();
 
@@ -1112,7 +1112,7 @@ test "Ref types" {
     try expectEq(lua.top(), 0);
 }
 
-test "Push Ref to stack" {
+test "push ref to stack" {
     const lua = try Lua.init();
     defer lua.deinit();
 
@@ -1128,7 +1128,7 @@ test "Push Ref to stack" {
     try expectEq(lua.top(), 0);
 }
 
-test "Global variables" {
+test "global variables" {
     const lua = try Lua.init();
     defer lua.deinit();
 
@@ -1145,7 +1145,7 @@ test "Global variables" {
     try expectEq(lua.top(), 0);
 }
 
-test "Eval function" {
+test "eval function" {
     const lua = try Lua.init();
     defer lua.deinit();
 
@@ -1159,7 +1159,7 @@ test "Eval function" {
     try expectEq(lua.top(), 0);
 }
 
-test "Eval function with tuple return values" {
+test "eval function with tuple return values" {
     const lua = try Lua.init();
     defer lua.deinit();
 
@@ -1172,7 +1172,7 @@ test "Eval function with tuple return values" {
     try expectEq(lua.top(), 0);
 }
 
-test "dumpStack" {
+test "dump stack" {
     const lua = try Lua.init();
     defer lua.deinit();
 
@@ -1202,7 +1202,7 @@ test "dumpStack" {
     try expect(std.mem.indexOf(u8, dump, "nil") != null);
 }
 
-test "Compilation error handling" {
+test "compilation error handling" {
     const lua = try Lua.init();
     defer lua.deinit();
 
@@ -1212,7 +1212,7 @@ test "Compilation error handling" {
     try expectEq(lua.top(), 0);
 }
 
-test "String support" {
+test "string support" {
     const lua = try Lua.init();
     defer lua.deinit();
 
@@ -1229,7 +1229,7 @@ test "String support" {
     try expectEq(lua.top(), 0);
 }
 
-test "Table basic operations" {
+test "table basic operations" {
     const lua = try Lua.init();
     defer lua.deinit();
 
@@ -1257,7 +1257,7 @@ test "Table basic operations" {
     try expectEq(lua.top(), 0);
 }
 
-test "Push Table to stack" {
+test "push table to stack" {
     const lua = try Lua.init();
     defer lua.deinit();
 
@@ -1281,7 +1281,7 @@ test "Push Table to stack" {
     try expectEq(lua.top(), 0);
 }
 
-test "Table call func" {
+test "table call function" {
     const lua = try Lua.init();
     defer lua.deinit();
 
@@ -1296,7 +1296,7 @@ test "Table call func" {
     try expectEq(lua.top(), 0);
 }
 
-test "Push and pop Vector types" {
+test "push and pop vector types" {
     const lua = try Lua.init();
     defer lua.deinit();
 
@@ -1311,7 +1311,7 @@ test "Push and pop Vector types" {
     try expectEq(lua.top(), 0);
 }
 
-test "Globals table access" {
+test "globals table access" {
     const lua = try Lua.init();
     defer lua.deinit();
 
@@ -1336,7 +1336,7 @@ test "Globals table access" {
     try expectEq(lua.top(), 0);
 }
 
-test "String toValue" {
+test "string to value" {
     const lua = try Lua.init();
     defer lua.deinit();
 
@@ -1356,7 +1356,7 @@ test "String toValue" {
     try expectEq(lua.top(), 0);
 }
 
-test "String arguments in Zig functions" {
+test "string arguments in Zig functions" {
     const lua = try Lua.init();
     defer lua.deinit();
 

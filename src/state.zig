@@ -1292,7 +1292,7 @@ test clock {
     try expect(clock() > 0.0);
 }
 
-test "Basic stack ops" {
+test "basic stack operations" {
     const state = State.init().?;
     defer state.deinit();
 
@@ -1307,4 +1307,3 @@ test "Basic stack ops" {
     state.setTop(0);
     try expect(state.getTop() == 0);
 }
-
