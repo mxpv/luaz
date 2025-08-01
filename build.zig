@@ -26,6 +26,10 @@ pub fn build(b: *std.Build) !void {
         .luau_codegen = b.step("luau-codegen", "Build Luau codegen lib"),
     };
 
+    const opts = .{
+        .cover = b.option(bool, "coverage", "Generate test coverage (requires kcov)") orelse false,
+    };
+
     // Luau VM lib
     const luau_vm = blk: {
         const mod = b.createModule(.{ .target = target, .optimize = optimize });
@@ -202,6 +206,17 @@ pub fn build(b: *std.Build) !void {
                 .optimize = optimize,
             }),
         });
+
+        // See https://zig.news/squeek502/code-coverage-for-zig-1dk1
+        if (opts.cover) {
+            unit_tests.setExecCmd(&[_]?[]const u8{
+                "kcov",
+                "--clean", // Don't accumulate data from multiple runs
+                "--include-path=src/",
+                b.pathJoin(&.{ b.install_path, "coverage" }),
+                null,
+            });
+        }
 
         unit_tests.linkLibrary(luau_vm);
         unit_tests.linkLibrary(luau_codegen);
