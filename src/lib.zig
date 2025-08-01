@@ -1157,7 +1157,7 @@ const Lua = struct {
 const expect = std.testing.expect;
 const expectEq = std.testing.expectEqual;
 
-test "push and pop basic types" {
+test "push and pop types" {
     const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
@@ -1173,13 +1173,6 @@ test "push and pop basic types" {
     lua.push(true);
     try expect(lua.pop(bool).?);
 
-    try expectEq(lua.top(), 0);
-}
-
-test "push and pop optional types" {
-    const lua = try Lua.init(&std.testing.allocator);
-    defer lua.deinit();
-
     // Test optional with value
     lua.push(@as(?i32, 42));
     try expectEq(lua.pop(?i32).?, 42);
@@ -1187,13 +1180,6 @@ test "push and pop optional types" {
     // Test optional null
     lua.push(@as(?i32, null));
     try expect(lua.pop(?i32) == null);
-
-    try expectEq(lua.top(), 0);
-}
-
-test "push and pop edge cases" {
-    const lua = try Lua.init(&std.testing.allocator);
-    defer lua.deinit();
 
     // Test zero and negative values
     lua.push(@as(i32, 0));
@@ -1273,43 +1259,35 @@ fn testStringArg(msg: []const u8) i32 {
     return @intCast(msg.len);
 }
 
-test "push functions" {
+test "Zig function integration" {
     const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
-    // Test Zig function
+    // Test pushing functions
     lua.push(testAdd);
     try expect(lua.state.isFunction(-1));
     try expect(lua.state.isCFunction(-1)); // Zig functions are wrapped as C functions
     lua.state.pop(1);
 
-    try expectEq(lua.top(), 0);
-}
-
-test "call Zig function from Lua" {
-    const lua = try Lua.init(&std.testing.allocator);
-    defer lua.deinit();
-
+    // Test calling simple function
     const globals = lua.globals();
     try globals.set("add", testAdd);
     const sum = try lua.eval("return add(10, 20)", .{}, i32);
     try expectEq(sum, 30);
-}
 
-test "call Zig function returning tuple from Lua" {
-    const lua = try Lua.init(&std.testing.allocator);
-    defer lua.deinit();
-
-    const globals = lua.globals();
+    // Test function returning tuple
     try globals.set("tupleFunc", testTupleReturn);
-
-    // Function returns a tuple as a table (array)
     try lua.eval("result = tupleFunc(15, 3.5)", .{}, void);
-
-    // Verify the returned tuple is a table with indexed elements
     try expectEq(try lua.eval("return result[1]", .{}, i32), 30); // 15 * 2
     try expectEq(try lua.eval("return result[2]", .{}, f32), 7.0); // 3.5 * 2.0
     try expect(try lua.eval("return result[3]", .{}, bool)); // 15 > 10 = true
+
+    // Test string arguments
+    try globals.set("strlen", testStringArg);
+    const len = try lua.eval("return strlen('hello')", .{}, i32);
+    try expectEq(len, 5);
+
+    try expectEq(lua.top(), 0);
 }
 
 test "ref types" {
@@ -1344,12 +1322,13 @@ test "push ref to stack" {
     try expectEq(lua.top(), 0);
 }
 
-test "global variables" {
+test "globals access" {
     const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
     const globals = lua.globals();
 
+    // Basic get/set operations
     try globals.set("x", 42);
     try expectEq(try globals.get("x", i32), 42);
 
@@ -1358,6 +1337,18 @@ test "global variables" {
 
     try expectEq(try globals.get("nonexistent", i32), null);
 
+    // Test different types
+    try globals.set("testValue", 42);
+    try globals.set("testFlag", true);
+    try expectEq(try globals.get("testValue", i32), 42);
+    try expectEq(try globals.get("testFlag", bool), true);
+
+    // Set more values and verify through Lua eval
+    try globals.set("newValue", 123);
+    try globals.set("newFlag", false);
+    try expectEq(try lua.eval("return newValue", .{}, i32), 123);
+    try expectEq(try lua.eval("return newFlag", .{}, bool), false);
+
     try expectEq(lua.top(), 0);
 }
 
@@ -1365,19 +1356,14 @@ test "eval function" {
     const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
+    // Test basic eval
     const result = try lua.eval("return 2 + 3", .{}, i32);
     try expectEq(result, 5);
 
+    // Test eval with void return
     try lua.eval("x = 42", .{}, void);
     const globals = lua.globals();
     try expectEq(try globals.get("x", i32), 42);
-
-    try expectEq(lua.top(), 0);
-}
-
-test "eval function with tuple return values" {
-    const lua = try Lua.init(&std.testing.allocator);
-    defer lua.deinit();
 
     // Test eval with tuple return
     const tuple = try lua.eval("return 10, 2.5, false", .{}, struct { i32, f64, bool });
@@ -1445,7 +1431,7 @@ test "string support" {
     try expectEq(lua.top(), 0);
 }
 
-test "table basic operations" {
+test "table operations" {
     const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
@@ -1470,20 +1456,8 @@ test "table basic operations" {
     try expectEq(try table.getRaw(999, i32), null);
     try expectEq(try table.get("missing", i32), null);
 
-    try expectEq(lua.top(), 0);
-}
-
-test "push table to stack" {
-    const lua = try Lua.init(&std.testing.allocator);
-    defer lua.deinit();
-
-    const table = lua.createTable(.{});
-    defer table.deinit();
-
-    // Set a value in the table
+    // Test pushing table to stack
     try table.set("test", 42);
-
-    // Push the table onto the stack
     lua.push(table);
     try expectEq(lua.top(), 1);
     try expect(lua.state.isTable(-1));
@@ -1527,30 +1501,6 @@ test "push and pop vector types" {
     try expectEq(lua.top(), 0);
 }
 
-test "globals table access" {
-    const lua = try Lua.init(&std.testing.allocator);
-    defer lua.deinit();
-
-    const globals = lua.globals();
-
-    // Set values through the globals table
-    try globals.set("testValue", 42);
-    try globals.set("testFlag", true);
-
-    // Access the same values through the globals table
-    try expectEq(try globals.get("testValue", i32), 42);
-    try expectEq(try globals.get("testFlag", bool), true);
-
-    // Set more values through the globals table
-    try globals.set("newValue", 123);
-    try globals.set("newFlag", false);
-
-    // Verify through Lua eval
-    try expectEq(try lua.eval("return newValue", .{}, i32), 123);
-    try expectEq(try lua.eval("return newFlag", .{}, bool), false);
-
-    try expectEq(lua.top(), 0);
-}
 
 test "string to value" {
     const lua = try Lua.init(&std.testing.allocator);
@@ -1572,16 +1522,6 @@ test "string to value" {
     try expectEq(lua.top(), 0);
 }
 
-test "string arguments in Zig functions" {
-    const lua = try Lua.init(&std.testing.allocator);
-    defer lua.deinit();
-
-    const globals = lua.globals();
-    try globals.set("strlen", testStringArg);
-
-    const len = try lua.eval("return strlen('hello')", .{}, i32);
-    try expectEq(len, 5);
-}
 
 test "function call from global namespace" {
     const lua = try Lua.init(&std.testing.allocator);
