@@ -86,6 +86,7 @@ Write idiomatic Zig code following the established patterns in the codebase:
 - Leverage Zig's comptime features for type safety and zero-cost abstractions
 - Follow Zig naming conventions (camelCase for functions, PascalCase for types)
 - Prefer explicit memory management over implicit allocation
+- **Do not write implementation comments** that explain why code was written a certain way or reference previous implementations
 
 ### Testing
 All modules include unit tests demonstrating usage patterns. New functionality must include
