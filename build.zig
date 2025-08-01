@@ -1,7 +1,4 @@
 const std = @import("std");
-const assert = std.debug.assert;
-
-const LazyPath = std.Build.LazyPath;
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
