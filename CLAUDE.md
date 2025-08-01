@@ -10,7 +10,7 @@ scripting language, focusing specifically on Luau's unique features and performa
 The project consists of three main Zig modules:
 - **State** (`src/state.zig`): Low-level Lua state wrapper providing direct access to Lua VM operations
 - **Compiler** (`src/compile.zig`): Luau compiler interface for converting Lua source to bytecode
-- **Lua** (`src/root.zig`): High-level idiomatic Zig API with automatic type conversions
+- **Lua** (`src/lib.zig`): High-level idiomatic Zig API with automatic type conversions
 
 ## Build System
 
@@ -31,7 +31,7 @@ directories.
 
 ## Architecture
 
-### High-Level API (`src/root.zig`)
+### High-Level API (`src/lib.zig`)
 The main `Lua` struct provides an idiomatic Zig interface with automatic type conversions:
 - `init()` - Initialize Lua state with optional custom allocator
 - `globals()` - Access to the global environment table for setting/getting global variables
