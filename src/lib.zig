@@ -587,19 +587,7 @@ pub const Lua = struct {
                     self.push(value.?);
                 }
             },
-            .@"struct" => |info| {
-                // Tuples are represented as indexed tables (arrays).
-                // Each tuple element is accessible by index starting from 1 (Lua convention).
-                if (info.is_tuple) {
-                    self.state.createTable(@intCast(info.fields.len), 0);
-                    inline for (info.fields, 0..) |_, i| {
-                        self.push(value[i]);
-                        self.state.rawSetI(-2, @intCast(i + 1)); // Set table[i+1] = value, pop value
-                    }
-
-                    break :blk;
-                }
-
+            .@"struct" => {
                 // Handle Ref and Table types
                 if (T == Ref or T == Table or T == Function) {
                     // Push reference to stack
@@ -700,34 +688,48 @@ pub const Lua = struct {
                     break :blk;
                 }
 
-                const trampoline: State.CFunction = struct {
-                    fn f(state: ?State.LuaState) callconv(.C) c_int {
-                        const lua = Lua.fromState(state.?);
-
-                        // Push func arguments
-                        // See https://www.lua.org/pil/26.1.html
-                        var args: ArgsTuple(T) = undefined;
-                        inline for (std.meta.fields(ArgsTuple(T)), 0..) |field, i| {
-                            args[i] = lua.checkArg(i + 1, field.type);
-                        }
-
-                        // Call Zig func
-                        const result = @call(.auto, value, args);
-
-                        // Push function results onto Lua stack.
-                        const current = lua.top();
-                        lua.push(result);
-
-                        return lua.top() - current;
-                    }
-                }.f;
-
+                const trampoline = Self.createFunc(value);
                 self.state.pushCFunction(trampoline, @typeName(T));
             },
             else => {
                 @compileError("Unable to push type " ++ @typeName(T));
             },
         }
+    }
+
+    /// Creates a Lua C function from a Zig function.
+    fn createFunc(value: anytype) State.CFunction {
+        const T = @TypeOf(value);
+
+        return struct {
+            fn f(state: ?State.LuaState) callconv(.C) c_int {
+                const lua = Lua.fromState(state.?);
+
+                // Push func arguments
+                // See https://www.lua.org/pil/26.1.html
+                var args: ArgsTuple(T) = undefined;
+                inline for (std.meta.fields(ArgsTuple(T)), 0..) |field, i| {
+                    args[i] = lua.checkArg(i + 1, field.type);
+                }
+
+                // Call Zig func
+                const result = @call(.auto, value, args);
+                const ResultType = @TypeOf(result);
+
+                // Handle tuple results by pushing each element individually
+                const result_info = @typeInfo(ResultType);
+                if (result_info == .@"struct" and result_info.@"struct".is_tuple) {
+                    inline for (0..result_info.@"struct".fields.len) |i| {
+                        lua.push(result[i]);
+                    }
+                    return @intCast(result_info.@"struct".fields.len);
+                } else {
+                    // Handle non-tuple results normally
+                    lua.push(result);
+                    return Lua.slotCount(ResultType);
+                }
+            }
+        }.f;
     }
 
     /// Internal function to pop a value from the Lua stack and convert it to a Zig type.
@@ -1014,15 +1016,7 @@ pub const Lua = struct {
             }
         };
 
-        // Count how many ret args to expect
-        const ret_count = blk: {
-            const ret_type_info = @typeInfo(R);
-            switch (ret_type_info) {
-                .void => break :blk 0,
-                .@"struct" => |info| break :blk if (info.is_tuple) @as(i32, @intCast(info.fields.len)) else 1,
-                else => break :blk 1,
-            }
-        };
+        const ret_count = Self.slotCount(R);
 
         self.state.call(arg_count, ret_count);
 
@@ -1042,7 +1036,23 @@ pub const Lua = struct {
                 return result;
             }
         }
+
         return self.pop(R).?;
+    }
+
+    // Counts how many Lua stack slots are needed for the given type.
+    fn slotCount(comptime T: type) i32 {
+        if (T == void) {
+            return 0;
+        }
+
+        const type_info = @typeInfo(T);
+        if (type_info == .@"struct" and type_info.@"struct".is_tuple) {
+            return @intCast(type_info.@"struct".fields.len);
+        }
+
+        // Default to 1 for everything else
+        return 1;
     }
 
     /// Compiles and executes Luau source code, returning the result.
@@ -1192,35 +1202,6 @@ test "push and pop types" {
     lua.push(123);
     try expectEq(lua.pop(i32).?, 123);
 
-    try expectEq(lua.top(), 0);
-}
-
-test "push and pop tuples" {
-    const lua = try Lua.init(&std.testing.allocator);
-    defer lua.deinit();
-
-    // Test empty tuple
-    lua.push(.{});
-    try expectEq(lua.top(), 1); // Empty tuple creates an empty table
-    try expect(lua.state.isTable(-1));
-    lua.state.pop(1);
-
-    // Test multiple element tuple - now creates a table
-    lua.push(.{ 123, 3.14, true });
-    try expectEq(lua.top(), 1); // Tuple creates one table
-    try expect(lua.state.isTable(-1));
-
-    // Verify elements are accessible by index (1-based)
-    _ = lua.state.rawGetI(-1, 1);
-    try expectEq(lua.pop(i32).?, 123); // First element at index 1
-
-    _ = lua.state.rawGetI(-1, 2);
-    try expectEq(lua.pop(f32).?, 3.14); // Second element at index 2
-
-    _ = lua.state.rawGetI(-1, 3);
-    try expect(lua.pop(bool).?); // Third element at index 3
-
-    lua.state.pop(1); // Pop the table
     try expectEq(lua.top(), 0);
 }
 

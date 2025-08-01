@@ -44,7 +44,16 @@ test "tuple as indexed table accessibility from Lua" {
     const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
-    try lua.globals().set("tupleTable", .{ 42, 3.14, "hello", true });
+    // Create table explicitly instead of using tuple push
+    const table = lua.createTable(.{ .arr = 4, .rec = 0 });
+    defer table.deinit();
+
+    try table.set(1, 42);
+    try table.set(2, 3.14);
+    try table.set(3, "hello");
+    try table.set(4, true);
+
+    try lua.globals().set("tupleTable", table);
 
     // Access elements from Lua using 1-based indexing
     try expectEq(try lua.eval("return tupleTable[1]", .{}, i32), 42);
@@ -89,27 +98,83 @@ fn testStringArg(msg: []const u8) i32 {
     return @intCast(msg.len);
 }
 
+// Test functions with various signatures
+fn testNoArgs() i32 {
+    return 42;
+}
+
+fn testVoidReturn(x: i32) void {
+    _ = x; // consume parameter
+}
+
+fn testMultipleArgs(a: i32, b: f32, c: bool) f32 {
+    const bonus: f32 = if (c) 1.0 else 0.0;
+    return @as(f32, @floatFromInt(a)) + b + bonus;
+}
+
+fn testOptionalReturn(x: i32) ?i32 {
+    return if (x > 0) x * 2 else null;
+}
+
+fn testMixedTypes(n: i32, s: []const u8, flag: bool) struct { i32, []const u8, bool } {
+    return .{ n + 1, s, !flag };
+}
+
 test "Zig function integration" {
     const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
-    // Test calling simple function
     const globals = lua.globals();
+
+    // Test 1: Simple function with two arguments
     try globals.set("add", testAdd);
     const sum = try lua.eval("return add(10, 20)", .{}, i32);
     try expectEq(sum, 30);
 
-    // Test function returning tuple
-    try globals.set("tupleFunc", testTupleReturn);
-    try lua.eval("result = tupleFunc(15, 3.5)", .{}, void);
-    try expectEq(try lua.eval("return result[1]", .{}, i32), 30); // 15 * 2
-    try expectEq(try lua.eval("return result[2]", .{}, f32), 7.0); // 3.5 * 2.0
-    try expect(try lua.eval("return result[3]", .{}, bool)); // 15 > 10 = true
+    // Test 2: Function with no arguments
+    try globals.set("noArgs", testNoArgs);
+    const result = try lua.eval("return noArgs()", .{}, i32);
+    try expectEq(result, 42);
 
-    // Test string arguments
+    // Test 3: Function with void return
+    try globals.set("voidFunc", testVoidReturn);
+    try lua.eval("voidFunc(123)", .{}, void);
+
+    // Test 4: Function with multiple different argument types
+    try globals.set("multiArgs", testMultipleArgs);
+    const multi_result = try lua.eval("return multiArgs(5, 2.5, true)", .{}, f32);
+    try expectEq(multi_result, 8.5); // 5 + 2.5 + 1.0
+
+    // Test 5: Function with string arguments
     try globals.set("strlen", testStringArg);
     const len = try lua.eval("return strlen('hello')", .{}, i32);
     try expectEq(len, 5);
+
+    // Test 6: Function returning optional (some value)
+    try globals.set("optionalFunc", testOptionalReturn);
+    const opt_some = try lua.eval("return optionalFunc(10)", .{}, ?i32);
+    try expectEq(opt_some, 20);
+
+    // Test 7: Function returning optional (null value)
+    // Note: When Zig function returns null, it becomes nil in Lua,
+    // and we need to handle it appropriately when calling from Lua
+    try lua.eval("result = optionalFunc(-5)", .{}, void);
+    const is_nil = try lua.eval("return result == nil", .{}, bool);
+    try expect(is_nil);
+
+    // Test 8: Function returning tuple (multiple separate values)
+    try globals.set("tupleFunc", testTupleReturn);
+    const tuple_result = try lua.eval("return tupleFunc(15, 3.5)", .{}, struct { i32, f32, bool });
+    try expectEq(tuple_result[0], 30); // 15 * 2
+    try expectEq(tuple_result[1], 7.0); // 3.5 * 2.0
+    try expect(tuple_result[2]); // 15 > 10 = true
+
+    // Test 9: Function with mixed types returning tuple
+    try globals.set("mixedFunc", testMixedTypes);
+    const mixed_result = try lua.eval("return mixedFunc(10, 'test', false)", .{}, struct { i32, []const u8, bool });
+    try expectEq(mixed_result[0], 11); // 10 + 1
+    try expect(std.mem.eql(u8, mixed_result[1], "test"));
+    try expect(mixed_result[2]); // !false = true
 
     try expectEq(lua.top(), 0);
 }
