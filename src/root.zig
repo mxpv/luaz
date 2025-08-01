@@ -1,5 +1,6 @@
 const std = @import("std");
 const ArgsTuple = std.meta.ArgsTuple;
+const Allocator = std.mem.Allocator;
 
 pub const State = @import("state.zig").State;
 pub const Compiler = @import("compile.zig").Compiler;
@@ -14,10 +15,67 @@ const Lua = struct {
 
     state: State,
 
-    pub fn init() !Self {
-        return Lua{
-            .state = State.init() orelse return Error.OutOfMemory,
-        };
+    /// Initialize a new Lua state with optional custom allocator.
+    ///
+    /// Creates a new Luau virtual machine instance. Pass `null` to use Luau's built-in
+    /// default allocator (malloc), or `&allocator` to use a custom Zig allocator. The allocator must
+    /// remain valid for the entire lifetime of the Lua state.
+    ///
+    /// Note: Uses pointer parameter (`?*const Allocator`) due to C interop requirements,
+    /// deviating from typical Zig conventions.
+    ///
+    /// Examples:
+    /// ```zig
+    /// const lua = try Lua.init(null);                   // Luau default (malloc)
+    /// const lua = try Lua.init(&std.testing.allocator); // Custom allocator
+    /// defer lua.deinit();
+    /// ```
+    ///
+    /// Returns `Lua` instance or `Error.OutOfMemory` on failure.
+    pub fn init(allocator: ?*const Allocator) !Self {
+        const state = if (allocator) |alloc_ptr|
+            State.initWithAlloc(alloc, @constCast(alloc_ptr))
+        else
+            State.init();
+
+        return Lua{ .state = state orelse return error.OutOfMemory };
+    }
+
+    /// Lua allocator function.
+    ///
+    /// # Arguments
+    /// - `ptr` - a pointer to the block being allocated/reallocated/freed.
+    /// - `osize` - the original size of the block or some code about what is being allocated
+    /// - `nsize` - the new size of the block.
+    fn alloc(ud: ?*anyopaque, ptr: ?*anyopaque, osize: usize, nsize: usize) callconv(.c) ?*anyopaque {
+        // Lua assumes the following behavior from the allocator function:
+        // - When nsize is zero, the allocator must behave like free and return NULL.
+        // - When nsize is not zero, the allocator must behave like realloc.
+        //   The allocator returns NULL if and only if it cannot fulfill the request.
+        // Lua assumes that the allocator never fails when osize >= nsize.
+
+        // realloc requests a new byte size for an existing allocation, which can be larger, smaller,
+        // or the same size as the old memory allocation.
+        // If `new_n` is 0, this is the same as free and it always succeeds.
+        // `old_mem` may have length zero, which makes a new allocation.
+        // See https://ziglang.org/documentation/0.14.1/std/#std.mem.Allocator.realloc
+        const allocator: *const Allocator = @ptrCast(@alignCast(ud.?));
+
+        // Handle all cases with realloc: allocation, reallocation, and freeing
+        const old_slice = if (ptr) |old_ptr|
+            @as([*]u8, @ptrCast(old_ptr))[0..osize]
+        else
+            @as([]u8, &.{});
+
+        const new_slice = allocator.realloc(old_slice, nsize) catch return null;
+
+        // When nsize is 0, realloc acts as free and returns an empty slice
+        // Lua expects NULL in this case
+        if (nsize == 0) {
+            return null;
+        }
+
+        return @ptrCast(new_slice.ptr);
     }
 
     inline fn fromState(state: State.LuaState) Self {
@@ -1100,7 +1158,7 @@ const expect = std.testing.expect;
 const expectEq = std.testing.expectEqual;
 
 test "push and pop basic types" {
-    const lua = try Lua.init();
+    const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
     // Test integers
@@ -1119,7 +1177,7 @@ test "push and pop basic types" {
 }
 
 test "push and pop optional types" {
-    const lua = try Lua.init();
+    const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
     // Test optional with value
@@ -1134,7 +1192,7 @@ test "push and pop optional types" {
 }
 
 test "push and pop edge cases" {
-    const lua = try Lua.init();
+    const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
     // Test zero and negative values
@@ -1152,7 +1210,7 @@ test "push and pop edge cases" {
 }
 
 test "push and pop tuples" {
-    const lua = try Lua.init();
+    const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
     // Test empty tuple
@@ -1181,7 +1239,7 @@ test "push and pop tuples" {
 }
 
 test "tuple as indexed table accessibility from Lua" {
-    const lua = try Lua.init();
+    const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
     // Push a tuple and make it available as global
@@ -1216,7 +1274,7 @@ fn testStringArg(msg: []const u8) i32 {
 }
 
 test "push functions" {
-    const lua = try Lua.init();
+    const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
     // Test Zig function
@@ -1229,7 +1287,7 @@ test "push functions" {
 }
 
 test "call Zig function from Lua" {
-    const lua = try Lua.init();
+    const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
     const globals = lua.globals();
@@ -1239,7 +1297,7 @@ test "call Zig function from Lua" {
 }
 
 test "call Zig function returning tuple from Lua" {
-    const lua = try Lua.init();
+    const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
     const globals = lua.globals();
@@ -1255,7 +1313,7 @@ test "call Zig function returning tuple from Lua" {
 }
 
 test "ref types" {
-    const lua = try Lua.init();
+    const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
     lua.push(testAdd);
@@ -1271,7 +1329,7 @@ test "ref types" {
 }
 
 test "push ref to stack" {
-    const lua = try Lua.init();
+    const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
     lua.push(testAdd);
@@ -1287,7 +1345,7 @@ test "push ref to stack" {
 }
 
 test "global variables" {
-    const lua = try Lua.init();
+    const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
     const globals = lua.globals();
@@ -1304,7 +1362,7 @@ test "global variables" {
 }
 
 test "eval function" {
-    const lua = try Lua.init();
+    const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
     const result = try lua.eval("return 2 + 3", .{}, i32);
@@ -1318,7 +1376,7 @@ test "eval function" {
 }
 
 test "eval function with tuple return values" {
-    const lua = try Lua.init();
+    const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
     // Test eval with tuple return
@@ -1331,7 +1389,7 @@ test "eval function with tuple return values" {
 }
 
 test "dump stack" {
-    const lua = try Lua.init();
+    const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
     // Test empty stack
@@ -1361,7 +1419,7 @@ test "dump stack" {
 }
 
 test "compilation error handling" {
-    const lua = try Lua.init();
+    const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
     const compile_error = lua.eval("return 1 + '", .{}, i32);
@@ -1371,7 +1429,7 @@ test "compilation error handling" {
 }
 
 test "string support" {
-    const lua = try Lua.init();
+    const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
     lua.push("hello");
@@ -1388,7 +1446,7 @@ test "string support" {
 }
 
 test "table basic operations" {
-    const lua = try Lua.init();
+    const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
     const table = lua.createTable(.{});
@@ -1416,7 +1474,7 @@ test "table basic operations" {
 }
 
 test "push table to stack" {
-    const lua = try Lua.init();
+    const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
     const table = lua.createTable(.{});
@@ -1440,7 +1498,7 @@ test "push table to stack" {
 }
 
 test "table call function" {
-    const lua = try Lua.init();
+    const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
     _ = try lua.eval(
@@ -1455,7 +1513,7 @@ test "table call function" {
 }
 
 test "push and pop vector types" {
-    const lua = try Lua.init();
+    const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
     const vec3 = @Vector(3, f32){ 1.0, 2.0, 3.0 };
@@ -1470,7 +1528,7 @@ test "push and pop vector types" {
 }
 
 test "globals table access" {
-    const lua = try Lua.init();
+    const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
     const globals = lua.globals();
@@ -1495,7 +1553,7 @@ test "globals table access" {
 }
 
 test "string to value" {
-    const lua = try Lua.init();
+    const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
     // Test string retrieval
@@ -1515,7 +1573,7 @@ test "string to value" {
 }
 
 test "string arguments in Zig functions" {
-    const lua = try Lua.init();
+    const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
     const globals = lua.globals();
@@ -1526,7 +1584,7 @@ test "string arguments in Zig functions" {
 }
 
 test "function call from global namespace" {
-    const lua = try Lua.init();
+    const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
     _ = try lua.eval(
@@ -1544,7 +1602,7 @@ test "function call from global namespace" {
 }
 
 test "function compile" {
-    const lua = try Lua.init();
+    const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
     // Enable code generator if supported

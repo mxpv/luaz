@@ -33,6 +33,7 @@ directories.
 
 ### High-Level API (`src/root.zig`)
 The main `Lua` struct provides an idiomatic Zig interface with automatic type conversions:
+- `init()` - Initialize Lua state with optional custom allocator
 - `globals()` - Access to the global environment table for setting/getting global variables
 - `eval()` - Compile and execute Lua source code in one step
 - `exec()` - Execute pre-compiled bytecode
@@ -69,6 +70,14 @@ Interfaces with the Luau compiler to:
 - Handle compilation errors with detailed error messages
 - Support debug info and coverage options
 
+### Custom Allocator Support
+The library supports custom memory allocators through `Lua.init()`:
+- Pass `null` to use Luau's default allocator
+- Pass `&allocator` to use a custom Zig allocator
+- The allocator pointer must remain valid for the Lua state's lifetime
+- Deviates from typical Zig conventions due to C interop requirements
+- All Lua memory operations (allocation, reallocation, freeing) go through the custom allocator
+
 ## Development Patterns
 
 ### Code Style
@@ -80,7 +89,7 @@ Write idiomatic Zig code following the established patterns in the codebase:
 
 ### Testing
 All modules include unit tests demonstrating usage patterns. New functionality must include
-corresponding unit tests. Tests cover:
+corresponding unit tests. Tests use `&std.testing.allocator` for memory leak detection. Tests cover:
 - Type conversion edge cases
 - Function wrapping and calling
 - Global variable manipulation
@@ -88,12 +97,13 @@ corresponding unit tests. Tests cover:
 - Table function calling with various argument patterns
 - Compilation error handling
 - Reference and table management
+- Custom allocator usage
 
 Write unit tests with good coverage, but no need to be comprehensive and try to cover every possible case.
 Keep unit tests reasonably short.
 
 ### Documentation
-Keep documentation for public interfaces current and comprehensive. The codebase uses Zig's built-in doc comments
+Keep documentation for public interfaces current but reasonably sized. The codebase uses Zig's built-in doc comments
 (/// syntax) extensively. When adding or modifying public functions, ensure documentation includes:
 - Clear description of functionality and purpose
 - Parameter descriptions and types
@@ -101,12 +111,16 @@ Keep documentation for public interfaces current and comprehensive. The codebase
 - Usage examples where helpful
 - Error conditions and handling
 
+Keep documentation concise and focused. Don't write "comprehensive" documentation - aim for reasonable size that covers the essentials without being verbose.
+
 ### Memory Management
 - Lua states must be explicitly deinitialized with `deinit()`
 - Compilation results must be freed with `Result.deinit()`
 - References must be released with `Ref.deinit()`
 - Tables must be released with `Table.deinit()`
 - The library uses Luau's garbage collector for Lua values
+- Custom allocators (if provided to `init()`) must outlive the Lua state
+- Use `&std.testing.allocator` in tests for memory leak detection
 
 ### Error Handling
 The library defines custom error types:
