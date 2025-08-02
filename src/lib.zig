@@ -840,7 +840,18 @@ pub const Lua = struct {
                 }
             },
             .@"struct" => {
-                // Handle struct types (user data passed by value)
+                // Check for specific struct types
+                if (T == Table) {
+                    // Check that the value is actually a table
+                    if (!self.state.isTable(index)) {
+                        // This would normally be a Lua error, but for now we'll use a compile error
+                        @panic("Expected table argument");
+                    }
+                    // Create a Table reference from the stack value
+                    return @as(T, Table{ .ref = self.createRef(index) });
+                }
+
+                // Handle other struct types (user data passed by value)
                 // For now, just return undefined since we don't have proper userdata handling
                 // In a real implementation, you'd extract the struct from userdata
                 return undefined;

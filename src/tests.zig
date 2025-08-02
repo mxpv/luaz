@@ -369,3 +369,28 @@ test "userdata with destructor support" {
     // Verify that deinit was called for both objects
     try expectEq(deinit_call_count, 2);
 }
+
+// Test function that accepts a Table parameter to verify checkArg functionality
+fn checkTable(table: Lua.Table) i32 {
+    defer table.deinit(); // Properly clean up the table reference
+    const value = table.get("key", i32) catch return -1;
+    return value orelse -1;
+}
+
+test "checkArg with Table parameter" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    // Register our test function that takes a Table parameter
+    const globals = lua.globals();
+    try globals.set("processTable", checkTable);
+
+    // Create a table in Lua and call our function
+    const result = try lua.eval(
+        \\local tbl = {key = 42}
+        \\return processTable(tbl)
+    , .{}, i32);
+
+    try expectEq(result, 42);
+    try expectEq(lua.top(), 0);
+}
