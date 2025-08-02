@@ -19,8 +19,9 @@ These tools make it easy to compile, analyze, and embed Luau scripts directly in
 ## ✨ Features
 
 - Minimal yet flexible zero-cost API.
-- Zig functions automatically callable from Lua.
-- Native `Vector` type support.
+- Bidirectional function calls between Zig and Lua.
+- First-class userdata support.
+- Native support for refs, functions, tables, and vector types.
 - Supports Luau code generation for improved performance on supported platforms.
 - Built-in Luau tools (`luau-compile` and `luau-analyze`) provided by the build system.
 - Excellent test coverage and API documentation.
