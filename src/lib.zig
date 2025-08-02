@@ -821,23 +821,24 @@ pub const Lua = struct {
                         // Handle pointer to struct (user data)
                         const child_type_info = @typeInfo(ptr_info.child);
                         if (child_type_info == .@"struct") {
-                            // This is a pointer to a struct, assume it's user data
-                            // For now, just return undefined since we don't have proper userdata handling
-                            // In a real implementation, you'd use luaL_checkudata
-                            return undefined;
+                            // This is a pointer to a struct (userdata)
+                            // Proper userdata handling would use luaL_checkudata here
+                            self.state.typeError(index, "userdata (not implemented)");
                         }
-                        
+
                         // Handle light user data: *T where T is not a struct or array
                         if (child_type_info == .array and child_type_info.array.child == u8) {
-                            @compileError("String arrays not supported in checkArg - use []const u8 instead");
+                            self.state.typeError(index, "string slice");
                         }
                         
                         // Check if this is light user data and get the pointer
                         if (!self.state.isLightUserdata(index)) {
-                            @panic("Expected light userdata argument");
+                            self.state.typeError(index, "light userdata");
                         }
                         
-                        const light_userdata = self.state.toLightUserdata(index) orelse @panic("Invalid light userdata");
+                        const light_userdata = self.state.toLightUserdata(index) orelse {
+                            self.state.typeError(index, "light userdata");
+                        };
                         return @ptrCast(@alignCast(light_userdata));
                     },
                     .slice => {
@@ -855,9 +856,9 @@ pub const Lua = struct {
                             }
                         }
 
-                        @compileError("Unable to check type " ++ @typeName(T));
+                        self.state.typeError(index, "unknown pointer type");
                     },
-                    else => @compileError("Unable to check type " ++ @typeName(T)),
+                    else => self.state.typeError(index, "unsupported pointer type"),
                 }
             },
             .@"struct" => {
@@ -865,20 +866,18 @@ pub const Lua = struct {
                 if (T == Table) {
                     // Check that the value is actually a table
                     if (!self.state.isTable(index)) {
-                        // This would normally be a Lua error, but for now we'll use a compile error
-                        @panic("Expected table argument");
+                        self.state.typeError(index, "table");
                     }
                     // Create a Table reference from the stack value
                     return @as(T, Table{ .ref = self.createRef(index) });
                 }
 
                 // Handle other struct types (user data passed by value)
-                // For now, just return undefined since we don't have proper userdata handling
-                // In a real implementation, you'd extract the struct from userdata
-                return undefined;
+                // Proper userdata handling would extract the struct from userdata here
+                self.state.typeError(index, "userdata (not implemented)");
             },
             else => {
-                @compileError("Unable to check type " ++ @typeName(T));
+                self.state.typeError(index, "unsupported type");
             },
         }
     }
