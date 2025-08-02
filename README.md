@@ -7,19 +7,19 @@
 [![CI](https://github.com/mxpv/luaz/actions/workflows/ci.yml/badge.svg)](https://github.com/mxpv/luaz/actions/workflows/ci.yml)
 
 `luaz` is a zero-cost wrapper library for [`Luau`](https://github.com/luau-lang/luau).
-Unlike other libraries, it focuses specifically on Luau, providing idiomatic Zig bindings that leverage Luau's unique
+Unlike other libraries, it focuses specifically on `Luau`, providing idiomatic `Zig` bindings that leverage Luau's unique
 features and performance characteristics.
 
 The build system provides prebuilt Luau tools out of the box:
-- `luau-compiler`: Compile Luau source to bytecode
-- `luau-analyzer`: Typecheck and lint Luau code
+- [`luau-compiler`](#compiler): Compile Luau source to bytecode
+- [`luau-analyzer`](#analyzer): Typecheck and lint Luau code
 
 These tools make it easy to compile, analyze, and embed Luau scripts directly into your Zig applications.
 
 ## ✨ Features
 
 - Minimal yet flexible zero-cost API.
-- Bidirectional function calls between Zig and Lua.
+- Bidirectional [unction calls between Zig and Lua.
 - First-class userdata support.
 - Native support for refs, functions, tables, and vector types.
 - Supports Luau code generation for improved performance on supported platforms.
