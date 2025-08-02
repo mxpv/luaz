@@ -13,6 +13,7 @@ pub const FunctionType = enum {
 
 /// Determines function type and validates constraints for userdata methods.
 /// Categorizes as init (constructor), instance method, or static function.
+/// ---
 /// Init functions must be static and return T. Instance methods take T or *T as first parameter.
 fn getFunctionType(comptime T: type, comptime method_name: []const u8, method: anytype) FunctionType {
     const is_init = std.mem.eql(u8, method_name, "init");
@@ -57,7 +58,7 @@ fn getFunctionType(comptime T: type, comptime method_name: []const u8, method: a
 }
 
 /// Creates a Lua C function wrapper from a Zig method that operates on userdata.
-///
+/// ---
 /// Generates a C-compatible function that handles translation between Lua's stack-based
 /// calling convention and Zig's typed function calls. Supports init functions (constructors),
 /// instance methods, and static functions. If the struct has a deinit method, userdata

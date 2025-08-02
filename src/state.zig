@@ -104,7 +104,7 @@ pub const State = struct {
     /// Creates a new thread, pushes it on the stack, and returns a pointer to a State that represents this new thread.
     /// The new thread returned by this function shares with the original thread its global environment,
     /// but has an independent execution stack.
-    ///
+    /// ---
     /// There is no explicit function to close or to destroy a thread.
     /// Threads are subject to garbage collection, like any Lua object.
     pub inline fn newThread(self: State) State {
@@ -139,13 +139,13 @@ pub const State = struct {
     }
 
     /// Sets the top (that is, the number of elements in the stack) to a specific value.
-    ///
+    /// ---
     /// If the previous top was higher than the new one, the top values are discarded.
     /// Otherwise, the function pushes nils on the stack to get the given size.
     /// As a particular case, `lua_settop(L, 0)` empties the stack.
-    ///
+    /// ---
     /// Negative indices are also allowed to set the top element to the given index.
-    ///
+    /// ---
     /// See https://www.lua.org/pil/24.2.3.html
     pub inline fn setTop(self: State, idx: i32) void {
         c.lua_settop(self.lua, idx);
@@ -187,7 +187,7 @@ pub const State = struct {
     }
 
     /// Exchange values between different threads of the same state.
-    ///
+    /// ---
     /// This function pops `n` values from the stack `from`, and pushes them onto the stack `to`.
     pub inline fn xMove(from: State, to: State, n: i32) void {
         c.lua_xmove(from.lua, to.lua, n);
@@ -345,10 +345,10 @@ pub const State = struct {
     /// The Lua value must be a string or a number; otherwise, the function returns `null`.
     /// If the value is a number, then lua_tolstring also changes the actual value in the stack to a string.
     /// (This change confuses lua_next when lua_tolstring is applied to keys during a table traversal).
-    ///
+    /// ---
     /// lua_tolstring returns a pointer to a string inside the Lua state.
     /// This string always has a zero ('\0') after its last character (as in C), but can contain other zeros in its body.
-    ///
+    /// ---
     /// Because Lua has garbage collection, there is no guarantee that the pointer returned by lua_tolstring will be
     /// valid after the corresponding Lua value is removed from the stack.
     pub inline fn toString(self: State, idx: i32) ?[:0]const u8 {
@@ -511,13 +511,13 @@ pub const State = struct {
     }
 
     /// Pushes a light userdata onto the stack.
-    ///
+    /// ---
     /// Userdata represent C values in Lua. A light userdata represents a pointer.
     /// It is a value (like a number): you do not create it, it has no individual metatable,
     /// and it is not collected (as it was never created).
-    ///
+    /// ---
     /// A light userdata is equal to "any" light userdata with the same C address.
-    ///
+    /// ---
     /// See <https://www.lua.org/pil/28.5.html>
     pub inline fn pushLightUserdataTagged(self: State, p: *anyopaque, tag: i32) void {
         c.lua_pushlightuserdatatagged(self.lua, p, tag);
@@ -557,23 +557,23 @@ pub const State = struct {
 
     /// Pushes onto the stack the value `t[k]`, where `t` is the value at the given index and `k` is the value
     /// at the top of the stack.
-    ///
+    /// ---
     /// This function pops the key from the stack, pushing the resulting value in its place.
     /// As in Lua, this function may trigger a metamethod for the "index" event.
-    ///
+    /// ---
     /// For instance, to get a value stored with key "Key" in the registry, you can use the following code:
     /// ```zig
     /// state.pushString("Key");
     /// _ = state.getTable(State.REGISTRYINDEX);
     /// ```
-    ///
+    /// ---
     /// See <https://www.lua.org/pil/25.1.html>
     pub inline fn getTable(self: State, idx: c_int) Type {
         return @enumFromInt(c.lua_gettable(self.lua, idx));
     }
 
     /// Get field from table and push onto stack
-    ///
+    /// ---
     /// Pushes onto the stack the value t[k], where t is the value at the given index.
     /// As in Lua, this function may trigger a metamethod for the "index" event
     pub inline fn getField(self: State, idx: i32, k: [:0]const u8) Type {
@@ -592,18 +592,18 @@ pub const State = struct {
 
     /// Pushes onto the stack the value `t[n]`, where `t` is the table at the given index.
     /// The access is raw, that is, it does not invoke the `__index` metamethod.
-    ///
+    /// ---
     /// Arguments:
     /// - `idx`: Refers to where the table is in the stack.
     /// - `n`:  Refers to where the element is in the table.
-    ///
+    /// ---
     /// Returns the type of the pushed value.
     pub inline fn rawGetI(self: State, idx: i32, n: i32) Type {
         return @enumFromInt(c.lua_rawgeti(self.lua, idx, n));
     }
 
     /// Creates a new empty table and pushes it onto the stack.
-    ///
+    /// ---
     /// Parameter `narr` is a hint for how many elements the table will have as a sequence;
     /// parameter `nrec` is a hint for how many other elements the table will have.
     /// Lua may use these hints to preallocate memory for the new table.
@@ -642,13 +642,13 @@ pub const State = struct {
     }
 
     /// Set table value from stack
-    ///
+    /// ---
     /// Does the equivalent to `t[k] = v`, where `t` is the value at the given index,
     /// `v` is the value at the top of the stack, and k is the value just below the top.
-    ///
+    /// ---
     /// This function pops both the key and the value from the stack.
     /// As in Lua, this function may trigger a metamethod for the "newindex" event.
-    ///
+    /// ---
     /// The following code shows how to store and retrieve a number from the registry using this method:
     /// ```zig
     /// const key: u8 = 'k'; // Variable with a unique address
@@ -658,17 +658,17 @@ pub const State = struct {
     ///
     /// state.setTable(State.REGISTRYINDEX); // E.g. registry[&key] = myNumber
     /// ```
-    ///
+    /// ---
     /// See <https://www.lua.org/pil/25.1.html>
     pub inline fn setTable(self: State, idx: i32) void {
         c.lua_settable(self.lua, idx);
     }
 
     /// Set field in table from stack top
-    ///
+    /// ---
     /// Does the equivalent to t[k] = v, where t is the value at the given valid index and v is the value at the top
     /// of the stack.
-    ///
+    /// ---
     /// This function pops the value from the stack.
     pub inline fn setField(self: State, idx: i32, k: [:0]const u8) void {
         c.lua_setfield(self.lua, idx, k.ptr);
@@ -685,16 +685,16 @@ pub const State = struct {
     }
 
     /// Raw set by integer index
-    ///
+    /// ---
     /// Does the equivalent of `t[i] = v`, where `t` is the table at the given `idx` and `v` is the value
     /// at the top of the stack. This function pops the value from the stack.
-    ///
+    /// ---
     /// Arguments:
     /// - `idx`: Refers to where the table is in the stack.
     /// - `n`:  Refers to where the element is in the table.
-    ///
+    /// ---
     /// The assignment is raw, that is, it does not invoke the `__newindex` metamethod.
-    ///
+    /// ---
     /// Note: This is rawSetI, not rawGetI. The equivalent rawGet sequence would be:
     /// ```zig
     /// state.pushNumber(@floatFromInt(key));
@@ -738,12 +738,12 @@ pub const State = struct {
     }
 
     /// Calls a function.
-    ///
+    /// ---
     /// To call a function you must use the following protocol:
     /// - The function to be called is pushed onto the stack.
     /// - The arguments to the function are pushed in direct order (the first argument is pushed first).
     /// - Finally `lua_pcall` is invoked.
-    ///
+    /// ---
     /// All arguments and the function value are popped from the stack when the function is called.
     pub inline fn pcall(self: State, nargs: u32, nresults: i32, errfunc: i32) Status {
         return @enumFromInt(c.lua_pcall(self.lua, @intCast(nargs), nresults, errfunc));
@@ -801,10 +801,10 @@ pub const State = struct {
     // Garbage Collection
 
     /// Control garbage collector
-    ///
+    /// ---
     /// Luau uses an incremental garbage collector which does a little bit of work every so often,
     /// and at no point does it stop the world to traverse the entire heap.
-    ///
+    /// ---
     /// See <https://luau.org/performance#improved-garbage-collector-pacing> and
     /// <https://www.lua.org/manual/5.2/manual.html#lua_gc>
     pub inline fn gc(self: State, what: GCOp, data: i32) i32 {
@@ -836,10 +836,10 @@ pub const State = struct {
     }
 
     /// Table iteration
-    ///
+    /// ---
     /// Pops a key from the stack, and pushes a key–value pair from the table at the given index (the "next" pair
     /// after the given key).
-    ///
+    /// ---
     /// If there are no more elements in the table, then `lua_next` returns 0 (and pushes nothing).
     pub inline fn next(self: State, idx: i32) bool {
         return c.lua_next(self.lua, idx) != 0;
@@ -880,25 +880,25 @@ pub const State = struct {
     // Reference System
 
     /// Create a reference to object at index
-    ///
+    /// ---
     /// Creates and returns a reference, in the table at index t,
     /// for the object at the top of the stack (and pops the object).
-    ///
+    /// ---
     /// The call:
     /// ```zig
     /// const r = state.ref(-1);
     /// ```
-    ///
+    /// ---
     /// pops a value from the stack, stores it into the registry with a fresh integer key,
     /// and returns that key.
-    ///
+    /// ---
     /// See <https://github.com/luau-lang/luau/issues/247>
     pub inline fn ref(self: State, idx: i32) i32 {
         return c.lua_ref(self.lua, idx);
     }
 
     /// Releases reference `r` from the table at index t.
-    ///
+    /// ---
     /// The entry is removed from the table, so that the referred object can be collected.
     /// The reference `r` is also freed to be used again.
     pub inline fn unref(self: State, ref_id: i32) void {

@@ -8,7 +8,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 /// Lua allocator function that wraps a Zig allocator.
-///
+/// ---
 /// # Arguments
 /// - `ptr` - a pointer to the block being allocated/reallocated/freed.
 /// - `osize` - the original size of the block or some code about what is being allocated

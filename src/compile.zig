@@ -4,7 +4,7 @@ const c = @cImport({
     @cInclude("luacode.h");
 });
 
-const Error = @import("lua.zig").Error;
+const Error = @import("lua.zig").Lua.Error;
 
 /// Luau compiler interface for compiling Lua source code to bytecode.
 pub const Compiler = struct {

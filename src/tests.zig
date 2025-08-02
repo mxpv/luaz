@@ -6,8 +6,10 @@ comptime {
 
 const std = @import("std");
 const Lua = @import("lua.zig").Lua;
-const Error = @import("lua.zig").Error;
+
+const Error = Lua.Error;
 const State = @import("state.zig").State;
+
 const expect = std.testing.expect;
 const expectEq = std.testing.expectEqual;
 

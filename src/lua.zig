@@ -53,21 +53,21 @@ pub const Lua = struct {
     };
 
     /// Initialize a new Lua state with optional custom allocator.
-    ///
+    /// ---
     /// Creates a new Luau virtual machine instance. Pass `null` to use Luau's built-in
     /// default allocator (malloc), or `&allocator` to use a custom Zig allocator. The allocator must
     /// remain valid for the entire lifetime of the Lua state.
-    ///
+    /// ---
     /// Note: Uses pointer parameter (`?*const Allocator`) due to C interop requirements,
     /// deviating from typical Zig conventions.
-    ///
+    /// ---
     /// Examples:
     /// ```zig
     /// const lua = try Lua.init(null);                   // Luau default (malloc)
     /// const lua = try Lua.init(&std.testing.allocator); // Custom allocator
     /// defer lua.deinit();
     /// ```
-    ///
+    /// ---
     /// Returns `Lua` instance or `Error.OutOfMemory` on failure.
     pub fn init(allocator: ?*const Allocator) !Self {
         const state = if (allocator) |alloc_ptr|
@@ -89,24 +89,24 @@ pub const Lua = struct {
     }
 
     /// Enable Luau's JIT code generator for improved function execution performance.
-    ///
+    /// ---
     /// This method checks if code generation is supported on the current platform and
     /// initializes the code generator if available. Once enabled, functions can be
     /// compiled to native machine code using `Function.compile()`.
-    ///
+    /// ---
     /// The code generator provides significant performance improvements for
     /// compute-intensive Lua functions by compiling them to native machine code
     /// instead of interpreting bytecode.
-    ///
+    /// ---
     /// Returns:
     /// - `true` if codegen is supported and was successfully enabled
     /// - `false` if codegen is not supported on this platform
-    ///
+    /// ---
     /// Notes:
     /// - Should only be called once per Lua state
     /// - Safe to call multiple times (subsequent calls are no-ops)
     /// - Must be called before using `Function.compile()`
-    ///
+    /// ---
     /// Example:
     /// ```zig
     /// const lua = try Lua.init();
@@ -129,7 +129,7 @@ pub const Lua = struct {
     }
 
     /// A reference to a Lua value.
-    ///
+    /// ---
     /// Holds a reference ID that can be used to retrieve the value later.
     /// Must be explicitly released using deinit() to avoid memory leaks.
     pub const Ref = struct {
@@ -137,7 +137,7 @@ pub const Lua = struct {
         ref: c_int,
 
         /// Creates a reference to a value on the stack.
-        ///
+        /// ---
         /// Does not consume the value.
         pub inline fn init(lua: Lua, index: i32) Ref {
             return Ref{
@@ -147,7 +147,7 @@ pub const Lua = struct {
         }
 
         /// Releases the Lua reference, allowing the referenced value to be garbage collected.
-        ///
+        /// ---
         /// Note: For references obtained from `globals()`, calling `deinit()` is not required
         /// and will be a no-op since the globals table is a special pseudo-index that doesn't
         /// need explicit memory management.
@@ -194,17 +194,17 @@ pub const Lua = struct {
         }
 
         /// Sets a table element by integer index using raw access (bypasses `__newindex` metamethod).
-        ///
+        /// ---
         /// Directly assigns `table[index] = value` without invoking metamethods.
         /// This is faster than `set()` but doesn't respect custom table behavior.
-        ///
+        /// ---
         /// Examples:
         /// ```zig
         /// try table.setRaw(1, 42);        // table[1] = 42
         /// try table.setRaw(5, "hello");   // table[5] = "hello"
         /// try table.setRaw(-1, true);     // table[-1] = true
         /// ```
-        ///
+        /// ---
         /// Errors: `Error.OutOfMemory` if stack allocation fails
         pub fn setRaw(self: Table, index: i32, value: anytype) !void {
             try self.ref.lua.checkStack(2);
@@ -216,19 +216,19 @@ pub const Lua = struct {
         }
 
         /// Gets a table element by integer index using raw access (bypasses __index metamethod).
-        ///
+        /// ---
         /// Directly retrieves `table[index]` without invoking metamethods.
         /// This is faster than `get()` but doesn't respect custom table behavior.
-        ///
+        /// ---
         /// Returns `null` if the index doesn't exist or the value cannot be converted to type `T`.
-        ///
+        /// ---
         /// Examples:
         /// ```zig
         /// const value = try table.getRaw(1, i32);     // Get table[1] as i32
         /// const text = try table.getRaw(5, []u8);     // Get table[5] as string
         /// const flag = try table.getRaw(-1, bool);    // Get table[-1] as bool
         /// ```
-        ///
+        /// ---
         /// Returns: `?T` - The converted value, or `null` if not found or conversion failed
         /// Errors: `Error.OutOfMemory` if stack allocation fails
         pub fn getRaw(self: Table, index: i32, comptime T: type) !?T {
@@ -243,16 +243,16 @@ pub const Lua = struct {
         }
 
         /// Sets a table element by key with full Lua semantics (invokes __newindex metamethod).
-        ///
+        /// ---
         /// Assigns `table[key] = value` following Lua's complete access protocol.
         /// If the table has a `__newindex` metamethod, it will be called.
         /// Use this for general table manipulation where metamethods should be honored.
-        ///
+        /// ---
         /// Both keys and values support automatic type conversion:
         /// - Keys: Integers, floats, booleans, strings, optionals, functions, references
         /// - Values: All types supported by the type system (integers, floats, booleans,
         ///   strings, optionals, tuples, vectors, functions, references, tables)
-        ///
+        /// ---
         /// Examples:
         /// ```zig
         /// // Basic key-value pairs
@@ -276,7 +276,7 @@ pub const Lua = struct {
         /// try inner.set("x", 5);
         /// try table.set("inner", inner);          // Store table in table
         /// ```
-        ///
+        /// ---
         /// Errors: `Error.OutOfMemory` if stack allocation fails
         pub fn set(self: Table, key: anytype, value: anytype) !void {
             try self.ref.lua.checkStack(3);
@@ -290,11 +290,11 @@ pub const Lua = struct {
         }
 
         /// Gets a table element by key with full Lua semantics (invokes __index metamethod).
-        ///
+        /// ---
         /// Retrieves `table[key]` following Lua's complete access protocol.
         /// If the table has an `__index` metamethod, it will be called.
         /// Use this for general table access where metamethods should be honored.
-        ///
+        /// ---
         /// Keys support automatic type conversion (integers, floats, booleans, strings, etc.).
         /// Values are converted from Lua to the requested Zig type with support for:
         /// - Lua boolean → `bool`
@@ -303,12 +303,12 @@ pub const Lua = struct {
         /// - Lua vector → Vector types (`@Vector(N, f32)`)
         /// - Lua nil → Optional types (`?T`) as `null`
         /// - Any valid value → Optional types (`?T`) as wrapped value
-        ///
+        /// ---
         /// Returns `null` if the key doesn't exist or the value cannot be converted to type `T`.
-        ///
+        /// ---
         /// Note: String conversion is not supported via `get` due to Lua's garbage collection.
         /// For safe string handling, use Lua code with `eval()` or the low-level State API.
-        ///
+        /// ---
         /// Examples:
         /// ```zig
         /// // Basic type retrieval
@@ -331,7 +331,7 @@ pub const Lua = struct {
         /// // After: table.set("coords", .{10, 20, 30})
         /// // The tuple becomes a nested table accessible by index
         /// ```
-        ///
+        /// ---
         /// Returns: `?T` - The converted value, or `null` if not found or conversion failed
         /// Errors: `Error.OutOfMemory` if stack allocation fails
         pub fn get(self: Table, key: anytype, comptime T: type) !?T {
@@ -347,10 +347,10 @@ pub const Lua = struct {
         }
 
         /// Calls a function stored in the table.
-        ///
+        /// ---
         /// Retrieves a function from the table using the provided key and calls it with the given arguments.
         /// The function must exist in the table and be callable, otherwise the call will fail.
-        ///
+        /// ---
         /// Examples:
         /// ```zig
         /// // Call a function with no arguments
@@ -362,7 +362,7 @@ pub const Lua = struct {
         /// // Call a function returning multiple values
         /// const result = try table.call("getCoords", .{}, struct { f64, f64 });
         /// ```
-        ///
+        /// ---
         /// Errors: `Error.OutOfMemory` if stack allocation fails
         pub fn call(self: Table, key: anytype, args: anytype, comptime R: type) !R {
             try self.ref.lua.checkStack(3);
@@ -383,14 +383,14 @@ pub const Lua = struct {
     };
 
     /// Creates a new Lua table and returns a high-level Table wrapper.
-    ///
+    /// ---
     /// Creates an empty table with optional size hints for optimization.
     /// The hints help Lua preallocate memory for better performance:
     /// - `arr`: Expected number of array elements (sequential integer keys starting from 1)
     /// - `rec`: Expected number of hash table elements (non-sequential keys)
-    ///
+    /// ---
     /// The returned Table must be explicitly released using `deinit()` to avoid memory leaks.
-    ///
+    /// ---
     /// Examples:
     /// ```zig
     /// // Create empty table with no size hints
@@ -409,7 +409,7 @@ pub const Lua = struct {
     /// const mixed_table = lua.createTable(.{ .arr = 10, .rec = 5 });
     /// defer mixed_table.deinit();
     /// ```
-    ///
+    /// ---
     /// Returns: `Table` - A wrapper around the newly created Lua table
     pub inline fn createTable(self: Self, opts: struct { arr: u32 = 0, rec: u32 = 0 }) Table {
         self.state.createTable(opts.arr, opts.rec);
@@ -419,20 +419,20 @@ pub const Lua = struct {
     }
 
     /// Returns a table wrapper for the Lua global environment.
-    ///
+    /// ---
     /// Provides access to the global table (_G) where all global variables are stored.
     /// This is the primary way to interact with global variables in the Lua environment.
-    ///
+    /// ---
     /// The returned table supports all standard table operations:
     /// - `set(key, value)` - Set global variables with full Lua semantics
     /// - `get(key, T)` - Get global variables with automatic type conversion
     /// - `setRaw(index, value)` - Set by integer index (bypass metamethods)
     /// - `getRaw(index, T)` - Get by integer index (bypass metamethods)
-    ///
+    /// ---
     /// Memory management: The globals table reference does not need to be explicitly
     /// released with `deinit()` as it's a special pseudo-index, but calling `deinit()`
     /// is safe and will be a no-op.
-    ///
+    /// ---
     /// Examples:
     /// ```zig
     /// const globals = lua.globals();
@@ -455,7 +455,7 @@ pub const Lua = struct {
     /// try globals.set("add", add);
     /// const sum = try lua.eval("return add(5, 3)", .{}, i32); // Returns 8
     /// ```
-    ///
+    /// ---
     /// Returns: `Table` - A wrapper around the Lua global environment table
     pub inline fn globals(self: Self) Table {
         return Table{
@@ -464,13 +464,13 @@ pub const Lua = struct {
     }
 
     /// High-level function wrapper providing access to Lua functions.
-    ///
+    /// ---
     /// Holds a reference to a Lua function and provides methods for calling the function
     /// with automatic type conversion. This is an alternative to using `Table.call("funcName", ...)`
     /// when you have a direct reference to the function.
-    ///
+    /// ---
     /// The Function reference must be explicitly released using `deinit()` to avoid memory leaks.
-    ///
+    /// ---
     /// Examples:
     /// ```zig
     /// // Get function from global namespace
@@ -498,10 +498,10 @@ pub const Lua = struct {
         }
 
         /// Calls the function with the provided arguments and returns the result.
-        ///
+        /// ---
         /// Pushes the function onto the stack, followed by the arguments, then calls the function
         /// and returns the result converted to the specified type.
-        ///
+        /// ---
         /// Examples:
         /// ```zig
         /// // Call a function with no arguments
@@ -513,7 +513,7 @@ pub const Lua = struct {
         /// // Call a function returning multiple values
         /// const result = try func.call(.{}, struct { f64, f64 });
         /// ```
-        ///
+        /// ---
         /// Errors: `Error.OutOfMemory` if stack allocation fails
         pub fn call(self: @This(), args: anytype, comptime R: type) !R {
             try self.ref.lua.checkStack(2);
@@ -524,20 +524,20 @@ pub const Lua = struct {
         }
 
         /// Compile this function using Luau's JIT code generator for improved performance.
-        ///
+        /// ---
         /// This method compiles the function (and any nested functions it contains) to native
         /// machine code using Luau's code generator. Compiled functions execute significantly
         /// faster than interpreted bytecode.
-        ///
+        /// ---
         /// Prerequisites:
         /// - `enable_codegen()` must be called successfully first
-        ///
+        /// ---
         /// Notes:
         /// - This is a one-time operation - functions remain compiled for their lifetime
         /// - Compilation happens immediately and synchronously
         /// - Nested functions within this function are also compiled
         /// - Has no effect if the function is already compiled
-        ///
+        /// ---
         /// Example:
         /// ```zig
         /// // Enable code generator
@@ -573,12 +573,12 @@ pub const Lua = struct {
     }
 
     /// Ensures the Lua stack has space for at least `sz` more elements.
-    ///
+    /// ---
     /// This function checks if the stack can grow to accommodate the specified
     /// number of additional elements. Returns an error if the stack cannot be grown.
-    ///
+    /// ---
     /// Used internally by table operations to ensure stack safety before pushing values.
-    ///
+    /// ---
     /// Errors: `Error.OutOfMemory` if stack cannot be grown
     inline fn checkStack(self: Self, sz: i32) !void {
         if (!self.state.checkStack(sz)) {
@@ -587,16 +587,16 @@ pub const Lua = struct {
     }
 
     /// Executes pre-compiled Luau bytecode and returns the result.
-    ///
+    /// ---
     /// Loads the provided bytecode onto the Lua stack and executes it as a function.
     /// The bytecode should be valid Luau bytecode (not LuaJit).
-    ///
+    /// ---
     /// The return type `T` specifies what type to expect from the executed code:
     /// - `void` - Executes code that returns nothing
     /// - `i32`, `f64`, `bool`, etc. - Converts the return value to the specified type
     /// - `?T` - Optional types, returns `null` if conversion fails
     /// - `struct { T1, T2, ... }` - Tuple types for multiple return values
-    ///
+    /// ---
     /// Examples:
     /// ```zig
     /// // Execute bytecode that returns a number
@@ -611,7 +611,7 @@ pub const Lua = struct {
     /// // Execute bytecode that returns multiple values as a tuple
     /// const tuple = try lua.exec(bytecode, struct { i32, f64, bool });
     /// ```
-    ///
+    /// ---
     /// Returns: The result of executing the bytecode, converted to type `T`
     /// Errors: `Error.OutOfMemory` if the VM runs out of memory during execution
     pub fn exec(self: Self, blob: []const u8, comptime T: type) !T {
@@ -683,17 +683,17 @@ pub const Lua = struct {
     }
 
     /// Compiles and executes Luau source code, returning the result.
-    ///
+    /// ---
     /// Takes Luau source code as a string, compiles it to bytecode using the provided
     /// compilation options, and then executes the resulting bytecode. This is a
     /// convenience function that combines compilation and execution in one step.
-    ///
+    /// ---
     /// The return type `T` specifies what type to expect from the executed code:
     /// - `void` - Executes code that returns nothing
     /// - `i32`, `f64`, `bool`, etc. - Converts the return value to the specified type
     /// - `?T` - Optional types, returns `null` if conversion fails
     /// - `struct { T1, T2, ... }` - Tuple types for multiple return values
-    ///
+    /// ---
     /// Examples:
     /// ```zig
     /// // Execute simple arithmetic
@@ -711,12 +711,12 @@ pub const Lua = struct {
     /// // Execute code that returns multiple values as a tuple
     /// const tuple = try lua.eval("return 42, 3.14, true", .{}, struct { i32, f64, bool });
     /// ```
-    ///
+    /// ---
     /// Parameters:
     /// - `source`: Luau source code to compile and execute
     /// - `opts`: Compilation options (see `Compiler.Opts` for available options)
     /// - `T`: Expected return type
-    ///
+    /// ---
     /// Returns: The result of executing the compiled code, converted to type `T`
     /// Errors:
     /// - `Error.Compile` if the source code contains syntax errors
@@ -734,14 +734,14 @@ pub const Lua = struct {
     }
 
     /// Register a user-defined type to be used from Lua.
-    ///
+    /// ---
     /// Takes a Zig struct type and creates Lua bindings for all its methods.
     /// Each public method becomes callable from Lua with automatic type conversion.
     /// The struct must have public methods that follow Lua calling conventions.
-    ///
+    /// ---
     /// Creates a metatable for the type and registers all methods as Lua functions.
     /// Methods are wrapped using the same `createFunc` mechanism as regular Zig functions.
-    ///
+    /// ---
     /// Examples:
     /// ```zig
     /// const Person = struct {
@@ -763,7 +763,7 @@ pub const Lua = struct {
     ///
     /// lua.registerUserData(Person);
     /// ```
-    ///
+    /// ---
     /// The registered type can then be used from Lua:
     /// ```lua
     /// -- After creating a Person instance in Zig and pushing it to Lua
@@ -771,16 +771,16 @@ pub const Lua = struct {
     /// print(person:getAge())   -- Calls Person.getAge
     /// person:setAge(30)        -- Calls Person.setAge
     /// ```
-    ///
+    /// ---
     /// Type requirements:
     /// - Must be a struct type
     /// - Must have at least one public method (excluding deinit)
     /// - Methods must be public (pub)
     /// - Methods should follow Lua calling conventions for arguments and return values
-    ///
+    /// ---
     /// NOTE: Each type can only be registered once per Lua state. Attempting to register
     /// the same type twice will panic with a clear error message.
-    ///
+    /// ---
     /// Errors: `Error.OutOfMemory` if memory allocation fails during registration
     pub fn registerUserData(self: Self, comptime T: type) !void {
         const type_info = @typeInfo(T);
@@ -861,13 +861,13 @@ pub const Lua = struct {
     }
 
     /// Dump the current stack contents to a string for debugging
-    ///
+    /// ---
     /// Creates a formatted string representation of all values currently on the Lua stack,
     /// showing their stack indices, types, and string representations. Uses Lua's `toString`
     /// to convert values to strings, showing "nil" for values that cannot be converted.
-    ///
+    /// ---
     /// Format for each stack entry: `  {index} [{type}] {value}`
-    ///
+    /// ---
     /// Examples:
     /// ```zig
     /// var lua = try Lua.init();
@@ -887,7 +887,7 @@ pub const Lua = struct {
     /// //   2 [boolean] true
     /// //   1 [number] 42.5
     /// ```
-    ///
+    /// ---
     /// Returns: Allocated string containing the stack dump. Caller owns the memory.
     /// Errors: `std.mem.Allocator.Error` if memory allocation fails
     pub fn dumpStack(self: Self, allocator: std.mem.Allocator) ![]u8 {
