@@ -191,7 +191,7 @@ Available options:
   ...
 ```
 
-## ⚠️ Stability
+## Stability
 
 > [!WARNING]
 > This library is still evolving and the API is not stable. Backward incompatible changes may be introduced up until the 1.0 release. Consider pinning to a specific commit or tag if you need stability.
