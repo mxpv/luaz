@@ -1,6 +1,7 @@
 const std = @import("std");
 const State = @import("state.zig").State;
 const ArgsTuple = std.meta.ArgsTuple;
+const stack = @import("stack.zig");
 const Lua = @import("lib.zig").Lua;
 
 /// Function type categories for userdata methods
@@ -125,7 +126,7 @@ pub fn createUserDataFunc(comptime T: type, comptime method_name: []const u8, me
                 } else {
                     // Handle regular parameters from Lua stack
                     const lua_stack_index = i + 1;
-                    args[i] = lua.checkArg(@intCast(lua_stack_index), param_type);
+                    args[i] = stack.checkArg(lua, @intCast(lua_stack_index), param_type);
                 }
             }
 
@@ -133,7 +134,7 @@ pub fn createUserDataFunc(comptime T: type, comptime method_name: []const u8, me
 
             if (function_type == .init) {
                 // Init functions must return exactly one value (the userdata)
-                if (comptime Lua.slotCount(@TypeOf(result)) != 1) {
+                if (comptime stack.slotCountFor(@TypeOf(result)) != 1) {
                     @compileError("init function must return exactly one value, got " ++ @typeName(@TypeOf(result)));
                 }
 
@@ -151,12 +152,12 @@ pub fn createUserDataFunc(comptime T: type, comptime method_name: []const u8, me
             if (result_info == .@"struct" and result_info.@"struct".is_tuple) {
                 // Multiple return values
                 inline for (0..result_info.@"struct".fields.len) |i| {
-                    lua.push(result[i]);
+                    stack.push(lua, result[i]);
                 }
                 return @intCast(result_info.@"struct".fields.len);
             } else {
-                lua.push(result);
-                return Lua.slotCount(ResultType);
+                stack.push(lua, result);
+                return stack.slotCountFor(ResultType);
             }
         }
     }.f;
