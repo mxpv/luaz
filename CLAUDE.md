@@ -20,6 +20,11 @@ The build system is written in Zig and provides several targets:
 - `zig build` - Build the library
 - `zig build test` - Run unit tests
 - `zig build luau-compile` - Run the Luau compiler binary
+- `zig build luau-analyze` - Run the Luau analyze binary
+- `zig build docs` - Generate and install documentation
+- `zig build check-fmt` - Check code formatting
+- `zig build luau-vm` - Build Luau VM library only
+- `zig build luau-codegen` - Build Luau codegen library only
 
 ### Key Libraries Built
 - **luau_vm**: Core Luau virtual machine (from `luau/VM/src`)
