@@ -30,10 +30,10 @@ jobs:
       with:
         version: 0.14.1
 
-    - uses: actions/cache@v4
-      with:
-        path: .zig-cache
-        key: zig-cache-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('build.zig', 'build.zig.zon') }}
+    # I don't know why this is needed for the docs to succeed on CI, but otherwise it consistently fails with:
+    #   error: unable to open directory '.zig-cache/b/': FileNotFound
+    # See https://github.com/mxpv/luaz/actions/runs/16698403816/job/47265761593
+    - run: zig build
 
     - run: zig build docs
 
