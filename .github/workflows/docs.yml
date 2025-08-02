@@ -30,12 +30,17 @@ jobs:
       with:
         version: 0.14.1
 
-    # I don't know why this is needed for the docs to succeed on CI, but otherwise it consistently fails with:
-    #   error: unable to open directory '.zig-cache/b/': FileNotFound
-    # See https://github.com/mxpv/luaz/actions/runs/16698403816/job/47265761593
-    - run: zig build
-
-    - run: zig build docs
+    - run: |
+        # I don't know why this is needed for the docs to succeed on CI, but otherwise it consistently fails with:
+        #   error: unable to open directory '...': FileNotFound
+        # See https://github.com/mxpv/luaz/actions/runs/16698403816/job/47265761593
+        for i in {1..3}; do
+          if zig build docs; then
+            break
+          fi
+          echo "Attempt $i failed, retrying..."
+          sleep 2
+        done
 
     - uses: actions/configure-pages@v5
     - uses: actions/upload-pages-artifact@v3

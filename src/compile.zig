@@ -42,7 +42,7 @@ pub const Compiler = struct {
         dbg_level: u8 = 1,
 
         /// Type information level for native code generation.
-        /// 
+        ///
         /// Information includes testable types for function arguments, locals, upvalues and some temporaries.
         ///
         /// - `0` - generate for native modules
