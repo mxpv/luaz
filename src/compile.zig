@@ -28,30 +28,31 @@ pub const Compiler = struct {
     /// Compilation options for controlling Luau compiler behavior.
     pub const Opts = struct {
         /// Optimization level.
-        ///
-        /// 0 - no optimization
-        /// 1 - baseline optimization level that doesn't prevent debuggability
-        /// 2 - includes optimizations that harm debuggability such as inlining
+        /// ---
+        /// - `0` - no optimization
+        /// - `1` - baseline optimization level that doesn't prevent debuggability
+        /// - `2` - includes optimizations that harm debuggability such as inlining
         opt_level: u8 = 1,
 
         /// Debug level.
-        ///
-        /// 0 - no debugging support
-        /// 1 - line info & function names only; sufficient for backtraces
-        /// 2 - full debug info with local & upvalue names; necessary for debugger
+        /// ---
+        /// - `0` - no debugging support
+        /// - `1` - line info & function names only; sufficient for backtraces
+        /// - `2` - full debug info with local & upvalue names; necessary for debugger
         dbg_level: u8 = 1,
 
-        /// Type information is used to guide native code generation decisions
-        /// information includes testable types for function arguments, locals, upvalues and some temporaries
-        /// 0 - generate for native modules
-        /// 1 - generate for all modules
+        /// Type information level for native code generation.
+        /// Information includes testable types for function arguments, locals, upvalues and some temporaries.
+        /// ---
+        /// - `0` - generate for native modules
+        /// - `1` - generate for all modules
         type_info_level: u8 = 0,
 
         /// Coverage support level.
-        ///
-        /// 0 - no code coverage support
-        /// 1 - statement coverage
-        /// 2 - statement and expression coverage (verbose)
+        /// ---
+        /// - `0` - no code coverage support
+        /// - `1` - statement coverage
+        /// - `2` - statement and expression coverage (verbose)
         coverage_level: u8 = 0,
     };
 
