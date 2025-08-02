@@ -1238,7 +1238,7 @@ pub const Lua = struct {
 
         // Register methods in metatable
         self.state.register(null, methods_buffer[0 .. method_index + 1]);
-        
+
         // Extract just the type name without module prefix for global registration
         // Example: "myapp.data.User" -> "User", "TestUserData" -> "TestUserData"
         const full_type_name = @typeName(T);
@@ -1246,7 +1246,7 @@ pub const Lua = struct {
             full_type_name[last_dot + 1 ..]
         else
             full_type_name;
-        
+
         // Register the metatable globally so static methods are accessible as TypeName.method()
         self.state.setGlobal(type_name_only);
     }

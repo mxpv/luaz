@@ -348,7 +348,7 @@ const TestUserDataWithDeinit = struct {
 test "userdata with destructor support" {
     // Reset counter
     deinit_call_count = 0;
-    
+
     {
         const lua = try Lua.init(&std.testing.allocator);
         defer lua.deinit();
@@ -362,10 +362,10 @@ test "userdata with destructor support" {
         // Create objects that should trigger destructors when Lua state is destroyed
         try lua.eval("local obj1 = TestUserDataWithDeinit.new(10, 'obj1')", .{}, void);
         try lua.eval("local obj2 = TestUserDataWithDeinit.new(20, 'obj2')", .{}, void);
-        
+
         try expectEq(lua.top(), 0);
     } // Lua state destroyed here, destructors should be called
-    
+
     // Verify that deinit was called for both objects
     try expectEq(deinit_call_count, 2);
 }
