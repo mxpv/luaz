@@ -164,7 +164,7 @@ pub fn build(b: *std.Build) !void {
 
     // Main module
     {
-        const mod = b.createModule(.{
+        const mod = b.addModule("luaz", .{
             .root_source_file = b.path("src/lib.zig"),
             .target = target,
             .optimize = optimize,
