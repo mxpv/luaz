@@ -19,13 +19,13 @@ These tools make it easy to compile, analyze, and embed Luau scripts directly in
 
 ## ✨ Features
 
-- Minimal yet flexible zero-cost API.
-- Bidirectional [unction calls between Zig and Lua.
-- First-class userdata support.
-- Native support for refs, functions, tables, and vector types.
-- Supports Luau code generation for improved performance on supported platforms.
-- Built-in Luau tools (`luau-compile` and `luau-analyze`) provided by the build system.
-- Excellent test coverage and API documentation.
+- Minimal yet flexible zero-cost [API](#basic-usage)
+- Bidirectional [function calls](#function-calls) between Zig and Lua
+- First-class [userdata support](#userdata-integration)
+- Native support for refs, functions, tables, and vector types
+- Supports Luau code generation for improved performance on supported platforms
+- Built-in [Luau tools](#-using-luau-tools) (`luau-compile` and `luau-analyze`) provided by the build system
+- Excellent test coverage and API [documentation](https://mxpv.github.io/luaz/#luaz.lua)
 
 ## 📚 Documentation
 
