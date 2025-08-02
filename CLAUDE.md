@@ -99,7 +99,7 @@ Write idiomatic Zig code following the established patterns in the codebase:
 - **Do not write implementation comments** that explain why code was written a certain way or reference previous implementations
 
 ### Testing
-All modules include unit tests demonstrating usage patterns. New functionality must include
+Unit tests should be written against public APIs in `tests.zig`. New functionality must include
 corresponding unit tests. Tests use `&std.testing.allocator` for memory leak detection. Tests cover:
 - Type conversion edge cases
 - Function wrapping and calling
