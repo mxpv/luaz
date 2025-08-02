@@ -140,7 +140,7 @@ pub fn main() !void {
         \\assert(counter:increment(5) == 5) -- Call instance method
         \\assert(counter:increment(3) == 8) -- Value persists
         \\
-        \\local counter2 = Counter.init(10) -- Use constructor
+        \\local counter2 = Counter.new(10) -- Use constructor
         \\assert(counter2:increment(2) == 12)
     , .{}, void);
 }

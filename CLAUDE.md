@@ -39,6 +39,7 @@ The main `Lua` struct provides an idiomatic Zig interface with automatic type co
 - `exec()` - Execute pre-compiled bytecode
 - `createTable()` - Create new Lua tables with optional size hints
 - `dumpStack()` - Debug utility to inspect the current Lua stack state
+- `registerUserData()` - Register Zig structs as Lua userdata with automatic method binding
 
 ### Type System Integration
 The library provides seamless conversion between Zig and Lua types through its high-level API:
@@ -55,6 +56,15 @@ The library provides comprehensive table operations through the `Table` type:
 - **Function calling** (`call`) retrieves and calls functions stored in tables with automatic argument and return type handling
 - Global access via `lua.globals()` returns a `Table` for interacting with the global environment
 - Tables are reference-counted and must be explicitly released with `deinit()` (except globals table)
+
+### UserData Support
+The library provides automatic compile-time binding generation for Zig structs:
+- `registerUserData(T)` creates Lua bindings for all public methods of struct type T
+- Static methods and constructors are accessible as `TypeName.methodName()`
+- Instance methods are accessible as `instance:methodName()`
+- `init` methods are automatically renamed to `new` in Lua (e.g., `Counter.new()`)
+- If struct has `deinit`, it's automatically called during Lua garbage collection
+- Methods support automatic type conversion for arguments and return values
 
 ### Low-Level API (`src/state.zig`)
 Direct wrapper around Luau C API providing:
@@ -99,6 +109,7 @@ corresponding unit tests. Tests use `&std.testing.allocator` for memory leak det
 - Compilation error handling
 - Reference and table management
 - Custom allocator usage
+- UserData registration and method binding
 
 Write unit tests with good coverage, but no need to be comprehensive and try to cover every possible case.
 Keep unit tests reasonably short.
