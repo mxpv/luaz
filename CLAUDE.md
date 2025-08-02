@@ -131,7 +131,6 @@ Keep documentation for public interfaces current but reasonably sized. The codeb
 Keep documentation concise and focused. Don't write "comprehensive" documentation - aim for reasonable size that covers the essentials without being verbose.
 
 **Documentation Formatting**: 
-- Due to [Zig issue #20202](https://github.com/ziglang/zig/issues/20202), use `---` as a separator in doc comments instead of other markdown horizontal rules to ensure docs are valid markdown when generated.
 - Avoid empty lines in doc comments (lines with only `///`) as they will be skipped during documentation generation.
 
 ### Memory Management

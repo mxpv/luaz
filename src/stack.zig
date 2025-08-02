@@ -8,7 +8,7 @@ const State = @import("state.zig").State;
 const Lua = @import("lua.zig").Lua;
 
 /// Counts how many Lua stack slots are needed for the given type.
-/// ---
+///
 /// This is typically 1 for most types, but there are edge cases:
 /// - void requires 0 slots (nothing is pushed)
 /// - tuples require a slot for each element
@@ -28,7 +28,7 @@ pub fn slotCountFor(comptime T: type) i32 {
 
 /// Internal function to push a Zig value onto the Lua stack.
 /// Used internally by table operations and other high-level functions.
-/// ---
+///
 /// Note: For light userdata (pointer types), the caller is responsible for ensuring
 /// the pointed-to object remains alive for as long as it is used in Lua. Light userdata
 /// does not participate in Lua's garbage collection.
@@ -336,7 +336,7 @@ pub fn checkArg(lua: Lua, index: i32, comptime T: type) T {
 }
 
 /// Internal function to convert a single Lua value at the specified stack index to a Zig type.
-/// ---
+///
 /// This function always expects to handle exactly one Lua stack slot and does not handle composite types like tuples.
 /// For composite types, use higher-level functions that manage multiple stack slots appropriately.
 pub fn toValue(lua: Lua, comptime T: type, index: i32) ?T {
