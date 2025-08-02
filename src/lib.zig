@@ -1,3 +1,37 @@
+//! **luaz** - Zero-cost wrapper library for Luau written in Zig
+//!
+//! This library provides idiomatic Zig bindings for the Luau scripting language,
+//! focusing on Luau's unique features and performance characteristics. It offers
+//! a high-level API with automatic type conversions while maintaining access to
+//! low-level operations when needed.
+//!
+//! ## Quick Start
+//!
+//! ```zig
+//! const std = @import("std");
+//! const luaz = @import("luaz");
+//!
+//! pub fn main() !void {
+//!     // Initialize Lua state
+//!     const lua = try luaz.Lua.init(null);
+//!     defer lua.deinit();
+//!
+//!     // Execute Lua code
+//!     const result = try lua.eval("return 2 + 3", .{}, i32);
+//!     std.debug.print("Result: {}\n", .{result}); // Prints: Result: 5
+//!
+//!     // Work with global variables
+//!     const globals = lua.globals();
+//!     try globals.set("message", "Hello from Zig!");
+//!     try lua.eval("print(message)", .{}, void);
+//!
+//!     // Register Zig functions
+//!     fn add(a: i32, b: i32) i32 { return a + b; }
+//!     try globals.set("add", add);
+//!     const sum = try lua.eval("return add(10, 20)", .{}, i32);
+//! }
+//! ```
+
 const std = @import("std");
 const ArgsTuple = std.meta.ArgsTuple;
 const Allocator = std.mem.Allocator;
