@@ -191,6 +191,11 @@ Available options:
   ...
 ```
 
+## ⚠️ Stability
+
+> [!WARNING]
+> This library is still evolving and the API is not stable. Backward incompatible changes may be introduced up until the 1.0 release. Consider pinning to a specific commit or tag if you need stability.
+
 ## 🔗 Related Projects
 
 These projects served as inspiration and are worth exploring:
@@ -202,4 +207,3 @@ These projects served as inspiration and are worth exploring:
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
