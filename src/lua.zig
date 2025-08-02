@@ -42,13 +42,19 @@ const userdata = @import("userdata.zig");
 const stack = @import("stack.zig");
 const alloc = @import("alloc.zig").alloc;
 
+/// High-level Lua wrapper and main library entry point.
+/// Provides an idiomatic Zig interface with automatic type conversions for the Luau scripting language.
+/// This is the primary API for most use cases, offering zero-cost abstractions over the low-level State API.
 pub const Lua = struct {
     const Self = @This();
 
     state: State,
 
+    /// Error types that can be returned by Lua operations.
     pub const Error = error{
+        /// VM memory allocation failed.
         OutOfMemory,
+        /// Lua source code compilation failed.
         Compile,
     };
 
@@ -84,6 +90,9 @@ pub const Lua = struct {
         };
     }
 
+    /// Deinitializes the Lua state and releases all associated resources.
+    /// Must be called when the Lua instance is no longer needed to prevent memory leaks.
+    /// NOTE: this should not be called from inside Lua callbacks.
     pub fn deinit(self: Lua) void {
         self.state.deinit();
     }
