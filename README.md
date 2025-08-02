@@ -5,6 +5,7 @@
 # luaz
 
 [![CI](https://github.com/mxpv/luaz/actions/workflows/ci.yml/badge.svg)](https://github.com/mxpv/luaz/actions/workflows/ci.yml)
+[![Docs](https://github.com/mxpv/luaz/actions/workflows/docs.yml/badge.svg)](https://github.com/mxpv/luaz/actions/workflows/docs.yml)
 
 `luaz` is a zero-cost wrapper library for [`Luau`](https://github.com/luau-lang/luau).
 Unlike other libraries, it focuses specifically on `Luau`, providing idiomatic `Zig` bindings that leverage Luau's unique
@@ -25,6 +26,12 @@ These tools make it easy to compile, analyze, and embed Luau scripts directly in
 - Supports Luau code generation for improved performance on supported platforms.
 - Built-in Luau tools (`luau-compile` and `luau-analyze`) provided by the build system.
 - Excellent test coverage and API documentation.
+
+## 📚 Documentation
+
+Full API documentation is available at: https://mxpv.github.io/luaz/#luaz.lua
+
+The documentation is automatically updated on every change to the `main` branch.
 
 ## 📖 Usage Examples
 
