@@ -26,6 +26,126 @@ These tools make it easy to compile, analyze, and embed Luau scripts directly in
 - Built-in Luau tools (`luau-compile` and `luau-analyze`) provided by the build system.
 - Excellent test coverage and API documentation.
 
+## 📖 Usage Examples
+
+### Basic Usage
+
+The following example demonstrates some basic use cases.
+
+Global table is available via `globals()`.
+
+`eval` is a helper function that compiles Lua code to Luau bytecode and executes it.
+
+Note: ideally, bundled  `luau-compile` tool should be used to precompile Lua scripts offline.
+
+```zig
+const std = @import("std");
+const luaz = @import("luaz");
+const assert = std.debug.assert;
+
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    var lua = try luaz.Lua.init(&gpa.allocator); // Create Lua state with custom allocator
+    defer lua.deinit(); // Clean up Lua state
+
+    // Set a global variable
+    try lua.globals().set("greeting", "Hello from Zig!");
+
+    // Get and verify the global variable
+    const value = try lua.globals().get("greeting", []const u8);
+    assert(std.mem.eql(u8, value.?, "Hello from Zig!"));
+
+    // Evaluate Lua code and get result
+    const result = try lua.eval("return 2 + 3 * 4", .{}, i32);
+    assert(result == 14);
+}
+```
+
+### Function Calls
+
+Both Lua functions can be called from Zig and Zig functions from Lua with automatic type conversion and argument 
+handling.
+
+```zig
+const std = @import("std");
+const luaz = @import("luaz");
+const assert = std.debug.assert;
+
+fn sum(a: i32, b: i32) i32 {
+    return a + b;
+}
+
+pub fn main() !void {
+    var lua = try luaz.Lua.init(null); // Use default allocator
+    defer lua.deinit();
+
+    // Register Zig function in Lua
+    try lua.globals().set("sum", sum);
+
+    // Call Zig function from Lua
+    const result1 = try lua.eval("return sum(10, 20)", .{}, i32);
+    assert(result1 == 30);
+
+    // Define Lua function
+    _ = try lua.eval("function multiply(x, y) return x * y end", .{}, void);
+
+    // Call Lua function from Zig
+    const result2 = try lua.globals().call("multiply", .{6, 7}, i32);
+    assert(result2 == 42);
+}
+```
+
+### UserData Integration
+
+luaz has automatic compile-time binding generation for user data. It supports constructors, static and instance 
+methods. If a struct has `deinit`, it'll be automatically invoked on garbage collection.
+
+```zig
+const std = @import("std");
+const luaz = @import("luaz");
+const assert = std.debug.assert;
+
+const Counter = struct {
+    value: i32,
+
+    pub fn init(initial: i32) Counter {
+        return Counter{ .value = initial };
+    }
+
+    pub fn deinit(self: *Counter) void {
+        std.log.info("Counter with value {} being destroyed", .{self.value});
+    }
+
+    pub fn create() Counter {
+        return Counter.init(0);
+    }
+
+    pub fn increment(self: *Counter, amount: i32) i32 {
+        self.value += amount;
+        return self.value;
+    }
+};
+
+pub fn main() !void {
+    var lua = try luaz.Lua.init(null);
+    defer lua.deinit();
+
+    // Register Counter type with Lua
+    try lua.registerUserData(Counter);
+
+    _ = try lua.eval(
+        \\local counter = Counter.create()  -- Call static method
+        \\assert(counter:increment(5) == 5) -- Call instance method
+        \\assert(counter:increment(3) == 8) -- Value persists
+        \\
+        \\local counter2 = Counter.init(10) -- Use constructor
+        \\assert(counter2:increment(2) == 12)
+    , .{}, void);
+}
+```
+
 ## 🛠️ Using Luau Tools
 
 The build system provides prebuilt Luau tools that can be invoked directly:
