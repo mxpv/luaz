@@ -42,15 +42,15 @@ const userdata = @import("userdata.zig");
 const stack = @import("stack.zig");
 const alloc = @import("alloc.zig").alloc;
 
-pub const Error = error{
-    OutOfMemory,
-    Compile,
-};
-
 pub const Lua = struct {
     const Self = @This();
 
     state: State,
+
+    pub const Error = error{
+        OutOfMemory,
+        Compile,
+    };
 
     /// Initialize a new Lua state with optional custom allocator.
     ///

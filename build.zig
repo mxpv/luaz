@@ -165,7 +165,7 @@ pub fn build(b: *std.Build) !void {
     // Main module
     {
         const mod = b.addModule("luaz", .{
-            .root_source_file = b.path("src/lib.zig"),
+            .root_source_file = b.path("src/lua.zig"),
             .target = target,
             .optimize = optimize,
         });
@@ -192,6 +192,7 @@ pub fn build(b: *std.Build) !void {
         });
 
         steps.docs.dependOn(&install_docs.step);
+        b.getInstallStep().dependOn(&install_docs.step);
     }
 
     // zig build test

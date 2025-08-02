@@ -2,7 +2,7 @@ const std = @import("std");
 const State = @import("state.zig").State;
 const ArgsTuple = std.meta.ArgsTuple;
 const stack = @import("stack.zig");
-const Lua = @import("lib.zig").Lua;
+const Lua = @import("lua.zig").Lua;
 
 /// Function type categories for userdata methods
 pub const FunctionType = enum {

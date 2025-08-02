@@ -5,7 +5,7 @@
 
 const std = @import("std");
 const State = @import("state.zig").State;
-const Lua = @import("lib.zig").Lua;
+const Lua = @import("lua.zig").Lua;
 
 /// Counts how many Lua stack slots are needed for the given type.
 ///
