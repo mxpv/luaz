@@ -394,3 +394,89 @@ test "checkArg with Table parameter" {
     try expectEq(result, 42);
     try expectEq(lua.top(), 0);
 }
+
+test "light userdata through globals" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    // Test data to use as light userdata
+    // IMPORTANT: test_data must remain alive for as long as the pointer is used in Lua
+    var test_data: i32 = 42;
+    const test_ptr: *i32 = &test_data;
+
+    // Test storing and retrieving light userdata through globals
+    const globals = lua.globals();
+    try globals.set("myPtr", test_ptr);
+    
+    // Verify we can get the pointer back
+    const retrieved_ptr = try globals.get("myPtr", *i32);
+    try expect(retrieved_ptr != null);
+    try expectEq(retrieved_ptr.?.*, 42);
+
+    // Modify the data through the retrieved pointer
+    retrieved_ptr.?.* = 100;
+    try expectEq(test_data, 100);
+
+    try expectEq(lua.top(), 0);
+}
+
+// Test function that takes light userdata as argument
+fn testLightUserdataFunc(ptr: *i32) i32 {
+    return ptr.* * 2;
+}
+
+test "light userdata function arguments" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    var test_data: i32 = 21;
+    const test_ptr: *i32 = &test_data;
+
+    // Register the function and test light userdata as argument
+    const globals = lua.globals();
+    try globals.set("testFunc", testLightUserdataFunc);
+    try globals.set("testPtr", test_ptr);
+
+    // Call the function with light userdata argument through Lua eval
+    const result = try lua.eval("return testFunc(testPtr)", .{}, i32);
+    try expectEq(result, 42);
+
+    try expectEq(lua.top(), 0);
+}
+
+test "light userdata with different pointer types" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    // Test with different data types
+    var float_data: f64 = 3.14159;
+    var bool_data: bool = true;
+    var struct_data = struct { x: i32, y: i32 }{ .x = 10, .y = 20 };
+
+    const float_ptr: *f64 = &float_data;
+    const bool_ptr: *bool = &bool_data;
+    const struct_ptr: *@TypeOf(struct_data) = &struct_data;
+
+    const globals = lua.globals();
+
+    // Test f64 pointer through globals
+    try globals.set("floatPtr", float_ptr);
+    const retrieved_float_ptr = try globals.get("floatPtr", *f64);
+    try expect(retrieved_float_ptr != null);
+    try expectEq(retrieved_float_ptr.?.*, 3.14159);
+
+    // Test bool pointer through globals
+    try globals.set("boolPtr", bool_ptr);
+    const retrieved_bool_ptr = try globals.get("boolPtr", *bool);
+    try expect(retrieved_bool_ptr != null);
+    try expectEq(retrieved_bool_ptr.?.*, true);
+
+    // Test struct pointer through globals
+    try globals.set("structPtr", struct_ptr);
+    const retrieved_struct_ptr = try globals.get("structPtr", *@TypeOf(struct_data));
+    try expect(retrieved_struct_ptr != null);
+    try expectEq(retrieved_struct_ptr.?.x, 10);
+    try expectEq(retrieved_struct_ptr.?.y, 20);
+
+    try expectEq(lua.top(), 0);
+}

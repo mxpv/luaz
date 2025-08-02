@@ -561,6 +561,10 @@ pub const Lua = struct {
 
     /// Internal function to push a Zig value onto the Lua stack.
     /// Used internally by table operations and other high-level functions.
+    ///
+    /// Note: For light userdata (pointer types), the caller is responsible for ensuring
+    /// the pointed-to object remains alive for as long as it is used in Lua. Light userdata
+    /// does not participate in Lua's garbage collection.
     pub fn push(self: Self, value: anytype) void {
         const T = @TypeOf(value);
         const type_info = @typeInfo(T);
@@ -606,7 +610,7 @@ pub const Lua = struct {
                     break :blk;
                 }
 
-                @compileError("Cannot push userdata struct types to Lua stack - use userdata constructor functions instead");
+                @compileError("Cannot push struct types to Lua stack, consider using userdata - see registerUserData() for registering struct types");
             },
             .vector => |vector_info| {
                 // Use Luau's native vector support
@@ -644,7 +648,12 @@ pub const Lua = struct {
                             }
                             break :blk;
                         }
-                        @compileError("Unable to push type " ++ @typeName(T));
+                        
+                        // Handle light user data: *T where T is not an array
+                        // IMPORTANT: Caller must ensure the pointed-to object remains alive
+                        // for as long as it's used in Lua (no garbage collection for light userdata)
+                        self.state.pushLightUserdata(@ptrCast(@constCast(value)));
+                        break :blk;
                     },
                     .many, .slice => {
                         // Handle strings: []const u8, [:0]const u8, [*:0]const u8
@@ -817,7 +826,19 @@ pub const Lua = struct {
                             // In a real implementation, you'd use luaL_checkudata
                             return undefined;
                         }
-                        @compileError("Unable to check type " ++ @typeName(T));
+                        
+                        // Handle light user data: *T where T is not a struct or array
+                        if (child_type_info == .array and child_type_info.array.child == u8) {
+                            @compileError("String arrays not supported in checkArg - use []const u8 instead");
+                        }
+                        
+                        // Check if this is light user data and get the pointer
+                        if (!self.state.isLightUserdata(index)) {
+                            @panic("Expected light userdata argument");
+                        }
+                        
+                        const light_userdata = self.state.toLightUserdata(index) orelse @panic("Invalid light userdata");
+                        return @ptrCast(@alignCast(light_userdata));
                     },
                     .slice => {
                         // Handle string slices: []const u8, [:0]const u8
@@ -920,6 +941,22 @@ pub const Lua = struct {
             },
             .pointer => |ptr_info| {
                 switch (ptr_info.size) {
+                    .one => {
+                        // Handle light user data: *T where T is not an array
+                        const child_type_info = @typeInfo(ptr_info.child);
+                        if (child_type_info == .array and child_type_info.array.child == u8) {
+                            // String arrays are not supported for toValue (only push)
+                            return null;
+                        }
+                        
+                        // Check if this is light user data
+                        if (!self.state.isLightUserdata(index)) {
+                            return null;
+                        }
+                        
+                        const light_userdata = self.state.toLightUserdata(index) orelse return null;
+                        return @ptrCast(@alignCast(light_userdata));
+                    },
                     .slice => {
                         // Handle string slices: []const u8, [:0]const u8
                         if (ptr_info.child == u8) {
@@ -1498,3 +1535,4 @@ test "string ops" {
 
     try expectEq(lua.top(), 0);
 }
+
