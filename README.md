@@ -32,11 +32,10 @@ These tools make it easy to compile, analyze, and embed Luau scripts directly in
 
 The following example demonstrates some basic use cases.
 
-Global table is available via `globals()`.
-
-`eval` is a helper function that compiles Lua code to Luau bytecode and executes it.
-
-Note: ideally, bundled  `luau-compile` tool should be used to precompile Lua scripts offline.
+- `Lua` takes optional Zig allocator.
+- Global table `_G` is available via `globals()` table.
+- `eval` is a helper function that compiles Lua code to Luau bytecode and executes it.
+- `set` and `get` are used to pass and retrieve data.
 
 ```zig
 const std = @import("std");
@@ -62,6 +61,9 @@ pub fn main() !void {
     assert(result == 14);
 }
 ```
+
+> [!NOTE]
+> Ideally, the bundled  `luau-compile` tool should be used to precompile Lua scripts offline.
 
 ### Function Calls
 
