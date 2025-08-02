@@ -7,6 +7,13 @@
 //!
 //! ## Quick Start
 //!
+//! To get started, a new `Lua` object must be created. The `Lua` struct provides a
+//! high-level API to Luau functionality.
+//!
+//! For convenience, `Lua` offers an `eval` function to convert Lua source code to
+//! Luau bytecode and execute it immediately. However, this compilation step should
+//! ideally be taken offline as it's resource-consuming.
+//!
 //! ```zig
 //! const std = @import("std");
 //! const luaz = @import("luaz");
