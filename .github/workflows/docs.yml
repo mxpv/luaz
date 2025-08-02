@@ -3,6 +3,8 @@ name: Docs
 on:
   push:
     branches: [main]
+    paths:
+      - 'src/**/*.zig'
   workflow_dispatch:
 
 permissions:
@@ -30,7 +32,8 @@ jobs:
       with:
         version: 0.14.1
 
-    - run: |
+    - name: Build docs
+      run: |
         # I don't know why this is needed for the docs to succeed on CI, but otherwise it consistently fails with:
         #   error: unable to open directory '...': FileNotFound
         # See https://github.com/mxpv/luaz/actions/runs/16698403816/job/47265761593
