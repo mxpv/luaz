@@ -4,6 +4,7 @@ const Allocator = std.mem.Allocator;
 
 pub const State = @import("state.zig").State;
 pub const Compiler = @import("compile.zig").Compiler;
+const userdata = @import("userdata.zig");
 
 pub const Error = error{
     OutOfMemory,
@@ -78,7 +79,7 @@ pub const Lua = struct {
         return @ptrCast(new_slice.ptr);
     }
 
-    inline fn fromState(state: State.LuaState) Self {
+    pub inline fn fromState(state: State.LuaState) Self {
         return Self{
             .state = State{ .lua = state },
         };
@@ -560,7 +561,7 @@ pub const Lua = struct {
 
     /// Internal function to push a Zig value onto the Lua stack.
     /// Used internally by table operations and other high-level functions.
-    fn push(self: Self, value: anytype) void {
+    pub fn push(self: Self, value: anytype) void {
         const T = @TypeOf(value);
         const type_info = @typeInfo(T);
 
@@ -605,7 +606,7 @@ pub const Lua = struct {
                     break :blk;
                 }
 
-                @compileError("Non tuple structs are not yet implemented");
+                @compileError("Cannot push userdata struct types to Lua stack - use userdata constructor functions instead");
             },
             .vector => |vector_info| {
                 // Use Luau's native vector support
@@ -763,7 +764,7 @@ pub const Lua = struct {
 
     /// Internal function to check and convert a value at the specified stack index to the given Zig type.
     /// Used by the trampoline function to validate function arguments.
-    fn checkArg(self: Self, index: i32, comptime T: type) T {
+    pub fn checkArg(self: Self, index: i32, comptime T: type) T {
         const type_info = @typeInfo(T);
         switch (type_info) {
             .bool => {
@@ -807,6 +808,17 @@ pub const Lua = struct {
             },
             .pointer => |ptr_info| {
                 switch (ptr_info.size) {
+                    .one => {
+                        // Handle pointer to struct (user data)
+                        const child_type_info = @typeInfo(ptr_info.child);
+                        if (child_type_info == .@"struct") {
+                            // This is a pointer to a struct, assume it's user data
+                            // For now, just return undefined since we don't have proper userdata handling
+                            // In a real implementation, you'd use luaL_checkudata
+                            return undefined;
+                        }
+                        @compileError("Unable to check type " ++ @typeName(T));
+                    },
                     .slice => {
                         // Handle string slices: []const u8, [:0]const u8
                         if (ptr_info.child == u8) {
@@ -826,6 +838,12 @@ pub const Lua = struct {
                     },
                     else => @compileError("Unable to check type " ++ @typeName(T)),
                 }
+            },
+            .@"struct" => {
+                // Handle struct types (user data passed by value)
+                // For now, just return undefined since we don't have proper userdata handling
+                // In a real implementation, you'd extract the struct from userdata
+                return undefined;
             },
             else => {
                 @compileError("Unable to check type " ++ @typeName(T));
@@ -1041,7 +1059,7 @@ pub const Lua = struct {
     }
 
     // Counts how many Lua stack slots are needed for the given type.
-    fn slotCount(comptime T: type) i32 {
+    pub fn slotCount(comptime T: type) i32 {
         if (T == void) {
             return 0;
         }
@@ -1104,6 +1122,133 @@ pub const Lua = struct {
 
         const blob = result.ok;
         return self.exec(blob, T);
+    }
+
+    /// Register a user-defined type to be used from Lua.
+    ///
+    /// Takes a Zig struct type and creates Lua bindings for all its methods.
+    /// Each public method becomes callable from Lua with automatic type conversion.
+    /// The struct must have public methods that follow Lua calling conventions.
+    ///
+    /// Creates a metatable for the type and registers all methods as Lua functions.
+    /// Methods are wrapped using the same `createFunc` mechanism as regular Zig functions.
+    ///
+    /// Examples:
+    /// ```zig
+    /// const Person = struct {
+    ///     name: []const u8,
+    ///     age: i32,
+    ///
+    ///     pub fn getName(self: Person) []const u8 {
+    ///         return self.name;
+    ///     }
+    ///
+    ///     pub fn getAge(self: Person) i32 {
+    ///         return self.age;
+    ///     }
+    ///
+    ///     pub fn setAge(self: *Person, new_age: i32) void {
+    ///         self.age = new_age;
+    ///     }
+    /// };
+    ///
+    /// lua.registerUserData(Person);
+    /// ```
+    ///
+    /// The registered type can then be used from Lua:
+    /// ```lua
+    /// -- After creating a Person instance in Zig and pushing it to Lua
+    /// print(person:getName())  -- Calls Person.getName
+    /// print(person:getAge())   -- Calls Person.getAge
+    /// person:setAge(30)        -- Calls Person.setAge
+    /// ```
+    ///
+    /// Type requirements:
+    /// - Must be a struct type
+    /// - Must have at least one public method (excluding deinit)
+    /// - Methods must be public (pub)
+    /// - Methods should follow Lua calling conventions for arguments and return values
+    ///
+    /// NOTE: Each type can only be registered once per Lua state. Attempting to register
+    /// the same type twice will panic with a clear error message.
+    ///
+    /// Errors: `Error.OutOfMemory` if memory allocation fails during registration
+    pub fn registerUserData(self: Self, comptime T: type) !void {
+        const type_info = @typeInfo(T);
+        if (type_info != .@"struct") {
+            @compileError("registerUserData can only be used with struct types, got " ++ @typeName(T));
+        }
+
+        const struct_info = type_info.@"struct";
+        const type_name: [:0]const u8 = @typeName(T);
+
+        // Count methods (excluding deinit which is handled as destructor)
+        comptime var method_count = 0;
+        inline for (struct_info.decls) |decl| {
+            if (@hasDecl(T, decl.name)) {
+                const decl_info = @typeInfo(@TypeOf(@field(T, decl.name)));
+                if (decl_info == .@"fn" and !comptime std.mem.eql(u8, decl.name, "deinit")) {
+                    method_count += 1;
+                }
+            }
+        }
+
+        // Ensure the type has at least one method to register
+        if (comptime method_count == 0) {
+            @compileError("Type " ++ @typeName(T) ++ " has no public methods to register as userdata");
+        }
+
+        // Number of methods to register + 1 for null terminator
+        var methods_buffer: [method_count + 1]State.LuaLReg = undefined;
+        var method_index: usize = 0;
+
+        // Add all methods (including init as "new" constructor, excluding deinit)
+        inline for (struct_info.decls) |decl| {
+            if (@hasDecl(T, decl.name)) {
+                const decl_info = @typeInfo(@TypeOf(@field(T, decl.name)));
+                if (decl_info == .@"fn" and !comptime std.mem.eql(u8, decl.name, "deinit")) {
+                    const method_func = @field(T, decl.name);
+
+                    // Use "new" as the name for init functions, otherwise use the method name
+                    const method_name: [:0]const u8 = if (comptime std.mem.eql(u8, decl.name, "init")) "new" else decl.name;
+
+                    methods_buffer[method_index] = State.LuaLReg{
+                        .name = method_name.ptr,
+                        .func = userdata.createUserDataFunc(T, decl.name, method_func, type_name),
+                    };
+
+                    method_index += 1;
+                }
+            }
+        }
+
+        // Null terminate
+        methods_buffer[method_index] = State.LuaLReg{ .name = null, .func = null };
+
+        // Create metatable and register methods using dual-purpose approach:
+        // 1. Metatable serves as method lookup table for instance methods (via __index)
+        // 2. Same metatable is registered globally for static methods and constructor access
+        if (!self.state.newMetatable(type_name)) {
+            @panic("Type " ++ @typeName(T) ++ " is already registered");
+        }
+
+        // Set __index to point to itself
+        self.state.pushValue(-1);
+        self.state.setField(-2, "__index");
+
+        // Register methods in metatable
+        self.state.register(null, methods_buffer[0 .. method_index + 1]);
+        
+        // Extract just the type name without module prefix for global registration
+        // Example: "myapp.data.User" -> "User", "TestUserData" -> "TestUserData"
+        const full_type_name = @typeName(T);
+        const type_name_only = if (std.mem.lastIndexOf(u8, full_type_name, ".")) |last_dot|
+            full_type_name[last_dot + 1 ..]
+        else
+            full_type_name;
+        
+        // Register the metatable globally so static methods are accessible as TypeName.method()
+        self.state.setGlobal(type_name_only);
     }
 
     /// Dump the current stack contents to a string for debugging

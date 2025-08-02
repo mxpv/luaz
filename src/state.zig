@@ -24,6 +24,7 @@ pub const State = struct {
     pub const Continuation = c.lua_Continuation;
     pub const Alloc = c.lua_Alloc;
     pub const Destructor = c.lua_Destructor;
+    pub const LuaLReg = c.luaL_Reg;
     pub const VECTOR_SIZE = c.LUA_VECTOR_SIZE;
 
     // Constants

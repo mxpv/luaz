@@ -7,6 +7,7 @@ comptime {
 const std = @import("std");
 const Lua = @import("lib.zig").Lua;
 const Error = @import("lib.zig").Error;
+const State = @import("state.zig").State;
 const expect = std.testing.expect;
 const expectEq = std.testing.expectEqual;
 
@@ -243,4 +244,128 @@ test "function compile" {
         try expectEq(result, 42);
         try expectEq(lua.top(), 0);
     }
+}
+
+const TestUserData = struct {
+    value: i32,
+    name: []const u8,
+
+    pub fn init(initial_value: i32, name: []const u8) TestUserData {
+        return TestUserData{
+            .value = initial_value,
+            .name = name,
+        };
+    }
+
+    pub fn getValue(self: TestUserData) i32 {
+        return self.value;
+    }
+
+    pub fn setValue(self: *TestUserData, new_value: i32) void {
+        self.value = new_value;
+    }
+
+    pub fn getName(self: TestUserData) []const u8 {
+        return self.name;
+    }
+
+    pub fn add(self: TestUserData, other: i32) i32 {
+        return self.value + other;
+    }
+
+    // Static functions (no Self parameter)
+    pub fn getVersion() i32 {
+        return 1;
+    }
+
+    pub fn multiply(a: i32, b: i32) i32 {
+        return a * b;
+    }
+};
+
+test "userdata registration and basic functionality" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    // Load standard libraries to get assert function
+    lua.state.openLibs();
+
+    // Register the TestUserData type
+    try lua.registerUserData(TestUserData);
+
+    // Single comprehensive Lua script testing all userdata operations
+    const test_script =
+        \\-- Test static functions
+        \\assert(TestUserData.getVersion() == 1, "getVersion should return 1")
+        \\assert(TestUserData.multiply(6, 7) == 42, "multiply(6, 7) should return 42")
+        \\
+        \\-- Create userdata instance using constructor (init -> new mapping)
+        \\local obj = TestUserData.new(100, "test_object")
+        \\assert(obj ~= nil, "Constructor should create userdata instance")
+        \\
+        \\-- Test instance methods
+        \\assert(obj:getValue() == 100, "getValue should return initial value 100")
+        \\assert(obj:getName() == "test_object", "getName should return 'test_object'")
+        \\assert(obj:add(50) == 150, "add(50) should return 150")
+        \\
+        \\-- Test mutable instance method
+        \\obj:setValue(200)
+        \\assert(obj:getValue() == 200, "getValue should return 200 after setValue(200)")
+        \\
+        \\-- Test instance method after mutation
+        \\assert(obj:add(25) == 225, "add(25) should return 225 after setValue(200)")
+        \\
+        \\-- Create another instance to verify independence
+        \\local obj2 = TestUserData.new(10, "second")
+        \\assert(obj2:getValue() == 10, "Second object should have independent value")
+        \\assert(obj2:getName() == "second", "Second object should have independent name")
+        \\
+        \\-- Verify first object wasn't affected
+        \\assert(obj:getValue() == 200, "First object should still have value 200")
+        \\assert(obj:getName() == "test_object", "First object should still have name 'test_object'")
+    ;
+
+    // Execute the comprehensive test script
+    try lua.eval(test_script, .{}, void);
+
+    try expectEq(lua.top(), 0);
+}
+
+// Global counter to track deinit calls for testing
+var deinit_call_count: i32 = 0;
+
+const TestUserDataWithDeinit = struct {
+    pub fn init() @This() {
+        return @This(){};
+    }
+
+    pub fn deinit(self: *TestUserDataWithDeinit) void {
+        _ = self; // Consume parameter
+        deinit_call_count += 1;
+    }
+};
+
+test "userdata with destructor support" {
+    // Reset counter
+    deinit_call_count = 0;
+    
+    {
+        const lua = try Lua.init(&std.testing.allocator);
+        defer lua.deinit();
+
+        // Load standard libraries
+        lua.state.openLibs();
+
+        // Register the TestUserDataWithDeinit type
+        try lua.registerUserData(TestUserDataWithDeinit);
+
+        // Create objects that should trigger destructors when Lua state is destroyed
+        try lua.eval("local obj1 = TestUserDataWithDeinit.new(10, 'obj1')", .{}, void);
+        try lua.eval("local obj2 = TestUserDataWithDeinit.new(20, 'obj2')", .{}, void);
+        
+        try expectEq(lua.top(), 0);
+    } // Lua state destroyed here, destructors should be called
+    
+    // Verify that deinit was called for both objects
+    try expectEq(deinit_call_count, 2);
 }
