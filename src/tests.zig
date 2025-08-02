@@ -407,7 +407,7 @@ test "light userdata through globals" {
     // Test storing and retrieving light userdata through globals
     const globals = lua.globals();
     try globals.set("myPtr", test_ptr);
-    
+
     // Verify we can get the pointer back
     const retrieved_ptr = try globals.get("myPtr", *i32);
     try expect(retrieved_ptr != null);
@@ -477,6 +477,48 @@ test "light userdata with different pointer types" {
     try expect(retrieved_struct_ptr != null);
     try expectEq(retrieved_struct_ptr.?.x, 10);
     try expectEq(retrieved_struct_ptr.?.y, 20);
+
+    try expectEq(lua.top(), 0);
+}
+
+// Test functions for userdata checkArg support
+fn processCounterPtr(counter_ptr: *TestUserData) i32 {
+    return counter_ptr.value * 2;
+}
+
+fn processCounterVal(counter: TestUserData) i32 {
+    return counter.value + 100;
+}
+
+test "checkArg userdata support" {
+    var lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    lua.state.openLibs();
+
+    // Register TestUserData userdata type (reuse existing type)
+    try lua.registerUserData(TestUserData);
+
+    // Register our test functions that use userdata parameters
+    const globals = lua.globals();
+    try globals.set("processPtr", processCounterPtr);
+    try globals.set("processVal", processCounterVal);
+
+    // Test pointer userdata parameter (*TestUserData)
+    const ptr_result = try lua.eval(
+        \\local counter = TestUserData.new(42, "test")
+        \\return processPtr(counter)
+    , .{}, i32);
+
+    try expectEq(ptr_result, 84); // 42 * 2
+
+    // Test value userdata parameter (TestUserData)
+    const val_result = try lua.eval(
+        \\local counter = TestUserData.new(42, "test")
+        \\return processVal(counter)
+    , .{}, i32);
+
+    try expectEq(val_result, 142); // 42 + 100
 
     try expectEq(lua.top(), 0);
 }

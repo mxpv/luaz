@@ -648,7 +648,7 @@ pub const Lua = struct {
                             }
                             break :blk;
                         }
-                        
+
                         // Handle light user data: *T where T is not an array
                         // IMPORTANT: Caller must ensure the pointed-to object remains alive
                         // for as long as it's used in Lua (no garbage collection for light userdata)
@@ -822,20 +822,22 @@ pub const Lua = struct {
                         const child_type_info = @typeInfo(ptr_info.child);
                         if (child_type_info == .@"struct") {
                             // This is a pointer to a struct (userdata)
-                            // Proper userdata handling would use luaL_checkudata here
-                            self.state.typeError(index, "userdata (not implemented)");
+                            // Use the struct type name as the userdata type name
+                            const type_name: [:0]const u8 = @typeName(ptr_info.child);
+                            const userdata_ptr = self.state.checkUdata(index, type_name);
+                            return @ptrCast(@alignCast(userdata_ptr));
                         }
 
                         // Handle light user data: *T where T is not a struct or array
                         if (child_type_info == .array and child_type_info.array.child == u8) {
                             self.state.typeError(index, "string slice");
                         }
-                        
+
                         // Check if this is light user data and get the pointer
                         if (!self.state.isLightUserdata(index)) {
                             self.state.typeError(index, "light userdata");
                         }
-                        
+
                         const light_userdata = self.state.toLightUserdata(index) orelse {
                             self.state.typeError(index, "light userdata");
                         };
@@ -873,8 +875,11 @@ pub const Lua = struct {
                 }
 
                 // Handle other struct types (user data passed by value)
-                // Proper userdata handling would extract the struct from userdata here
-                self.state.typeError(index, "userdata (not implemented)");
+                // Use the struct type name as the userdata type name
+                const type_name: [:0]const u8 = @typeName(T);
+                const userdata_ptr = self.state.checkUdata(index, type_name);
+                const struct_ptr: *T = @ptrCast(@alignCast(userdata_ptr));
+                return struct_ptr.*;
             },
             else => {
                 self.state.typeError(index, "unsupported type");
@@ -947,12 +952,12 @@ pub const Lua = struct {
                             // String arrays are not supported for toValue (only push)
                             return null;
                         }
-                        
+
                         // Check if this is light user data
                         if (!self.state.isLightUserdata(index)) {
                             return null;
                         }
-                        
+
                         const light_userdata = self.state.toLightUserdata(index) orelse return null;
                         return @ptrCast(@alignCast(light_userdata));
                     },
@@ -1534,4 +1539,3 @@ test "string ops" {
 
     try expectEq(lua.top(), 0);
 }
-
