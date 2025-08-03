@@ -34,7 +34,8 @@ Full API documentation is available at: https://mxpv.github.io/luaz/#luaz.lua
 
 The documentation is automatically updated on every change to the `main` branch.
 
-## 📖 Usage Examples
+> [!TIP]
+> For a comprehensive overview of all features, see the [guided tour example](examples/guided_tour.zig) which can be run with `zig build guided-tour`.
 
 ### Basic Usage
 

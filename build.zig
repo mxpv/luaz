@@ -249,6 +249,26 @@ pub fn build(b: *std.Build) !void {
 
         steps.check_fmt.dependOn(&run_fmt.step);
     }
+
+    // Guided tour example
+    {
+        const guided_tour = b.addExecutable(.{
+            .name = "guided_tour",
+            .root_source_file = b.path("examples/guided_tour.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+
+        guided_tour.root_module.addImport("luaz", b.modules.get("luaz").?);
+
+        const run_guided_tour = b.addRunArtifact(guided_tour);
+        if (b.args) |args| {
+            run_guided_tour.addArgs(args);
+        }
+
+        const guided_tour_step = b.step("guided-tour", "Run the guided tour example");
+        guided_tour_step.dependOn(&run_guided_tour.step);
+    }
 }
 
 fn addSrcFiles(b: *std.Build, mod: *std.Build.Module, path: []const u8, flags: []const []const u8) !void {

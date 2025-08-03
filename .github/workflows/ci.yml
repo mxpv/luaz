@@ -50,6 +50,8 @@ jobs:
     - run: zig build luau-compile -- --help
     - run: zig build luau-analyze -- --help
 
+    - run: zig build guided-tour
+
   format:
     name: Formatting
 
