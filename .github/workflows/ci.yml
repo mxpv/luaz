@@ -86,13 +86,11 @@ jobs:
     name: Coverage
 
     timeout-minutes: 30
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     permissions:
+      contents: read # Remove after making repo public
       id-token: write
-
-    env:
-      KCOV_VERSION: v42
 
     steps:
     - uses: actions/checkout@v4
@@ -101,11 +99,19 @@ jobs:
 
     - name: Install kcov
       run: |
-        gh release download ${{ env.KCOV_VERSION }} --repo SimonKagstrom/kcov --pattern 'kcov-amd64.tar.gz'
-        tar -xzf kcov-amd64.tar.gz
-        sudo cp -r usr/local/* /usr/local/
-        rm -rf kcov-amd64.tar.gz usr/
+        sudo apt-get update
         sudo apt-get install -y kcov
+        kcov --version
+
+    - name: Install Zig
+      uses: ./.github/actions/setup-zig
+      with:
+        version: '0.14.1'
+
+    - uses: actions/cache@v4
+      with:
+        path: .zig-cache
+        key: zig-cache-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('build.zig', 'build.zig.zon') }}
 
     - run: zig build test -Dcoverage
 
