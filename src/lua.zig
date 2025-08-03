@@ -64,6 +64,8 @@ pub const Lua = struct {
         OutOfMemory,
         /// Lua source code compilation failed.
         Compile,
+        /// Unexpected type on the stack (e.g., attempted to retrieve a function but found a different type).
+        InvalidType,
     };
 
     /// Assert handler function type for Luau VM assertions.
@@ -401,6 +403,49 @@ pub const Lua = struct {
             defer self.state().pop(-1); // Pop table in the end.
 
             return self.ref.lua.call(args, R);
+        }
+
+        /// Compile a function stored in this table using Luau's JIT code generator for improved performance.
+        ///
+        /// This method retrieves a function from the table by name and compiles it (along with any
+        /// nested functions it contains) to native machine code using Luau's code generator.
+        /// Compiled functions execute significantly faster than interpreted bytecode.
+        ///
+        /// Prerequisites:
+        /// - `enable_codegen()` must be called successfully first
+        /// - The named field must contain a function
+        ///
+        /// Notes:
+        /// - This is a one-time operation - functions remain compiled for their lifetime
+        /// - Compilation happens immediately and synchronously
+        /// - Nested functions within the target function are also compiled
+        /// - Has no effect if the function is already compiled
+        ///
+        /// Example:
+        /// ```zig
+        /// if (lua.enable_codegen()) {
+        ///     _ = try lua.eval("function square(x) return x * x end", .{}, void);
+        ///     const globals = lua.globals();
+        ///     try globals.compile("square");
+        ///
+        ///     // Call twice to ensure compilation doesn't break subsequent calls
+        ///     const result1 = try lua.eval("return square(5)", .{}, i32);   // 25
+        ///     const result2 = try lua.eval("return square(10)", .{}, i32);  // 100
+        /// }
+        /// ```
+        ///
+        /// Errors: `Error.InvalidType` if the named field is not a function
+        pub fn compile(self: Table, name: []const u8) !void {
+            stack.push(self.ref.lua, self.ref); // Push table ref
+            stack.push(self.ref.lua, name); // Push func name
+            _ = self.state().getTable(-2); // Get function from table, pop key
+
+            if (!self.state().isFunction(-1)) {
+                return Error.InvalidType;
+            }
+
+            self.state().codegenCompile(-1);
+            self.state().pop(1); // Pop function
         }
 
         /// Returns the registry reference ID if valid, otherwise null.

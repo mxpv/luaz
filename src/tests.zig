@@ -225,7 +225,7 @@ test "function call from global namespace" {
     try expectEq(lua.top(), 0);
 }
 
-test "function compile" {
+test "func ref compile" {
     const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
@@ -245,6 +245,20 @@ test "function compile" {
         const result = try func.?.call(.{ 6, 7 }, i32);
         try expectEq(result, 42);
         try expectEq(lua.top(), 0);
+    }
+}
+
+test "table func compile" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    if (lua.enable_codegen()) {
+        _ = try lua.eval("function square(x) return x * x end", .{}, void);
+
+        try lua.globals().compile("square");
+
+        try expectEq(try lua.eval("return square(5)", .{}, i32), 25);
+        try expectEq(try lua.eval("return square(10)", .{}, i32), 100);
     }
 }
 
