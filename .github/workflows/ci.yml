@@ -121,4 +121,4 @@ jobs:
     - uses: codecov/codecov-action@v5
       with:
         use_oidc: true
-        directory: zig-out/coverage
+        directory: zig-out/coverage/test/
