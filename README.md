@@ -155,6 +155,20 @@ pub fn main() !void {
 }
 ```
 
+> [!WARNING]
+> This library is still evolving and the API is not stable. Backward incompatible changes may be introduced up until the 1.0 release. Consider pinning to a specific commit or tag if you need stability.
+
+## 🗺️ Roadmap
+
+The following features are planned after the initial release:
+
+- Luau sandbox APIs - Safe execution environments for untrusted code
+- Coroutine / threads support - Full Luau coroutine and threading capabilities
+- Debug APIs - Debugging hooks and introspection tools
+- Userdata metatables - Custom metamethod support for userdata types
+- GC API - Fine-grained garbage collection control
+- Optional JSON support - Built-in JSON serialization/deserialization
+
 ## 🛠️ Using Luau Tools
 
 The build system provides prebuilt Luau tools that can be invoked directly:
@@ -190,11 +204,6 @@ Available options:
   --target=<target>: compile code for specific architecture (a64, x64, a64_nf, x64_ms).
   ...
 ```
-
-## Stability
-
-> [!WARNING]
-> This library is still evolving and the API is not stable. Backward incompatible changes may be introduced up until the 1.0 release. Consider pinning to a specific commit or tag if you need stability.
 
 ## 🔗 Related Projects
 
