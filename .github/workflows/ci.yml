@@ -77,3 +77,35 @@ jobs:
 
     - run: curl -fsSL https://raw.githubusercontent.com/DonIsaac/zlint/refs/heads/main/tasks/install.sh | bash
     - run: zlint
+
+  cover:
+    name: Coverage
+
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+
+    env:
+      KCOV_VERSION: v42
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install kcov
+      run: |
+        gh release download ${{ env.KCOV_VERSION }} --repo SimonKagstrom/kcov --pattern 'kcov-amd64.tar.gz'
+        tar -xzf kcov-amd64.tar.gz
+        sudo cp -r usr/local/* /usr/local/
+        rm -rf kcov-amd64.tar.gz usr/
+        sudo apt-get install -y kcov
+
+    - run: zig build test -Dcoverage
+
+    - uses: codecov/codecov-action@v5
+      with:
+        use_oidc: true
+        directory: ./zig-out/coverage
