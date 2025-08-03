@@ -83,12 +83,19 @@ pub const Lua = struct {
     ///
     /// Returns `Lua` instance or `Error.OutOfMemory` on failure.
     pub fn init(allocator: ?*const Allocator) !Self {
-        const state = if (allocator) |alloc_ptr|
+        const result = if (allocator) |alloc_ptr|
             State.initWithAlloc(alloc, @constCast(alloc_ptr))
         else
             State.init();
 
-        return Lua{ .state = state orelse return error.OutOfMemory };
+        const state = result orelse return Error.OutOfMemory;
+
+        return Lua{ .state = state };
+    }
+
+    /// Open all standard Lua libraries.
+    pub inline fn openLibs(self: Self) void {
+        self.state.openLibs();
     }
 
     pub inline fn fromState(state: State.LuaState) Self {
@@ -970,6 +977,8 @@ test "dump stack" {
     const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
+    lua.openLibs();
+
     // Test empty stack
     const empty_dump = try lua.dumpStack(std.testing.allocator);
     defer std.testing.allocator.free(empty_dump);
@@ -999,6 +1008,8 @@ test "dump stack" {
 test "table ops" {
     const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
+
+    lua.openLibs();
 
     const table = lua.createTable(.{});
     defer table.deinit();
