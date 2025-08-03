@@ -127,12 +127,16 @@ const Counter = struct {
         std.log.info("Counter with value {} being destroyed", .{self.value});
     }
 
-    pub fn create() Counter {
-        return Counter.init(0);
+    pub fn getMaxValue() i32 {
+        return std.math.maxInt(i32);
     }
 
     pub fn increment(self: *Counter, amount: i32) i32 {
         self.value += amount;
+        return self.value;
+    }
+
+    pub fn getValue(self: *const Counter) i32 {
         return self.value;
     }
 };
@@ -145,12 +149,12 @@ pub fn main() !void {
     try lua.registerUserData(Counter);
 
     _ = try lua.eval(
-        \\local counter = Counter.create()  -- Call static method
-        \\assert(counter:increment(5) == 5) -- Call instance method
-        \\assert(counter:increment(3) == 8) -- Value persists
+        \\local counter = Counter.new(0)      -- Use constructor
+        \\assert(counter:increment(5) == 5)   -- Call instance method
+        \\assert(counter:getValue() == 5)    -- Get current value
         \\
-        \\local counter2 = Counter.new(10) -- Use constructor
-        \\assert(counter2:increment(2) == 12)
+        \\local max = Counter.getMaxValue()   -- Call static method
+        \\assert(max == 2147483647)           -- Max i32 value
     , .{}, void);
 }
 ```
