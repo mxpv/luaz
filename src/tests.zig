@@ -524,3 +524,20 @@ test "checkArg userdata support" {
 
     try expectEq(lua.top(), 0);
 }
+
+fn testAssertHandler(expr: [*c]const u8, file: [*c]const u8, line: c_int, func: [*c]const u8) callconv(.C) c_int {
+    _ = expr;
+    _ = file;
+    _ = line;
+    _ = func;
+    return 1; // Continue execution
+}
+
+test "assert handler" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    // Verify the API works by setting and resetting the handler
+    Lua.setAssertHandler(testAssertHandler);
+    Lua.setAssertHandler(null);
+}

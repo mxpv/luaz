@@ -48,6 +48,7 @@ pub const Compiler = @import("compile.zig").Compiler;
 const userdata = @import("userdata.zig");
 const stack = @import("stack.zig");
 const alloc = @import("alloc.zig").alloc;
+const assert = @import("assert.zig");
 
 /// High-level Lua wrapper and main library entry point.
 /// Provides an idiomatic Zig interface with automatic type conversions for the Luau scripting language.
@@ -64,6 +65,9 @@ pub const Lua = struct {
         /// Lua source code compilation failed.
         Compile,
     };
+
+    /// Assert handler function type for Luau VM assertions.
+    pub const AssertHandler = assert.AssertHandler;
 
     /// Initialize a new Lua state with optional custom allocator.
     ///
@@ -938,6 +942,27 @@ pub const Lua = struct {
         }
 
         return list.toOwnedSlice();
+    }
+
+    /// Set a custom assert handler for Luau VM assertions.
+    ///
+    /// The assert handler is called when a Luau VM assertion fails, allowing custom error
+    /// handling and debugging. The handler receives information about the failed assertion
+    /// including expression, file, line number, and function name.
+    ///
+    /// Example:
+    /// ```zig
+    /// fn myAssertHandler(expr: [*c]const u8, file: [*c]const u8, line: c_int, func: [*c]const u8) callconv(.C) c_int {
+    ///     std.debug.print("Assertion failed: {s} at {s}:{} in {s}\n", .{expr, file, line, func});
+    ///     return 0; // Return 0 to abort
+    /// }
+    ///
+    /// Lua.setAssertHandler(myAssertHandler);
+    /// ```
+    ///
+    /// Note: The handler function must have C calling convention and return 0 to abort or non-zero to continue.
+    pub inline fn setAssertHandler(handler: AssertHandler) void {
+        assert.setAssertHandler(handler);
     }
 };
 

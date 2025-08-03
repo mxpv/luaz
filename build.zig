@@ -170,6 +170,15 @@ pub fn build(b: *std.Build) !void {
             .optimize = optimize,
         });
 
+        // Add C wrapper
+        mod.addCSourceFile(.{
+            .file = b.path("src/handler.cpp"),
+            .flags = flags,
+        });
+        mod.addIncludePath(b.path("luau/VM/include"));
+        mod.addIncludePath(b.path("luau/Common/include"));
+        mod.addIncludePath(b.path("src"));
+
         mod.linkLibrary(luau_vm);
 
         // TODO: Make these optional
@@ -204,6 +213,15 @@ pub fn build(b: *std.Build) !void {
                 .optimize = optimize,
             }),
         });
+
+        // Add C wrapper
+        unit_tests.root_module.addCSourceFile(.{
+            .file = b.path("src/handler.cpp"),
+            .flags = flags,
+        });
+        unit_tests.root_module.addIncludePath(b.path("luau/VM/include"));
+        unit_tests.root_module.addIncludePath(b.path("luau/Common/include"));
+        unit_tests.root_module.addIncludePath(b.path("src"));
 
         // See https://zig.news/squeek502/code-coverage-for-zig-1dk1
         if (opts.cover) {
