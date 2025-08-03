@@ -4,11 +4,15 @@ on:
   push:
     branches: [main]
     paths:
-      - 'src/**/*.zig'
+      - '**/*.zig'
+      - '.github/workflows/*.yml'
+      - 'build.zig.zon'
   pull_request:
     branches: [main]
     paths:
-      - 'src/**/*.zig'
+      - '**/*.zig'
+      - '.github/workflows/*.yml'
+      - 'build.zig.zon'
   schedule:
     - cron: '0 6 * * 1'  # Every Monday at 6 AM UTC
 
