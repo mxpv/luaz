@@ -113,9 +113,12 @@ jobs:
         path: .zig-cache
         key: zig-cache-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('build.zig', 'build.zig.zon') }}
 
-    - run: zig build test -Dcoverage
+    - name: Tests coverage
+      run: |
+        mkdir -p zig-out/coverage
+        zig build test -Dcoverage
 
     - uses: codecov/codecov-action@v5
       with:
         use_oidc: true
-        directory: ./zig-out/coverage
+        directory: zig-out/coverage
