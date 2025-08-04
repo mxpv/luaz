@@ -555,3 +555,44 @@ test "assert handler" {
     Lua.setAssertHandler(testAssertHandler);
     Lua.setAssertHandler(null);
 }
+
+const TestUserDataWithMetaMethods = struct {
+    size: i32,
+
+    pub fn init(size: i32) TestUserDataWithMetaMethods {
+        return TestUserDataWithMetaMethods{
+            .size = size,
+        };
+    }
+
+    pub fn add(self: *TestUserDataWithMetaMethods, value: i32) void {
+        self.size += value;
+    }
+
+    pub fn __len(self: TestUserDataWithMetaMethods) i32 {
+        return self.size;
+    }
+};
+
+test "userdata with __len metamethod" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    lua.state.openLibs();
+    try lua.registerUserData(TestUserDataWithMetaMethods);
+
+    const test_script =
+        \\local obj = TestUserDataWithMetaMethods.new(5)
+        \\assert(#obj == 5)
+        \\obj:add(3)
+        \\assert(#obj == 8)
+        \\
+        \\-- Test multiple objects
+        \\local obj2 = TestUserDataWithMetaMethods.new(10)
+        \\assert(#obj2 == 10)
+        \\assert(#obj == 8) -- first unchanged
+    ;
+
+    try lua.eval(test_script, .{}, void);
+    try expectEq(lua.top(), 0);
+}

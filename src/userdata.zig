@@ -1,22 +1,90 @@
+//! This module provides a bunch of magic comptime reflection helpers to build Lua userdata types.
+
 const std = @import("std");
 const State = @import("state.zig").State;
 const ArgsTuple = std.meta.ArgsTuple;
 const stack = @import("stack.zig");
 const Lua = @import("lua.zig").Lua;
 
+/// Supported metamethods
+pub const MetaMethod = enum {
+    len, // __len
+};
+
 /// Function type categories for userdata methods
-pub const FunctionType = enum {
+const FunctionType = enum {
     init, // Constructor functions
     instance, // Instance methods (with Self parameter)
     static, // Static functions (no Self parameter)
+    metamethod, // Metamethods (special functions like __len)
 };
 
+/// Checks if a type is Self (T) or a pointer to Self (*T)
+fn isSelf(comptime T: type, comptime param_type: type) bool {
+    if (param_type == T) {
+        return true; // T
+    }
+
+    const param_info = @typeInfo(param_type);
+    if (param_info == .pointer and param_info.pointer.size == .one) {
+        return param_info.pointer.child == T; // *T
+    }
+
+    return false;
+}
+
+/// Detects if a method is a metamethod, validates its signature, and returns its type
+fn isMetaMethod(comptime method_name: []const u8, comptime method: anytype) ?MetaMethod {
+    // First check if it starts with __
+    if (method_name.len < 2 or method_name[0] != '_' or method_name[1] != '_') {
+        return null;
+    }
+
+    // Determine which metamethod this is and validate its signature
+    if (comptime std.mem.eql(u8, method_name, "__len")) {
+        // Validate __len metamethod signature
+        const method_info = @typeInfo(@TypeOf(method));
+
+        if (method_info.@"fn".params.len != 1) {
+            @compileError("__len metamethod must take exactly one parameter (self), got " ++
+                std.fmt.comptimePrint("{}", .{method_info.@"fn".params.len}));
+        }
+
+        const return_type = method_info.@"fn".return_type orelse
+            @compileError("__len metamethod must have a return type (should return a number)");
+
+        // Check if return type is a number type
+        const return_info = @typeInfo(return_type);
+        const is_number = switch (return_info) {
+            .int, .comptime_int => true,
+            .float, .comptime_float => true,
+            else => false,
+        };
+
+        if (!is_number) {
+            @compileError("__len metamethod must return a number type, got " ++ @typeName(return_type));
+        }
+
+        return .len;
+    }
+
+    // Unknown metamethod starting with __
+    @compileError("Unknown metamethod '" ++ method_name ++ "' - only __len is currently supported");
+}
+
 /// Determines function type and validates constraints for userdata methods.
-/// Categorizes as init (constructor), instance method, or static function.
+/// Categorizes as init (constructor), instance method, static function, or metamethod.
 ///
 /// Init functions must be static and return T. Instance methods take T or *T as first parameter.
+/// Metamethods have specific signature requirements validated at compile time.
 fn getFunctionType(comptime T: type, comptime method_name: []const u8, method: anytype) FunctionType {
     const is_init = std.mem.eql(u8, method_name, "init");
+
+    // Check if this is a metamethod first
+    if (isMetaMethod(method_name, method)) |_| {
+        return .metamethod;
+    }
+
     const method_info = @typeInfo(@TypeOf(method));
 
     // Determine if function is static (doesn't take Self as first parameter)
@@ -24,16 +92,7 @@ fn getFunctionType(comptime T: type, comptime method_name: []const u8, method: a
     if (method_info.@"fn".params.len > 0) {
         const first_param = method_info.@"fn".params[0];
         if (first_param.type) |param_type| {
-            const param_info = @typeInfo(param_type);
-
-            // Check if first parameter is T or *T
-            if (param_info == .pointer and param_info.pointer.size == .one) {
-                // Check if it's *T - if so, it's an instance method
-                is_static = param_info.pointer.child != T;
-            } else {
-                // Check if it's T - if so, it's an instance method
-                is_static = param_type != T;
-            }
+            is_static = !isSelf(T, param_type);
         }
     }
 
@@ -63,7 +122,7 @@ fn getFunctionType(comptime T: type, comptime method_name: []const u8, method: a
 /// calling convention and Zig's typed function calls. Supports init functions (constructors),
 /// instance methods, and static functions. If the struct has a deinit method, userdata
 /// created by init functions will automatically call deinit when garbage collected.
-pub fn createUserDataFunc(comptime T: type, comptime method_name: []const u8, method: anytype, comptime type_name: [:0]const u8) State.CFunction {
+fn createUserDataFunc(comptime T: type, comptime method_name: []const u8, method: anytype, comptime type_name: [:0]const u8) State.CFunction {
     const MethodType = @TypeOf(method);
     const method_info = @typeInfo(MethodType);
     const function_type = comptime getFunctionType(T, method_name, method);
@@ -102,10 +161,10 @@ pub fn createUserDataFunc(comptime T: type, comptime method_name: []const u8, me
                 }
             }
 
-            // For instance methods, the first parameter must be either Self or *Self.
+            // For instance methods and metamethods, the first parameter must be either Self or *Self.
             // In this case, we should retrieve a userdata pointer to our structure.
             var instance: ?*T = null;
-            if (function_type == .instance) {
+            if (function_type == .instance or function_type == .metamethod) {
                 const userdata = lua.state.checkUdata(1, type_name);
                 instance = @ptrCast(@alignCast(userdata));
             }
@@ -116,13 +175,12 @@ pub fn createUserDataFunc(comptime T: type, comptime method_name: []const u8, me
             inline for (0..method_info.@"fn".params.len) |i| {
                 const param_type = method_info.@"fn".params[i].type orelse @compileError("Parameter type required");
 
-                if (i == 0 and function_type == .instance) {
+                if (i == 0 and (function_type == .instance or function_type == .metamethod)) {
                     // Handle self parameter - determine if method expects T or *T
-                    const param_info = @typeInfo(param_type);
-                    if (param_info == .pointer and param_info.pointer.size == .one) {
-                        args[i] = instance.?; // Mutable self (*T)
-                    } else {
+                    if (param_type == T) {
                         args[i] = instance.?.*; // Immutable self (T)
+                    } else {
+                        args[i] = instance.?; // Mutable self (*T)
                     }
                 } else {
                     // Handle regular parameters from Lua stack
@@ -162,4 +220,77 @@ pub fn createUserDataFunc(comptime T: type, comptime method_name: []const u8, me
             }
         }
     }.f;
+}
+
+/// Creates and registers a complete metatable for userdata type T.
+///
+/// This is the main public API for userdata registration. It counts methods,
+/// creates the metatable, registers all methods (init, instance, static),
+/// and registers metamethods. Returns the number of methods registered.
+///
+/// The type_name will be used for Lua userdata type checking and must be
+/// a compile-time string literal ending with null terminator.
+pub fn createMetaTable(comptime T: type, lua_state: *State, comptime type_name: [:0]const u8) u32 {
+    const struct_info = @typeInfo(T).@"struct";
+
+    // Count non-metamethod, non-deinit methods
+    var method_count: u32 = 0;
+    inline for (struct_info.decls) |decl| {
+        if (@hasDecl(T, decl.name)) {
+            const decl_info = @typeInfo(@TypeOf(@field(T, decl.name)));
+            if (decl_info == .@"fn" and
+                !comptime std.mem.eql(u8, decl.name, "deinit") and
+                    isMetaMethod(decl.name, @field(T, decl.name)) == null)
+            {
+                method_count += 1;
+            }
+        }
+    }
+
+    // Create the metatable for this userdata type
+    if (!lua_state.newMetatable(type_name)) {
+        @panic("Type " ++ @typeName(T) ++ " is already registered");
+    }
+
+    // Set __index to self for method lookup
+    lua_state.pushValue(-1);
+    lua_state.setField(-2, "__index");
+
+    // Register all regular methods (init, instance, static) - excluding metamethods and deinit
+    inline for (struct_info.decls) |decl| {
+        if (@hasDecl(T, decl.name)) {
+            const decl_info = @typeInfo(@TypeOf(@field(T, decl.name)));
+            if (decl_info == .@"fn" and
+                !comptime std.mem.eql(u8, decl.name, "deinit") and
+                    isMetaMethod(decl.name, @field(T, decl.name)) == null)
+            {
+                const method_func = @field(T, decl.name);
+
+                // Use "new" as the name for init functions, otherwise use the method name
+                const lua_name = if (comptime std.mem.eql(u8, decl.name, "init")) "new" else decl.name;
+                lua_state.pushCFunction(createUserDataFunc(T, decl.name, method_func, type_name), lua_name);
+                lua_state.setField(-2, lua_name);
+            }
+        }
+    }
+
+    // Register metamethods
+    inline for (struct_info.decls) |decl| {
+        if (@hasDecl(T, decl.name)) {
+            const decl_info = @typeInfo(@TypeOf(@field(T, decl.name)));
+            if (decl_info == .@"fn") {
+                const method_func = @field(T, decl.name);
+                if (isMetaMethod(decl.name, method_func)) |_| {
+                    // Register metamethod in the metatable
+                    lua_state.pushCFunction(createUserDataFunc(T, decl.name, method_func, type_name), decl.name);
+                    lua_state.setField(-2, decl.name);
+                }
+            }
+        }
+    }
+
+    // Store the metatable in the registry for later use
+    lua_state.setField(State.REGISTRYINDEX, type_name);
+
+    return method_count;
 }

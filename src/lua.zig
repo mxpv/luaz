@@ -831,6 +831,11 @@ pub const Lua = struct {
     ///     pub fn setAge(self: *Person, new_age: i32) void {
     ///         self.age = new_age;
     ///     }
+    ///
+    ///     // Metamethod example
+    ///     pub fn __len(self: Person) i32 {
+    ///         return self.age;  // #person returns age
+    ///     }
     /// };
     ///
     /// lua.registerUserData(Person);
@@ -842,6 +847,7 @@ pub const Lua = struct {
     /// print(person:getName())  -- Calls Person.getName
     /// print(person:getAge())   -- Calls Person.getAge
     /// person:setAge(30)        -- Calls Person.setAge
+    /// print(#person)           -- Calls Person.__len, prints 30
     /// ```
     ///
     /// Type requirements:
@@ -849,6 +855,13 @@ pub const Lua = struct {
     /// - Must have at least one public method (excluding deinit)
     /// - Methods must be public (pub)
     /// - Methods should follow Lua calling conventions for arguments and return values
+    ///
+    /// Metamethod support:
+    /// - Functions starting with `__` are treated as Lua metamethods
+    /// - Currently supported metamethods:
+    ///   - `__len(self) -> number` - called when using `#obj` in Lua
+    /// - Metamethods must conform to specific signatures or will cause compile-time errors
+    /// - Unknown metamethods (those starting with `__` but not supported) cause compile-time errors
     ///
     /// NOTE: Each type can only be registered once per Lua state. Attempting to register
     /// the same type twice will panic with a clear error message.
@@ -860,15 +873,17 @@ pub const Lua = struct {
             @compileError("registerUserData can only be used with struct types, got " ++ @typeName(T));
         }
 
-        const struct_info = type_info.@"struct";
         const type_name: [:0]const u8 = @typeName(T);
 
-        // Count methods (excluding deinit which is handled as destructor)
+        // Count methods at compile time for validation
+        const struct_info = type_info.@"struct";
         comptime var method_count = 0;
         inline for (struct_info.decls) |decl| {
             if (@hasDecl(T, decl.name)) {
                 const decl_info = @typeInfo(@TypeOf(@field(T, decl.name)));
-                if (decl_info == .@"fn" and !comptime std.mem.eql(u8, decl.name, "deinit")) {
+                if (decl_info == .@"fn" and
+                    !comptime std.mem.eql(u8, decl.name, "deinit"))
+                {
                     method_count += 1;
                 }
             }
@@ -879,46 +894,8 @@ pub const Lua = struct {
             @compileError("Type " ++ @typeName(T) ++ " has no public methods to register as userdata");
         }
 
-        // Number of methods to register + 1 for null terminator
-        var methods_buffer: [method_count + 1]State.LuaLReg = undefined;
-        var method_index: usize = 0;
-
-        // Add all methods (including init as "new" constructor, excluding deinit)
-        inline for (struct_info.decls) |decl| {
-            if (@hasDecl(T, decl.name)) {
-                const decl_info = @typeInfo(@TypeOf(@field(T, decl.name)));
-                if (decl_info == .@"fn" and !comptime std.mem.eql(u8, decl.name, "deinit")) {
-                    const method_func = @field(T, decl.name);
-
-                    // Use "new" as the name for init functions, otherwise use the method name
-                    const method_name: [:0]const u8 = if (comptime std.mem.eql(u8, decl.name, "init")) "new" else decl.name;
-
-                    methods_buffer[method_index] = State.LuaLReg{
-                        .name = method_name.ptr,
-                        .func = userdata.createUserDataFunc(T, decl.name, method_func, type_name),
-                    };
-
-                    method_index += 1;
-                }
-            }
-        }
-
-        // Null terminate
-        methods_buffer[method_index] = State.LuaLReg{ .name = null, .func = null };
-
-        // Create metatable and register methods using dual-purpose approach:
-        // 1. Metatable serves as method lookup table for instance methods (via __index)
-        // 2. Same metatable is registered globally for static methods and constructor access
-        if (!self.state.newMetatable(type_name)) {
-            @panic("Type " ++ @typeName(T) ++ " is already registered");
-        }
-
-        // Set __index to point to itself
-        self.state.pushValue(-1);
-        self.state.setField(-2, "__index");
-
-        // Register methods in metatable
-        self.state.register(null, methods_buffer[0 .. method_index + 1]);
+        // Use the userdata module's createMetaTable function to handle all registration
+        _ = userdata.createMetaTable(T, @constCast(&self.state), type_name);
 
         // Extract just the type name without module prefix for global registration
         // Example: "myapp.data.User" -> "User", "TestUserData" -> "TestUserData"
@@ -928,7 +905,9 @@ pub const Lua = struct {
         else
             full_type_name;
 
-        // Register the metatable globally so static methods are accessible as TypeName.method()
+        // Get the metatable from registry and register it globally so static methods
+        // are accessible as TypeName.method()
+        _ = self.state.getField(State.REGISTRYINDEX, type_name);
         self.state.setGlobal(type_name_only);
     }
 
