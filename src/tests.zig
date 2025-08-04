@@ -580,30 +580,88 @@ test "assert handler" {
 }
 
 const TestUserDataWithMetaMethods = struct {
+    const Self = @This();
+
     size: i32,
     name: []const u8,
 
-    pub fn init(size: i32, name: []const u8) TestUserDataWithMetaMethods {
-        return TestUserDataWithMetaMethods{
+    pub fn init(size: i32, name: []const u8) Self {
+        return Self{
             .size = size,
             .name = name,
         };
     }
 
-    pub fn add(self: *TestUserDataWithMetaMethods, value: i32) void {
+    pub fn add(self: *Self, value: i32) void {
         self.size += value;
     }
 
-    pub fn __len(self: TestUserDataWithMetaMethods) i32 {
+    pub fn __len(self: Self) i32 {
         return self.size;
     }
 
-    pub fn __tostring(self: TestUserDataWithMetaMethods) []const u8 {
+    pub fn __tostring(self: Self) []const u8 {
         return self.name;
+    }
+
+    pub fn __add(self: Self, other: i32) Self {
+        return Self{
+            .size = self.size + other,
+            .name = self.name,
+        };
+    }
+
+    pub fn __sub(self: Self, other: i32) Self {
+        return Self{
+            .size = self.size - other,
+            .name = self.name,
+        };
+    }
+
+    pub fn __mul(self: Self, other: i32) Self {
+        return Self{
+            .size = self.size * other,
+            .name = self.name,
+        };
+    }
+
+    pub fn __div(self: Self, other: i32) Self {
+        return Self{
+            .size = @divTrunc(self.size, other),
+            .name = self.name,
+        };
+    }
+
+    pub fn __idiv(self: Self, other: i32) Self {
+        return Self{
+            .size = @divFloor(self.size, other),
+            .name = self.name,
+        };
+    }
+
+    pub fn __mod(self: Self, other: i32) Self {
+        return Self{
+            .size = @mod(self.size, other),
+            .name = self.name,
+        };
+    }
+
+    pub fn __pow(self: Self, other: i32) Self {
+        return Self{
+            .size = std.math.pow(i32, self.size, other),
+            .name = self.name,
+        };
+    }
+
+    pub fn __unm(self: Self) Self {
+        return Self{
+            .size = -self.size,
+            .name = self.name,
+        };
     }
 };
 
-test "userdata with __len and __tostring metamethods" {
+test "userdata with metamethods" {
     const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
@@ -620,6 +678,46 @@ test "userdata with __len and __tostring metamethods" {
         \\
         \\-- Test __tostring metamethod
         \\assert(tostring(obj) == "test_object")
+        \\
+        \\-- Test __add metamethod
+        \\local obj_added = obj + 2
+        \\assert(#obj_added == 10) -- 8 + 2
+        \\assert(tostring(obj_added) == "test_object")
+        \\
+        \\-- Test __sub metamethod
+        \\local obj_subbed = obj - 3
+        \\assert(#obj_subbed == 5) -- 8 - 3
+        \\assert(tostring(obj_subbed) == "test_object")
+        \\
+        \\-- Test __mul metamethod
+        \\local obj_multed = obj * 2
+        \\assert(#obj_multed == 16) -- 8 * 2
+        \\assert(tostring(obj_multed) == "test_object")
+        \\
+        \\-- Test __div metamethod
+        \\local obj_dived = obj / 2
+        \\assert(#obj_dived == 4) -- 8 / 2
+        \\assert(tostring(obj_dived) == "test_object")
+        \\
+        \\-- Test __idiv metamethod
+        \\local obj_idived = obj // 3
+        \\assert(#obj_idived == 2) -- 8 // 3 = floor(8/3) = 2
+        \\assert(tostring(obj_idived) == "test_object")
+        \\
+        \\-- Test __mod metamethod
+        \\local obj_modded = obj % 3
+        \\assert(#obj_modded == 2) -- 8 % 3
+        \\assert(tostring(obj_modded) == "test_object")
+        \\
+        \\-- Test __pow metamethod
+        \\local obj_powered = obj ^ 2
+        \\assert(#obj_powered == 64) -- 8 ^ 2
+        \\assert(tostring(obj_powered) == "test_object")
+        \\
+        \\-- Test __unm metamethod
+        \\local obj_negated = -obj
+        \\assert(#obj_negated == -8) -- -8
+        \\assert(tostring(obj_negated) == "test_object")
         \\
         \\-- Test multiple objects
         \\local obj2 = TestUserDataWithMetaMethods.new(10, "second")

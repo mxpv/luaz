@@ -62,6 +62,62 @@ const Counter = struct {
     pub fn __tostring(self: Counter) []const u8 {
         return self.name;
     }
+
+    pub fn __add(self: Counter, other: i32) Counter {
+        return Counter{
+            .value = self.value + other,
+            .name = self.name,
+        };
+    }
+
+    pub fn __sub(self: Counter, other: i32) Counter {
+        return Counter{
+            .value = self.value - other,
+            .name = self.name,
+        };
+    }
+
+    pub fn __mul(self: Counter, other: i32) Counter {
+        return Counter{
+            .value = self.value * other,
+            .name = self.name,
+        };
+    }
+
+    pub fn __div(self: Counter, other: i32) Counter {
+        return Counter{
+            .value = @divTrunc(self.value, other),
+            .name = self.name,
+        };
+    }
+
+    pub fn __idiv(self: Counter, other: i32) Counter {
+        return Counter{
+            .value = @divFloor(self.value, other),
+            .name = self.name,
+        };
+    }
+
+    pub fn __mod(self: Counter, other: i32) Counter {
+        return Counter{
+            .value = @mod(self.value, other),
+            .name = self.name,
+        };
+    }
+
+    pub fn __pow(self: Counter, other: i32) Counter {
+        return Counter{
+            .value = std.math.pow(i32, self.value, other),
+            .name = self.name,
+        };
+    }
+
+    pub fn __unm(self: Counter) Counter {
+        return Counter{
+            .value = -self.value,
+            .name = self.name,
+        };
+    }
 };
 
 pub fn main() !void {
@@ -254,6 +310,24 @@ pub fn main() !void {
             \\-- Metamethods demonstration
             \\print("Length of counter: " .. #c)  -- Uses __len
             \\print("Counter as string: " .. tostring(c))  -- Uses __tostring
+            \\
+            \\-- Arithmetic metamethods
+            \\local c_plus = c + 5  -- Uses __add
+            \\print("After c + 5: " .. c_plus:getValue())
+            \\local c_minus = c - 2  -- Uses __sub  
+            \\print("After c - 2: " .. c_minus:getValue())
+            \\local c_times = c * 3  -- Uses __mul
+            \\print("After c * 3: " .. c_times:getValue())
+            \\local c_div = c / 2  -- Uses __div
+            \\print("After c / 2: " .. c_div:getValue())
+            \\local c_idiv = c // 3  -- Uses __idiv (floor division)
+            \\print("After c // 3: " .. c_idiv:getValue())
+            \\local c_mod = c % 7  -- Uses __mod
+            \\print("After c % 7: " .. c_mod:getValue())
+            \\local c_pow = c ^ 2  -- Uses __pow
+            \\print("After c ^ 2: " .. c_pow:getValue())
+            \\local c_neg = -c  -- Uses __unm (unary minus)
+            \\print("After -c: " .. c_neg:getValue())
         , .{}, void);
     }
 

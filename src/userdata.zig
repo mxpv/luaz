@@ -10,6 +10,14 @@ const Lua = @import("lua.zig").Lua;
 pub const MetaMethod = enum {
     len, // __len
     tostring, // __tostring
+    add, // __add
+    sub, // __sub
+    mul, // __mul
+    div, // __div
+    idiv, // __idiv
+    mod, // __mod
+    pow, // __pow
+    unm, // __unm
 };
 
 /// Function type categories for userdata methods
@@ -41,9 +49,8 @@ fn isMetaMethod(comptime method_name: []const u8, comptime method: anytype) ?Met
         return null;
     }
 
-    // Determine which metamethod this is and validate its signature
+    // Handle __len
     if (comptime std.mem.eql(u8, method_name, "__len")) {
-        // Validate __len metamethod signature
         const method_info = @typeInfo(@TypeOf(method));
 
         if (method_info.@"fn".params.len != 1) {
@@ -54,7 +61,6 @@ fn isMetaMethod(comptime method_name: []const u8, comptime method: anytype) ?Met
         const return_type = method_info.@"fn".return_type orelse
             @compileError("__len metamethod must have a return type (should return a number)");
 
-        // Check if return type is a number type
         const return_info = @typeInfo(return_type);
         const is_number = switch (return_info) {
             .int, .comptime_int => true,
@@ -67,8 +73,10 @@ fn isMetaMethod(comptime method_name: []const u8, comptime method: anytype) ?Met
         }
 
         return .len;
-    } else if (comptime std.mem.eql(u8, method_name, "__tostring")) {
-        // Validate __tostring metamethod signature
+    }
+
+    // Handle __tostring
+    if (comptime std.mem.eql(u8, method_name, "__tostring")) {
         const method_info = @typeInfo(@TypeOf(method));
 
         if (method_info.@"fn".params.len != 1) {
@@ -79,7 +87,6 @@ fn isMetaMethod(comptime method_name: []const u8, comptime method: anytype) ?Met
         const return_type = method_info.@"fn".return_type orelse
             @compileError("__tostring metamethod must have a return type (should return []const u8)");
 
-        // Check if return type is a string type ([]const u8)
         const return_info = @typeInfo(return_type);
         const is_string = switch (return_info) {
             .pointer => |ptr| ptr.size == .slice and ptr.child == u8 and ptr.is_const,
@@ -93,8 +100,96 @@ fn isMetaMethod(comptime method_name: []const u8, comptime method: anytype) ?Met
         return .tostring;
     }
 
+    // Handle binary arithmetic operations
+    if (comptime std.mem.eql(u8, method_name, "__add")) {
+        validateBinaryOpSignature(method_name, method);
+        return .add;
+    }
+    if (comptime std.mem.eql(u8, method_name, "__sub")) {
+        validateBinaryOpSignature(method_name, method);
+        return .sub;
+    }
+    if (comptime std.mem.eql(u8, method_name, "__mul")) {
+        validateBinaryOpSignature(method_name, method);
+        return .mul;
+    }
+    if (comptime std.mem.eql(u8, method_name, "__div")) {
+        validateBinaryOpSignature(method_name, method);
+        return .div;
+    }
+    if (comptime std.mem.eql(u8, method_name, "__mod")) {
+        validateBinaryOpSignature(method_name, method);
+        return .mod;
+    }
+    if (comptime std.mem.eql(u8, method_name, "__idiv")) {
+        validateBinaryOpSignature(method_name, method);
+        return .idiv;
+    }
+    if (comptime std.mem.eql(u8, method_name, "__pow")) {
+        validateBinaryOpSignature(method_name, method);
+        return .pow;
+    }
+    if (comptime std.mem.eql(u8, method_name, "__unm")) {
+        // Validate __unm metamethod signature
+        const method_info = @typeInfo(@TypeOf(method));
+
+        if (method_info.@"fn".params.len != 1) {
+            @compileError("__unm metamethod must take exactly one parameter (self), got " ++
+                std.fmt.comptimePrint("{}", .{method_info.@"fn".params.len}));
+        }
+
+        _ = method_info.@"fn".return_type orelse
+            @compileError("__unm metamethod must have a return type");
+
+        return .unm;
+    }
+
     // Unknown metamethod starting with __
-    @compileError("Unknown metamethod '" ++ method_name ++ "' - only __len and __tostring are currently supported");
+    @compileError("Unknown metamethod '" ++ method_name ++ "' - only __len, __tostring, __add, __sub, __mul, __div, __idiv, __mod, __pow, and __unm are currently supported");
+}
+
+/// Helper function to validate binary operation metamethod signatures
+fn validateBinaryOpSignature(comptime method_name: []const u8, comptime method: anytype) void {
+    const method_info = @typeInfo(@TypeOf(method));
+
+    if (method_info.@"fn".params.len != 2) {
+        @compileError(method_name ++ " metamethod must take exactly two parameters (self, other), got " ++
+            std.fmt.comptimePrint("{}", .{method_info.@"fn".params.len}));
+    }
+
+    _ = method_info.@"fn".return_type orelse
+        @compileError(method_name ++ " metamethod must have a return type");
+}
+
+/// Creates a new userdata instance and attaches the metatable.
+/// Uses newUserdata to create userdata, or newUserdataDtor if T has a deinit method.
+/// Attaches the type's metatable for method dispatch.
+/// Returns a typed pointer to the userdata, or null if allocation fails.
+fn createUserDataInstance(comptime T: type, lua: Lua, comptime type_name: [:0]const u8) ?*T {
+    // Allocate userdata with optional destructor support
+    const userdata = if (comptime @hasDecl(T, "deinit")) blk: {
+        const DtorImpl = struct {
+            fn dtor(ptr: ?*anyopaque) callconv(.C) void {
+                if (ptr) |p| {
+                    const obj: *T = @ptrCast(@alignCast(p));
+                    obj.deinit();
+                }
+            }
+        };
+        break :blk lua.state.newUserdataDtor(@sizeOf(T), DtorImpl.dtor);
+    } else lua.state.newUserdata(@sizeOf(T));
+
+    const ptr = userdata orelse return null;
+    const instance_ptr: *T = @ptrCast(@alignCast(ptr));
+
+    // Attach metatable for method dispatch and metamethods
+    if (lua.state.getField(State.REGISTRYINDEX, type_name) != State.Type.nil) {
+        _ = lua.state.setMetatable(-2);
+    } else {
+        lua.state.pop(1);
+    }
+
+    return instance_ptr;
 }
 
 /// Determines function type and validates constraints for userdata methods.
@@ -157,33 +252,9 @@ fn createUserDataFunc(comptime T: type, comptime method_name: []const u8, method
             const lua = Lua.fromState(state.?);
 
             // Init is a special method that is responsible for object construction.
-            // Calls Lua's newUserdata method to allocate memory.
-            // If there is a destructor, uses newUserdataDtor instead and passes deinit as destructor.
-            // Lua calls this during garbage collection.
             var instance_ptr: ?*T = null;
             if (function_type == .init) {
-                // Check if T has a deinit method to use destructor version
-                const userdata = if (comptime @hasDecl(T, "deinit")) blk: {
-                    const DtorImpl = struct {
-                        fn dtor(ptr: ?*anyopaque) callconv(.C) void {
-                            if (ptr) |p| {
-                                const obj: *T = @ptrCast(@alignCast(p));
-                                obj.deinit();
-                            }
-                        }
-                    };
-                    break :blk lua.state.newUserdataDtor(@sizeOf(T), DtorImpl.dtor);
-                } else lua.state.newUserdata(@sizeOf(T));
-
-                const ptr = userdata orelse return 0;
-                instance_ptr = @ptrCast(@alignCast(ptr));
-
-                // Attach metatable for method dispatch
-                if (lua.state.getField(State.REGISTRYINDEX, type_name) != State.Type.nil) {
-                    _ = lua.state.setMetatable(-2);
-                } else {
-                    lua.state.pop(1);
-                }
+                instance_ptr = createUserDataInstance(T, lua, type_name) orelse return 0;
             }
 
             // For instance methods and metamethods, the first parameter must be either Self or *Self.
@@ -239,6 +310,11 @@ fn createUserDataFunc(comptime T: type, comptime method_name: []const u8, method
                     stack.push(lua, result[i]);
                 }
                 return @intCast(result_info.@"struct".fields.len);
+            } else if (ResultType == T) {
+                // Handle userdata return type (e.g., from metamethods like __add)
+                const result_ptr = createUserDataInstance(T, lua, type_name) orelse return 0;
+                result_ptr.* = result;
+                return 1;
             } else {
                 stack.push(lua, result);
                 return stack.slotCountFor(ResultType);
