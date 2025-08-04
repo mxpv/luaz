@@ -671,6 +671,15 @@ const TestUserDataWithMetaMethods = struct {
     pub fn __le(self: Self, other: Self) bool {
         return self.size <= other.size;
     }
+
+    pub fn __concat(self: Self, other: []const u8) []const u8 {
+        // For simplicity, just return the object's name with a suffix
+        // In real code, you'd want to use an allocator or return a static string
+        return if (std.mem.eql(u8, self.name, "test_object") and std.mem.eql(u8, other, "suffix"))
+            "test_object_suffix"
+        else
+            "test_object_concat";
+    }
 };
 
 test "userdata with metamethods" {
@@ -740,6 +749,10 @@ test "userdata with metamethods" {
         \\assert(obj_big > obj_small) -- __lt: 10 > 5 (uses __lt)
         \\assert(obj_small <= obj_big) -- __le: 5 <= 10
         \\assert(obj_small <= obj_small) -- __le: 5 <= 5
+        \\
+        \\-- Test __concat metamethod
+        \\local result = obj .. "suffix"
+        \\assert(result == "test_object_suffix") -- __concat
         \\
         \\-- Test multiple objects
         \\local obj2 = TestUserDataWithMetaMethods.new(10, "second")

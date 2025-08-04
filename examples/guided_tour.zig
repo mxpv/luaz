@@ -130,6 +130,15 @@ const Counter = struct {
     pub fn __le(self: Counter, other: Counter) bool {
         return self.value <= other.value;
     }
+
+    pub fn __concat(self: Counter, other: []const u8) []const u8 {
+        // For simplicity, return a static string based on counter name
+        // In real code, you'd want to use an allocator or return a static string
+        return if (std.mem.eql(u8, self.name, "my_counter") and std.mem.eql(u8, other, "_test"))
+            "my_counter_test"
+        else
+            "counter_concat";
+    }
 };
 
 pub fn main() !void {
@@ -346,6 +355,10 @@ pub fn main() !void {
             \\print("c == c: " .. tostring(c == c))  -- Uses __eq
             \\print("c < c2: " .. tostring(c < c2))  -- Uses __lt
             \\print("c <= c2: " .. tostring(c <= c2))  -- Uses __le
+            \\
+            \\-- Concatenation metamethod
+            \\local concat_result = c .. "_test"  -- Uses __concat
+            \\print("c .. \"_test\": " .. concat_result)
         , .{}, void);
     }
 

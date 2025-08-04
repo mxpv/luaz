@@ -21,6 +21,7 @@ pub const MetaMethod = enum {
     eq, // __eq
     lt, // __lt
     le, // __le
+    concat, // __concat
 };
 
 /// Function type categories for userdata methods
@@ -158,9 +159,13 @@ fn isMetaMethod(comptime method_name: []const u8, comptime method: anytype) ?Met
         validateBinaryOpSignature(method_name, method);
         return .le;
     }
+    if (comptime std.mem.eql(u8, method_name, "__concat")) {
+        validateBinaryOpSignature(method_name, method);
+        return .concat;
+    }
 
     // Unknown metamethod starting with __
-    @compileError("Unknown metamethod '" ++ method_name ++ "' - only __len, __tostring, __add, __sub, __mul, __div, __idiv, __mod, __pow, __unm, __eq, __lt, and __le are currently supported");
+    @compileError("Unknown metamethod '" ++ method_name ++ "' - only __len, __tostring, __add, __sub, __mul, __div, __idiv, __mod, __pow, __unm, __eq, __lt, __le, and __concat are currently supported");
 }
 
 /// Helper function to validate binary operation metamethod signatures
