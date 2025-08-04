@@ -172,7 +172,7 @@ The following features are planned after the initial release:
 - Luau sandbox APIs - Safe execution environments for untrusted code
 - Coroutine / threads support - Full Luau coroutine and threading capabilities
 - Debug APIs - Debugging hooks and introspection tools
-- Userdata metatables - Custom metamethod support for userdata types
+- ~Userdata metatables - Custom metamethod support for userdata types~ (https://github.com/mxpv/luaz/issues/3)
 - GC API - Fine-grained garbage collection control
 - Optional JSON support - Built-in JSON serialization/deserialization
 
