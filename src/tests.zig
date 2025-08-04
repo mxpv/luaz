@@ -659,6 +659,18 @@ const TestUserDataWithMetaMethods = struct {
             .name = self.name,
         };
     }
+
+    pub fn __eq(self: Self, other: Self) bool {
+        return self.size == other.size;
+    }
+
+    pub fn __lt(self: Self, other: Self) bool {
+        return self.size < other.size;
+    }
+
+    pub fn __le(self: Self, other: Self) bool {
+        return self.size <= other.size;
+    }
 };
 
 test "userdata with metamethods" {
@@ -718,6 +730,16 @@ test "userdata with metamethods" {
         \\local obj_negated = -obj
         \\assert(#obj_negated == -8) -- -8
         \\assert(tostring(obj_negated) == "test_object")
+        \\
+        \\-- Test comparison metamethods
+        \\local obj_small = TestUserDataWithMetaMethods.new(5, "small")
+        \\local obj_big = TestUserDataWithMetaMethods.new(10, "big")
+        \\assert(obj == obj) -- __eq: same object
+        \\assert(obj_small ~= obj_big) -- __eq: different objects
+        \\assert(obj_small < obj_big) -- __lt: 5 < 10
+        \\assert(obj_big > obj_small) -- __lt: 10 > 5 (uses __lt)
+        \\assert(obj_small <= obj_big) -- __le: 5 <= 10
+        \\assert(obj_small <= obj_small) -- __le: 5 <= 5
         \\
         \\-- Test multiple objects
         \\local obj2 = TestUserDataWithMetaMethods.new(10, "second")

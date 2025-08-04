@@ -118,6 +118,18 @@ const Counter = struct {
             .name = self.name,
         };
     }
+
+    pub fn __eq(self: Counter, other: Counter) bool {
+        return self.value == other.value;
+    }
+
+    pub fn __lt(self: Counter, other: Counter) bool {
+        return self.value < other.value;
+    }
+
+    pub fn __le(self: Counter, other: Counter) bool {
+        return self.value <= other.value;
+    }
 };
 
 pub fn main() !void {
@@ -328,6 +340,12 @@ pub fn main() !void {
             \\print("After c ^ 2: " .. c_pow:getValue())
             \\local c_neg = -c  -- Uses __unm (unary minus)
             \\print("After -c: " .. c_neg:getValue())
+            \\
+            \\-- Comparison metamethods
+            \\local c2 = Counter.new(15, "counter2")
+            \\print("c == c: " .. tostring(c == c))  -- Uses __eq
+            \\print("c < c2: " .. tostring(c < c2))  -- Uses __lt
+            \\print("c <= c2: " .. tostring(c <= c2))  -- Uses __le
         , .{}, void);
     }
 
