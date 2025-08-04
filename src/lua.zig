@@ -853,9 +853,13 @@ pub const Lua = struct {
     ///         self.age = new_age;
     ///     }
     ///
-    ///     // Metamethod example
+    ///     // Metamethod examples
     ///     pub fn __len(self: Person) i32 {
     ///         return self.age;  // #person returns age
+    ///     }
+    ///
+    ///     pub fn __tostring(self: Person) []const u8 {
+    ///         return self.name;  // tostring(person) returns name
     ///     }
     /// };
     ///
@@ -869,6 +873,7 @@ pub const Lua = struct {
     /// print(person:getAge())   -- Calls Person.getAge
     /// person:setAge(30)        -- Calls Person.setAge
     /// print(#person)           -- Calls Person.__len, prints 30
+    /// print(tostring(person))  -- Calls Person.__tostring, prints name
     /// ```
     ///
     /// Type requirements:
@@ -881,6 +886,7 @@ pub const Lua = struct {
     /// - Functions starting with `__` are treated as Lua metamethods
     /// - Currently supported metamethods:
     ///   - `__len(self) -> number` - called when using `#obj` in Lua
+    ///   - `__tostring(self) -> []const u8` - called by `tostring(obj)` in Lua
     /// - Metamethods must conform to specific signatures or will cause compile-time errors
     /// - Unknown metamethods (those starting with `__` but not supported) cause compile-time errors
     ///

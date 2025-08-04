@@ -9,6 +9,7 @@ const Lua = @import("lua.zig").Lua;
 /// Supported metamethods
 pub const MetaMethod = enum {
     len, // __len
+    tostring, // __tostring
 };
 
 /// Function type categories for userdata methods
@@ -66,10 +67,34 @@ fn isMetaMethod(comptime method_name: []const u8, comptime method: anytype) ?Met
         }
 
         return .len;
+    } else if (comptime std.mem.eql(u8, method_name, "__tostring")) {
+        // Validate __tostring metamethod signature
+        const method_info = @typeInfo(@TypeOf(method));
+
+        if (method_info.@"fn".params.len != 1) {
+            @compileError("__tostring metamethod must take exactly one parameter (self), got " ++
+                std.fmt.comptimePrint("{}", .{method_info.@"fn".params.len}));
+        }
+
+        const return_type = method_info.@"fn".return_type orelse
+            @compileError("__tostring metamethod must have a return type (should return []const u8)");
+
+        // Check if return type is a string type ([]const u8)
+        const return_info = @typeInfo(return_type);
+        const is_string = switch (return_info) {
+            .pointer => |ptr| ptr.size == .slice and ptr.child == u8 and ptr.is_const,
+            else => false,
+        };
+
+        if (!is_string) {
+            @compileError("__tostring metamethod must return []const u8, got " ++ @typeName(return_type));
+        }
+
+        return .tostring;
     }
 
     // Unknown metamethod starting with __
-    @compileError("Unknown metamethod '" ++ method_name ++ "' - only __len is currently supported");
+    @compileError("Unknown metamethod '" ++ method_name ++ "' - only __len and __tostring are currently supported");
 }
 
 /// Determines function type and validates constraints for userdata methods.

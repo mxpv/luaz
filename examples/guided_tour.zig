@@ -36,9 +36,10 @@ fn safeDivide(a: f64, b: f64) ?f64 {
 // Example struct for demonstrating user data
 const Counter = struct {
     value: i32,
+    name: []const u8,
 
-    pub fn init(start: i32) Counter {
-        return .{ .value = start };
+    pub fn init(start: i32, name: []const u8) Counter {
+        return .{ .value = start, .name = name };
     }
 
     pub fn increment(self: *Counter) void {
@@ -51,6 +52,15 @@ const Counter = struct {
 
     pub fn add(self: Counter, other: i32) i32 {
         return self.value + other;
+    }
+
+    // Metamethods
+    pub fn __len(self: Counter) i32 {
+        return self.value;
+    }
+
+    pub fn __tostring(self: Counter) []const u8 {
+        return self.name;
     }
 };
 
@@ -229,7 +239,7 @@ pub fn main() !void {
         // Use from Lua
         try lua.eval(
             \\-- Create new counter (init becomes 'new' in Lua)
-            \\local c = Counter.new(10)
+            \\local c = Counter.new(10, "my_counter")
             \\print("Initial value: " .. c:getValue())
             \\
             \\-- Call methods
@@ -240,6 +250,10 @@ pub fn main() !void {
             \\-- Methods can take parameters
             \\local sum = c:add(5)
             \\print("12 + 5 = " .. sum)
+            \\
+            \\-- Metamethods demonstration
+            \\print("Length of counter: " .. #c)  -- Uses __len
+            \\print("Counter as string: " .. tostring(c))  -- Uses __tostring
         , .{}, void);
     }
 

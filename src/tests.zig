@@ -581,10 +581,12 @@ test "assert handler" {
 
 const TestUserDataWithMetaMethods = struct {
     size: i32,
+    name: []const u8,
 
-    pub fn init(size: i32) TestUserDataWithMetaMethods {
+    pub fn init(size: i32, name: []const u8) TestUserDataWithMetaMethods {
         return TestUserDataWithMetaMethods{
             .size = size,
+            .name = name,
         };
     }
 
@@ -595,9 +597,13 @@ const TestUserDataWithMetaMethods = struct {
     pub fn __len(self: TestUserDataWithMetaMethods) i32 {
         return self.size;
     }
+
+    pub fn __tostring(self: TestUserDataWithMetaMethods) []const u8 {
+        return self.name;
+    }
 };
 
-test "userdata with __len metamethod" {
+test "userdata with __len and __tostring metamethods" {
     const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
@@ -605,17 +611,25 @@ test "userdata with __len metamethod" {
     try lua.registerUserData(TestUserDataWithMetaMethods);
 
     const test_script =
-        \\local obj = TestUserDataWithMetaMethods.new(5)
+        \\local obj = TestUserDataWithMetaMethods.new(5, "test_object")
+        \\
+        \\-- Test __len metamethod
         \\assert(#obj == 5)
         \\obj:add(3)
         \\assert(#obj == 8)
         \\
+        \\-- Test __tostring metamethod
+        \\assert(tostring(obj) == "test_object")
+        \\
         \\-- Test multiple objects
-        \\local obj2 = TestUserDataWithMetaMethods.new(10)
+        \\local obj2 = TestUserDataWithMetaMethods.new(10, "second")
         \\assert(#obj2 == 10)
+        \\assert(tostring(obj2) == "second")
         \\assert(#obj == 8) -- first unchanged
+        \\assert(tostring(obj) == "test_object") -- first unchanged
     ;
 
     try lua.eval(test_script, .{}, void);
+
     try expectEq(lua.top(), 0);
 }
