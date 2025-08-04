@@ -196,14 +196,23 @@ test "table call function" {
     const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
+    lua.state.openLibs(); // Need this for error() function
+
     _ = try lua.eval(
         \\function add(a, b) return a + b end
+        \\function error_func() error('Test runtime error') end
     , .{}, void);
 
     const globals = lua.globals();
 
+    // Test successful function call
     const result = try globals.call("add", .{ 10, 20 }, i32);
     try expectEq(result, 30);
+
+    // Test error handling - should print debug message and return Error.Runtime
+    const error_result = globals.call("error_func", .{}, void);
+    try std.testing.expectError(Lua.Error.Runtime, error_result);
+
     try expectEq(lua.top(), 0);
 }
 
@@ -211,17 +220,31 @@ test "function call from global namespace" {
     const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
+    lua.state.openLibs();
+
     _ = try lua.eval(
         \\function sum(a, b) return a + b end
+        \\function divide_error(a, b) if b == 0 then error('Division by zero') end return a / b end
     , .{}, void);
 
     const globals = lua.globals();
+
+    // Test successful function call
     const func = try globals.get("sum", Lua.Function);
     try expect(func != null);
     defer func.?.deinit();
 
     const result = try func.?.call(.{ 15, 25 }, i32);
     try expectEq(result, 40);
+
+    // Test error handling with Function.call
+    const error_func = try globals.get("divide_error", Lua.Function);
+    try expect(error_func != null);
+    defer error_func.?.deinit();
+
+    const error_result = error_func.?.call(.{ 10, 0 }, f64);
+    try std.testing.expectError(Lua.Error.Runtime, error_result);
+
     try expectEq(lua.top(), 0);
 }
 

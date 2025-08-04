@@ -66,6 +66,8 @@ pub const Lua = struct {
         Compile,
         /// Unexpected type on the stack (e.g., attempted to retrieve a function but found a different type).
         InvalidType,
+        /// Lua runtime error occurred during function execution.
+        Runtime,
     };
 
     /// Assert handler function type for Luau VM assertions.
@@ -392,7 +394,7 @@ pub const Lua = struct {
         /// const result = try table.call("getCoords", .{}, struct { f64, f64 });
         /// ```
         ///
-        /// Errors: `Error.OutOfMemory` if stack allocation fails
+        /// Errors: `Error.OutOfMemory` if stack allocation fails, `Error.Runtime` if function execution fails
         pub fn call(self: Table, key: anytype, args: anytype, comptime R: type) !R {
             try self.ref.lua.checkStack(3);
 
@@ -586,7 +588,7 @@ pub const Lua = struct {
         /// const result = try func.call(.{}, struct { f64, f64 });
         /// ```
         ///
-        /// Errors: `Error.OutOfMemory` if stack allocation fails
+        /// Errors: `Error.OutOfMemory` if stack allocation fails, `Error.Runtime` if function execution fails
         pub fn call(self: @This(), args: anytype, comptime R: type) !R {
             try self.ref.lua.checkStack(2);
 
@@ -685,7 +687,7 @@ pub const Lua = struct {
     /// ```
     ///
     /// Returns: The result of executing the bytecode, converted to type `T`
-    /// Errors: `Error.OutOfMemory` if the VM runs out of memory during execution
+    /// Errors: `Error.OutOfMemory` if the VM runs out of memory, `Error.Runtime` if execution fails
     pub fn exec(self: Self, blob: []const u8, comptime T: type) !T {
         // Push byte code onto stack
         {
@@ -705,7 +707,7 @@ pub const Lua = struct {
         return self.call(.{}, T);
     }
 
-    fn call(self: Self, args: anytype, comptime R: type) R {
+    fn call(self: Self, args: anytype, comptime R: type) Error!R {
         // Count and push args.
         const arg_count = blk: {
             const args_type_info = @typeInfo(@TypeOf(args));
@@ -732,7 +734,26 @@ pub const Lua = struct {
 
         const ret_count = stack.slotCountFor(R);
 
-        self.state.call(arg_count, ret_count);
+        // Use pcall instead of call for protected execution
+        const status = self.state.pcall(arg_count, ret_count, 0);
+
+        // Check if there was an error
+        if (status != .ok) {
+            // Debug print the error message before popping it
+            if (self.state.isString(-1)) {
+                if (self.state.toString(-1)) |error_msg| {
+                    std.debug.print("Lua runtime error: {s}\n", .{error_msg});
+                }
+            }
+
+            // Pop the error message from the stack
+            self.state.pop(1);
+            return switch (status) {
+                .errmem => Error.OutOfMemory,
+                .errrun, .errsyntax, .errerr => Error.Runtime,
+                else => Error.Runtime,
+            };
+        }
 
         // Fetch ret args
         const ret_type_info = @typeInfo(R);
