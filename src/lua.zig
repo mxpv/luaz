@@ -494,6 +494,93 @@ pub const Lua = struct {
 
             return self.state().objLen(-1);
         }
+
+        /// Creates an iterator over table entries.
+        ///
+        /// Advances table iteration by taking the current entry and returning the next one.
+        /// Automatically deallocates the passed entry's resources before returning.
+        ///
+        /// To start iteration, pass `null` as the entry parameter.
+        /// When iteration is complete, returns `null`. Note that the passed entry
+        /// is always deallocated, even when iteration ends.
+        ///
+        /// Examples:
+        /// ```zig
+        /// const table = lua.createTable(.{});
+        /// defer table.deinit();
+        ///
+        /// try table.set("name", "Alice");
+        /// try table.set(1, "first");
+        ///
+        /// var current: ?Table.Entry = null;
+        /// while (try table.next(current)) |entry| {
+        ///     current = entry;
+        ///
+        ///     // Use helper methods to access values
+        ///     if (entry.key.asString()) |s| {
+        ///         std.debug.print("String key: {s}\n", .{s});
+        ///     } else if (entry.key.asNumber()) |n| {
+        ///         std.debug.print("Number key: {d}\n", .{n});
+        ///     }
+        ///
+        ///     if (entry.value.asString()) |s| {
+        ///         std.debug.print("String value: {s}\n", .{s});
+        ///     } else if (entry.value.asInt()) |i| {
+        ///         std.debug.print("Int value: {d}\n", .{i});
+        ///     }
+        /// }
+        /// ```
+        ///
+        /// Parameters:
+        /// - `current_entry`: The current entry from previous iteration, or `null` to start
+        ///
+        /// Returns: `?Entry` - The next key-value pair, or `null` if iteration is complete
+        /// Errors: `Error.OutOfMemory` if stack allocation fails
+        pub fn next(self: Table, current_entry: ?Entry) !?Entry {
+            defer if (current_entry) |entry| entry.deinit();
+
+            try self.ref.lua.checkStack(3);
+
+            // Push table onto stack
+            stack.push(self.ref.lua, self.ref);
+            defer self.state().pop(1);
+
+            // Push key for lua_next (nil if null)
+            if (current_entry) |entry| {
+                stack.push(self.ref.lua, entry.key);
+            } else {
+                self.state().pushNil();
+            }
+
+            // Call lua_next: pops key, pushes next key-value pair (or nothing if done)
+            if (self.state().next(-2)) {
+                // Stack now has: table, key, value
+
+                // Pop value and key
+                const value = stack.pop(self.ref.lua, Lua.Value).?;
+                const key = stack.pop(self.ref.lua, Lua.Value).?;
+
+                return Entry{ .key = key, .value = value };
+            } else {
+                // No more entries
+                return null;
+            }
+        }
+
+        /// Entry representing a key-value pair from table iteration.
+        /// Must be explicitly cleaned up using `deinit()` or passed to the next
+        /// `next()` call for automatic deallocation.
+        pub const Entry = struct {
+            key: Lua.Value,
+            value: Lua.Value,
+
+            /// Releases the resources held by this entry.
+            /// Note: This is automatically called when passing the entry to `next()`.
+            pub fn deinit(self: Entry) void {
+                self.key.deinit();
+                self.value.deinit();
+            }
+        };
     };
 
     /// Generic Lua value that can represent any runtime Lua type.
@@ -562,6 +649,31 @@ pub const Lua = struct {
                 .function => |f| f.deinit(),
                 else => {}, // No cleanup needed for primitive types
             }
+        }
+
+        /// Returns the string value if this Value contains a string, otherwise null.
+        pub fn asString(self: Value) ?[]const u8 {
+            return switch (self) {
+                .string => |s| s,
+                else => null,
+            };
+        }
+
+        /// Returns the number value if this Value contains a number, otherwise null.
+        pub fn asNumber(self: Value) ?f64 {
+            return switch (self) {
+                .number => |n| n,
+                else => null,
+            };
+        }
+
+        /// Returns the integer value if this Value contains a number, otherwise null.
+        /// The number is cast to i32.
+        pub fn asInt(self: Value) ?i32 {
+            return switch (self) {
+                .number => |n| @intFromFloat(n),
+                else => null,
+            };
         }
     };
 

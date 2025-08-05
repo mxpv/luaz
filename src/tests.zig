@@ -897,3 +897,86 @@ test "userdata with __index and __newindex metamethods" {
     try expectEq(newindex_call_count, 3);
     try expectEq(lua.top(), 0);
 }
+
+test "table iterator" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    lua.openLibs();
+
+    const table = lua.createTable(.{});
+    defer table.deinit();
+
+    // Add various types of entries
+    try table.set("name", "Alice");
+    try table.set("age", 30);
+    try table.set(1, "first");
+    try table.set(2, "second");
+
+    // Test iteration using next() method
+    var count: i32 = 0;
+    var found_name = false;
+    var found_age = false;
+    var found_first = false;
+    var found_second = false;
+
+    var current: ?Lua.Table.Entry = null;
+    while (try table.next(current)) |entry| {
+        current = entry;
+        count += 1;
+
+        // Check what we found using helper methods
+        if (entry.key.asString()) |s| {
+            if (std.mem.eql(u8, s, "name")) {
+                found_name = true;
+                if (entry.value.asString()) |v| {
+                    try expect(std.mem.eql(u8, v, "Alice"));
+                } else {
+                    try expect(false);
+                }
+            } else if (std.mem.eql(u8, s, "age")) {
+                found_age = true;
+                if (entry.value.asNumber()) |v| {
+                    try expectEq(v, 30.0);
+                } else {
+                    try expect(false);
+                }
+            }
+        } else if (entry.key.asNumber()) |n| {
+            if (n == 1.0) {
+                found_first = true;
+                if (entry.value.asString()) |v| {
+                    try expect(std.mem.eql(u8, v, "first"));
+                } else {
+                    try expect(false);
+                }
+            } else if (n == 2.0) {
+                found_second = true;
+                if (entry.value.asString()) |v| {
+                    try expect(std.mem.eql(u8, v, "second"));
+                } else {
+                    try expect(false);
+                }
+            }
+        }
+    }
+
+    // Verify we found all entries
+    try expectEq(count, 4);
+    try expect(found_name);
+    try expect(found_age);
+    try expect(found_first);
+    try expect(found_second);
+
+    // Test iteration on empty table
+    const empty_table = lua.createTable(.{});
+    defer empty_table.deinit();
+
+    var empty_count: i32 = 0;
+    var empty_current: ?Lua.Table.Entry = null;
+    while (try empty_table.next(empty_current)) |entry| {
+        empty_current = entry;
+        empty_count += 1;
+    }
+    try expectEq(empty_count, 0);
+}
