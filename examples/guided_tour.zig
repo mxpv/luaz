@@ -10,6 +10,8 @@
 //! - Register Zig functions
 //! - Work with user data types
 //! - Use Luau's codegen feature
+//! - Push and retrieve arrays
+//! - Work with tuples and table-based structures
 
 const std = @import("std");
 const luaz = @import("luaz");
@@ -405,6 +407,69 @@ pub fn main() !void {
             \\print("Y component: " .. myVector.Y)
             \\print("Z component: " .. myVector.Z)
         , .{}, void);
+    }
+
+    // Working with arrays
+    {
+        print("\n-- Arrays --\n", .{});
+
+        const globals = lua.globals();
+
+        // Push various array types
+        const int_array = [_]i32{ 10, 20, 30, 40, 50 };
+        const string_array = [_][]const u8{ "apple", "banana", "cherry" };
+        const bool_array = [_]bool{ true, false, true };
+
+        try globals.set("numbers", int_array);
+        try globals.set("fruits", string_array);
+        try globals.set("flags", bool_array);
+
+        try lua.eval(
+            \\print("Integer array:")
+            \\for i, v in ipairs(numbers) do
+            \\    print("  " .. i .. ": " .. v)
+            \\end
+            \\
+            \\print("String array:")
+            \\for i, v in ipairs(fruits) do
+            \\    print("  " .. i .. ": " .. v)
+            \\end
+            \\
+            \\print("Boolean array:")
+            \\for i, v in ipairs(flags) do
+            \\    print("  " .. i .. ": " .. tostring(v))
+            \\end
+        , .{}, void);
+
+        // Multiple values can be retrieved as tuples using multiple return values
+        const retrieved_numbers = try lua.eval("return 100, 200, 300", .{}, struct { i32, i32, i32 });
+        print("Retrieved multiple values from Lua: {}, {}, {}\n", .{ retrieved_numbers[0], retrieved_numbers[1], retrieved_numbers[2] });
+    }
+
+    // Working with tuples and table structures
+    {
+        print("\n-- Tuples and Table Structures --\n", .{});
+
+        const globals = lua.globals();
+
+        // Tuples (anonymous structs) are supported using multiple return values
+        const retrieved_tuple = try lua.eval("return 99, 'world', false", .{}, struct { i32, []const u8, bool });
+        print("Retrieved tuple: {}, {s}, {}\n", .{ retrieved_tuple[0], retrieved_tuple[1], retrieved_tuple[2] });
+
+        // For named fields, create tables manually
+        const point_table = lua.createTable(.{ .rec = 2 });
+        defer point_table.deinit();
+
+        try point_table.set("x", 10.5);
+        try point_table.set("y", 20.7);
+        try globals.set("point", point_table);
+
+        try lua.eval("print('Point: x=' .. point.x .. ', y=' .. point.y)", .{}, void);
+
+        // Retrieve individual fields from table structures
+        const x_coord = try point_table.get("x", f32);
+        const y_coord = try point_table.get("y", f32);
+        print("Retrieved point coordinates: x={d:.1}, y={d:.1}\n", .{ x_coord.?, y_coord.? });
     }
 
     // Error handling
