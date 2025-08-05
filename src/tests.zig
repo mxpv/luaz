@@ -864,7 +864,7 @@ test "userdata with __index and __newindex metamethods" {
     // Reset call counters
     index_call_count = 0;
     newindex_call_count = 0;
-    
+
     const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
@@ -889,7 +889,7 @@ test "userdata with __index and __newindex metamethods" {
     ;
 
     try lua.eval(test_script, .{}, void);
-    
+
     // Validate expected number of calls:
     // __index: 3 gets + 1 final assertion = 4 total
     // __newindex: 2 initial sets + 1 overwrite = 3 total

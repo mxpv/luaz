@@ -454,6 +454,46 @@ pub const Lua = struct {
         pub inline fn getRef(self: Table) ?c_int {
             return self.ref.getRef();
         }
+
+        /// Returns the length of the table.
+        ///
+        /// This method returns the table length as defined by the Lua length operator (#).
+        /// For arrays (tables with consecutive integer keys starting from 1), this returns
+        /// the number of elements. For hash tables or tables with holes, the behavior
+        /// follows Lua's length semantics.
+        ///
+        /// If the table has a `__len` metamethod, it will be invoked to determine the length.
+        /// Otherwise, the raw table length is returned.
+        ///
+        /// Examples:
+        /// ```zig
+        /// const table = lua.createTable(.{});
+        /// defer table.deinit();
+        ///
+        /// // Empty table
+        /// try expectEq(try table.len(), 0);
+        ///
+        /// // Array-like table
+        /// try table.setRaw(1, "first");
+        /// try table.setRaw(2, "second");
+        /// try table.setRaw(3, "third");
+        /// try expectEq(try table.len(), 3);
+        ///
+        /// // Hash table (length may be 0 or undefined)
+        /// try table.set("key", "value");
+        /// const hash_len = try table.len(); // Implementation dependent
+        /// ```
+        ///
+        /// Returns: `i32` - The length of the table
+        /// Errors: `Error.OutOfMemory` if stack allocation fails
+        pub fn len(self: Table) !i32 {
+            try self.ref.lua.checkStack(1);
+
+            stack.push(self.ref.lua, self.ref); // Push table ref
+            defer self.state().pop(1); // Pop table
+
+            return self.state().objLen(-1);
+        }
     };
 
     /// Generic Lua value that can represent any runtime Lua type.
@@ -1190,4 +1230,21 @@ test "table ops" {
 
     lua.state.pop(1); // Pop the table
     try expectEq(lua.top(), 0);
+
+    // Test table length
+    const array_table = lua.createTable(.{});
+    defer array_table.deinit();
+
+    // Empty table length
+    try expectEq(try array_table.len(), 0);
+
+    // Array-like table length
+    try array_table.setRaw(1, "first");
+    try array_table.setRaw(2, "second");
+    try array_table.setRaw(3, "third");
+    try expectEq(try array_table.len(), 3);
+
+    // Add more elements
+    try array_table.setRaw(4, "fourth");
+    try expectEq(try array_table.len(), 4);
 }
