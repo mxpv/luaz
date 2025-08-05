@@ -456,6 +456,75 @@ pub const Lua = struct {
         }
     };
 
+    /// Generic Lua value that can represent any runtime Lua type.
+    ///
+    /// This union provides a way to work with Lua values when their types are not known at compile time.
+    /// It's particularly useful when implementing metamethods like `__index` where the return type depends
+    /// on runtime conditions, or when handling values returned from Lua code where the type varies.
+    ///
+    /// The Value type integrates seamlessly with Lua's type system through automatic conversions in
+    /// table operations, function calls, and other high-level APIs.
+    ///
+    /// Examples:
+    /// ```zig
+    /// // Creating values directly
+    /// const num_val = Lua.Value{ .number = 42.0 };
+    /// const str_val = Lua.Value{ .string = "hello" };
+    /// const nil_val = Lua.Value.nil;
+    ///
+    /// // Using with table operations
+    /// const table = lua.createTable(.{});
+    /// defer table.deinit();
+    /// try table.set("dynamic", num_val);  // Automatically pushes Value to Lua
+    /// const value = try table.get("dynamic", Lua.Value);  // Gets Value from table
+    ///
+    /// // Useful for metamethod implementations
+    /// fn indexMetamethod(self: *MyTable, key: []const u8) Lua.Value {
+    ///     if (std.mem.eql(u8, key, "count")) {
+    ///         return Lua.Value{ .number = @floatFromInt(self.items.len) };
+    ///     } else if (std.mem.eql(u8, key, "name")) {
+    ///         return Lua.Value{ .string = self.name };
+    ///     }
+    ///     return Lua.Value.nil;
+    /// }
+    ///
+    /// // Working with values from Lua
+    /// const result = try lua.eval("return type({})", .{}, Lua.Value);
+    /// switch (result) {
+    ///     .string => |s| std.debug.print("Type: {s}\n", .{s}),
+    ///     else => {},
+    /// }
+    /// ```
+    pub const Value = union(enum) {
+        nil,
+        boolean: bool,
+        number: f64,
+        string: []const u8,
+        table: Table,
+        function: Function,
+        userdata: *anyopaque,
+        lightuserdata: *anyopaque,
+
+        /// Releases any resources held by this Value.
+        ///
+        /// For reference types (tables, functions), this releases the Lua reference.
+        /// For other types, this is a no-op. It's safe to call deinit multiple times
+        /// or on non-reference types.
+        ///
+        /// Examples:
+        /// ```zig
+        /// const value = stack.pop(lua, Value);
+        /// defer if (value) |v| v.deinit();
+        /// ```
+        pub fn deinit(self: Value) void {
+            switch (self) {
+                .table => |t| t.deinit(),
+                .function => |f| f.deinit(),
+                else => {}, // No cleanup needed for primitive types
+            }
+        }
+    };
+
     /// Creates a new Lua table and returns a high-level Table wrapper.
     ///
     /// Creates an empty table with optional size hints for optimization.

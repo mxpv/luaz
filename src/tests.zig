@@ -766,3 +766,65 @@ test "userdata with metamethods" {
 
     try expectEq(lua.top(), 0);
 }
+
+test "Value enum all cases" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+    lua.openLibs();
+
+    const globals = lua.globals();
+    var data: i32 = 123;
+    const ptr: *anyopaque = @ptrCast(&data);
+
+    // Test basic Value variants through round-trip storage
+    const basic_cases = [_]struct { name: []const u8, value: Lua.Value }{
+        .{ .name = "nil", .value = .nil },
+        .{ .name = "bool", .value = .{ .boolean = true } },
+        .{ .name = "num", .value = .{ .number = 42.5 } },
+        .{ .name = "str", .value = .{ .string = "hello" } },
+    };
+
+    inline for (basic_cases) |case| {
+        try globals.set(case.name, case.value);
+        const back = try globals.get(case.name, Lua.Value);
+        try expect(back != null);
+        try expect(std.meta.activeTag(back.?) == std.meta.activeTag(case.value));
+    }
+
+    // Test userdata (both types push as lightuserdata, so they retrieve as lightuserdata)
+    try globals.set("light", Lua.Value{ .lightuserdata = ptr });
+    try globals.set("user", Lua.Value{ .userdata = ptr });
+    const light_back = try globals.get("light", Lua.Value);
+    const user_back = try globals.get("user", Lua.Value);
+    try expect(light_back.? == .lightuserdata);
+    try expect(user_back.? == .lightuserdata); // Both become lightuserdata when retrieved
+
+    // Test table
+    const table = lua.createTable(.{});
+    try table.set("key", 999);
+    try globals.set("table", Lua.Value{ .table = table });
+    const table_back = try globals.get("table", Lua.Value);
+    try expect(table_back.? == .table);
+    defer table_back.?.deinit();
+    try expectEq(try table_back.?.table.get("key", i32), 999);
+
+    // Test function
+    const testFn = struct {
+        fn f(x: i32) i32 {
+            return x * 2;
+        }
+    }.f;
+    try globals.set("fn", testFn);
+    const func_back = try globals.get("fn", Lua.Value);
+    try expect(func_back.? == .function);
+    defer func_back.?.deinit();
+    try expectEq(try func_back.?.function.call(.{5}, i32), 10);
+
+    // Test deinit and Lua eval
+    var test_val = Lua.Value{ .number = 1.0 };
+    test_val.deinit();
+    const from_lua = try lua.eval("return type({})", .{}, Lua.Value);
+    try expect(from_lua == .string);
+
+    try expectEq(lua.top(), 0);
+}

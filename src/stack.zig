@@ -78,6 +78,24 @@ pub fn push(lua: Lua, value: anytype) void {
 
             @compileError("Cannot push struct types to Lua stack, consider using userdata - see registerUserData() for registering struct types");
         },
+        .@"union" => {
+            // Handle Value union
+            if (T == Lua.Value) {
+                switch (value) {
+                    .nil => lua.state.pushNil(),
+                    .boolean => |b| lua.state.pushBoolean(b),
+                    .number => |n| lua.state.pushNumber(n),
+                    .string => |s| lua.state.pushLString(s),
+                    .table => |t| push(lua, t),
+                    .function => |f| push(lua, f),
+                    .userdata => |u| lua.state.pushLightUserdata(u), // Note: full userdata push would need more complex handling
+                    .lightuserdata => |u| lua.state.pushLightUserdata(u),
+                }
+                return;
+            }
+
+            @compileError("Cannot push union type " ++ @typeName(T) ++ " to Lua stack");
+        },
         .vector => |vector_info| {
             // Use Luau's native vector support
             if (vector_info.child != f32) {
@@ -455,6 +473,44 @@ pub fn toValue(lua: Lua, comptime T: type, index: i32) ?T {
             }
 
             @compileError("Unsupported struct type " ++ @typeName(T));
+        },
+        .@"union" => {
+            // Handle Value union
+            if (T == Lua.Value) {
+                const lua_type = lua.state.getType(index);
+
+                return switch (lua_type) {
+                    .nil => Lua.Value.nil,
+                    .boolean => Lua.Value{ .boolean = lua.state.toBoolean(index) },
+                    .number => if (lua.state.toNumberX(index)) |num|
+                        Lua.Value{ .number = num }
+                    else
+                        null,
+                    .string => if (lua.state.toString(index)) |str|
+                        Lua.Value{ .string = str[0..str.len] }
+                    else
+                        null,
+                    .table => if (toValue(lua, Lua.Table, index)) |table|
+                        Lua.Value{ .table = table }
+                    else
+                        null,
+                    .function => if (toValue(lua, Lua.Function, index)) |func|
+                        Lua.Value{ .function = func }
+                    else
+                        null,
+                    .userdata => if (lua.state.toUserdata(index)) |data|
+                        Lua.Value{ .userdata = data }
+                    else
+                        null,
+                    .lightuserdata => if (lua.state.toLightUserdata(index)) |data|
+                        Lua.Value{ .lightuserdata = data }
+                    else
+                        null,
+                    else => null,
+                };
+            }
+
+            @compileError("Unsupported union type " ++ @typeName(T));
         },
         else => {
             @compileError("Unable to cast type " ++ @typeName(T));
