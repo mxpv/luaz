@@ -277,6 +277,8 @@ pub fn pushResult(lua: Lua, result: anytype) c_int {
 /// Creates a Lua C function from a Zig function.
 fn createFunc(_: Lua, value: anytype) State.CFunction {
     const T = @TypeOf(value);
+    const arg_tuple = std.meta.ArgsTuple(T);
+    const arg_fields = std.meta.fields(arg_tuple);
 
     return struct {
         fn f(state: ?State.LuaState) callconv(.C) c_int {
@@ -284,9 +286,17 @@ fn createFunc(_: Lua, value: anytype) State.CFunction {
 
             // Push func arguments
             // See https://www.lua.org/pil/26.1.html
-            var args: std.meta.ArgsTuple(T) = undefined;
-            inline for (std.meta.fields(std.meta.ArgsTuple(T)), 0..) |field, i| {
-                args[i] = checkArg(l, i + 1, field.type);
+            var args: arg_tuple = undefined;
+
+            // Allow optional Lua state pointer as first parameter. Remaining Lua args will be pushed as is.
+            const offset = if (arg_fields.len > 0 and arg_fields[0].type == *Lua) blk: {
+                args[0] = @constCast(&l);
+                break :blk 1;
+            } else 0;
+
+            // Fill remaining arguments from Lua stack
+            inline for (arg_fields[offset..], 0..) |field, i| {
+                args[i + offset] = checkArg(l, @intCast(i + 1), field.type);
             }
 
             // Call Zig func and push result
@@ -816,4 +826,24 @@ test "push nested structs and arrays" {
 
     lua.state.pop(1); // Pop config table
     try expectEq(lua.state.getTop(), 0);
+}
+
+test "function with lua state parameter" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    const createTable = struct {
+        fn f(l: *Lua, name: []const u8) !Lua.Table {
+            const table = l.createTable(.{});
+            try table.set("name", name);
+            return table;
+        }
+    }.f;
+
+    const globals = lua.globals();
+    try globals.set("createTable", createTable);
+
+    const result = try lua.eval("return createTable('test').name", .{}, Lua.Value);
+    try expect(std.mem.eql(u8, result.asString().?, "test"));
+    result.deinit();
 }
