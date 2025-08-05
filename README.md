@@ -75,6 +75,35 @@ pub fn main() !void {
 > [!NOTE]
 > Ideally, the bundled  `luau-compile` tool should be used to precompile Lua scripts offline.
 
+### Struct and Array Tables
+
+Zig structs and arrays are automatically converted to Lua tables:
+
+```zig
+const std = @import("std");
+const luaz = @import("luaz");
+
+const Point = struct { x: f64, y: f64 };
+
+pub fn main() !void {
+    var lua = try luaz.Lua.init(null);
+    defer lua.deinit();
+
+    // Struct becomes a Lua table with field names as keys
+    const point = Point{ .x = 10.5, .y = 20.3 };
+    try lua.globals().set("point", point);
+
+    // Array becomes a Lua table with 1-based integer indices
+    const numbers = [_]i32{ 1, 2, 3, 4, 5 };
+    try lua.globals().set("numbers", numbers);
+
+    // Access from Lua
+    const x = try lua.eval("return point.x", .{}, f64);          // 10.5
+    const first = try lua.eval("return numbers[1]", .{}, i32);   // 1
+    const length = try lua.eval("return #numbers", .{}, i32);    // 5
+}
+```
+
 ### Function Calls
 
 Both Lua functions can be called from Zig and Zig functions from Lua with automatic type conversion and argument 
