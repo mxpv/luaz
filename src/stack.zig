@@ -2,6 +2,17 @@
 //!
 //! This module provides functions to push, pop, and convert Zig types to and from Lua stack slots.
 //! It heavily relies on compile-time reflection to determine how to handle different types.
+//!
+//! Supported type conversions to Lua:
+//! - Primitive types (bool, integers, floats) → corresponding Lua types
+//! - Strings (various formats) → Lua strings
+//! - Optional types → Lua values or nil
+//! - Tuples → pushed as individual values (not tables)
+//! - Structs → Lua tables with field names as keys (data fields only, no methods)
+//! - Arrays → Lua tables with 1-based integer indices
+//! - Slices → Lua tables with 1-based integer indices
+//! - Functions → wrapped as callable Lua functions
+//! - Vectors → Luau native vector types
 
 const std = @import("std");
 const State = @import("state.zig").State;
@@ -12,6 +23,7 @@ const Lua = @import("lua.zig").Lua;
 /// This is typically 1 for most types, but there are edge cases:
 /// - void requires 0 slots (nothing is pushed)
 /// - tuples require a slot for each element
+/// - structs and arrays are converted to tables and require 1 slot
 pub fn slotCountFor(comptime T: type) i32 {
     if (T == void) {
         return 0;
@@ -22,6 +34,7 @@ pub fn slotCountFor(comptime T: type) i32 {
         return @intCast(type_info.@"struct".fields.len);
     }
 
+    // Structs, arrays, and slices are all converted to tables (1 slot)
     // Default to 1 for everything else
     return 1;
 }
@@ -84,7 +97,21 @@ pub fn push(lua: Lua, value: anytype) void {
                 return;
             }
 
-            @compileError("Cannot push struct types to Lua stack, consider using userdata - see registerUserData() for registering struct types");
+            // Handle arbitrary structs by converting to Lua table (data fields only)
+            lua.state.createTable(0, type_info.@"struct".fields.len);
+
+            // Push struct fields only - exclude all methods since they won't work correctly
+            inline for (type_info.@"struct".fields) |field| {
+                if (field.is_comptime) continue; // Skip comptime fields
+
+                // Push field name as key
+                lua.state.pushString(field.name);
+                // Push field value
+                push(lua, @field(value, field.name));
+                // Set table[field_name] = field_value
+                lua.state.setTable(-3);
+            }
+            return;
         },
         .@"union" => {
             // Handle Value union
@@ -161,7 +188,15 @@ pub fn push(lua: Lua, value: anytype) void {
                         return;
                     }
 
-                    @compileError("Unable to push type " ++ @typeName(T));
+                    // Handle arbitrary slices by converting to Lua table with integer indices
+                    lua.state.createTable(@intCast(value.len), 0);
+                    for (value, 0..) |element, i| {
+                        // Push element value
+                        push(lua, element);
+                        // Set table[i+1] = element (Lua arrays are 1-indexed)
+                        lua.state.rawSetI(-2, @intCast(i + 1));
+                    }
+                    return;
                 },
                 .c => {
                     @compileError("Unable to push type " ++ @typeName(T));
@@ -182,7 +217,15 @@ pub fn push(lua: Lua, value: anytype) void {
                 return;
             }
 
-            @compileError("Unable to push type " ++ @typeName(T));
+            // Handle arbitrary arrays by converting to Lua table with integer indices
+            lua.state.createTable(array_info.len, 0);
+            for (value, 0..) |element, i| {
+                // Push element value
+                push(lua, element);
+                // Set table[i+1] = element (Lua arrays are 1-indexed)
+                lua.state.rawSetI(-2, @intCast(i + 1));
+            }
+            return;
         },
         .@"fn" => {
             if (*const T == @typeInfo(State.CFunction).optional.child) {
@@ -661,4 +704,116 @@ test "toValue type conversions" {
     try expect(func_ref != null);
     func_ref.?.ref.deinit();
     lua.state.pop(1);
+}
+
+test "push structs as tables" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    const Point = struct {
+        x: i32,
+        y: i32,
+        name: []const u8,
+    };
+
+    const point = Point{ .x = 10, .y = 20, .name = "origin" };
+    push(lua, point);
+
+    try expect(lua.state.isTable(-1));
+
+    // Test accessing fields
+    lua.state.pushString("x");
+    _ = lua.state.getTable(-2);
+    try expectEq(pop(lua, i32).?, 10);
+
+    lua.state.pushString("y");
+    _ = lua.state.getTable(-2);
+    try expectEq(pop(lua, i32).?, 20);
+
+    lua.state.pushString("name");
+    _ = lua.state.getTable(-2);
+    const name = toValue(lua, []const u8, -1);
+    try expect(name != null);
+    try expect(std.mem.eql(u8, name.?, "origin"));
+    lua.state.pop(1);
+
+    lua.state.pop(1); // Pop table
+    try expectEq(lua.state.getTop(), 0);
+}
+
+test "push arrays as tables" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    const arr = [_]i32{ 1, 2, 3, 4, 5 };
+    push(lua, arr);
+
+    try expect(lua.state.isTable(-1));
+
+    // Test accessing array elements (1-indexed in Lua)
+    for (arr, 1..) |expected, i| {
+        _ = lua.state.rawGetI(-1, @intCast(i));
+        try expectEq(pop(lua, i32).?, expected);
+    }
+
+    lua.state.pop(1); // Pop table
+    try expectEq(lua.state.getTop(), 0);
+}
+
+test "push slices as tables" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    const arr = [_]f64{ 1.1, 2.2, 3.3 };
+    const slice: []const f64 = &arr;
+    push(lua, slice);
+
+    try expect(lua.state.isTable(-1));
+
+    // Test accessing slice elements (1-indexed in Lua)
+    for (slice, 1..) |expected, i| {
+        _ = lua.state.rawGetI(-1, @intCast(i));
+        try expectEq(pop(lua, f64).?, expected);
+    }
+
+    lua.state.pop(1); // Pop table
+    try expectEq(lua.state.getTop(), 0);
+}
+
+test "push nested structs and arrays" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    const Config = struct {
+        values: [3]i32,
+        enabled: bool,
+    };
+
+    const config = Config{ .values = [_]i32{ 10, 20, 30 }, .enabled = true };
+    push(lua, config);
+
+    try expect(lua.state.isTable(-1));
+
+    // Test accessing nested array
+    lua.state.pushString("values");
+    _ = lua.state.getTable(-2);
+    try expect(lua.state.isTable(-1));
+
+    // Check array contents
+    _ = lua.state.rawGetI(-1, 1);
+    try expectEq(pop(lua, i32).?, 10);
+    _ = lua.state.rawGetI(-1, 2);
+    try expectEq(pop(lua, i32).?, 20);
+    _ = lua.state.rawGetI(-1, 3);
+    try expectEq(pop(lua, i32).?, 30);
+
+    lua.state.pop(1); // Pop values array
+
+    // Test accessing boolean field
+    lua.state.pushString("enabled");
+    _ = lua.state.getTable(-2);
+    try expect(pop(lua, bool).?);
+
+    lua.state.pop(1); // Pop config table
+    try expectEq(lua.state.getTop(), 0);
 }

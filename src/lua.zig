@@ -1360,3 +1360,51 @@ test "table ops" {
     try array_table.setRaw(4, "fourth");
     try expectEq(try array_table.len(), 4);
 }
+
+test "struct and array integration" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    lua.openLibs();
+
+    const Point = struct {
+        x: f64,
+        y: f64,
+        name: []const u8,
+    };
+
+    const Config = struct {
+        points: [2]Point,
+        enabled: bool,
+    };
+
+    const config = Config{
+        .points = [_]Point{
+            Point{ .x = 1.0, .y = 2.0, .name = "start" },
+            Point{ .x = 3.0, .y = 4.0, .name = "end" },
+        },
+        .enabled = true,
+    };
+
+    // Test that we can set a global struct variable
+    const globals = lua.globals();
+    try globals.set("config", config);
+
+    // Test accessing struct fields from Lua
+    const first_point_x = try lua.eval("return config.points[1].x", .{}, f64);
+    try expectEq(first_point_x, 1.0);
+
+    const first_point_name = try lua.eval("return config.points[1].name", .{}, Lua.Value);
+    try expect(std.mem.eql(u8, first_point_name.asString().?, "start"));
+    first_point_name.deinit();
+
+    const second_point_y = try lua.eval("return config.points[2].y", .{}, f64);
+    try expectEq(second_point_y, 4.0);
+
+    const enabled = try lua.eval("return config.enabled", .{}, bool);
+    try expect(enabled);
+
+    // Test array length
+    const points_length = try lua.eval("return #config.points", .{}, i32);
+    try expectEq(points_length, 2);
+}
