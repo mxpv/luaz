@@ -980,3 +980,73 @@ test "table iterator" {
     }
     try expectEq(empty_count, 0);
 }
+
+// Test error types and functions for error handling tests
+const TestError = error{ InvalidInput, NotFound, OutOfBounds };
+
+fn divide(a: f64, b: f64) TestError!f64 {
+    if (b == 0) return error.InvalidInput;
+    return a / b;
+}
+
+fn findUser(id: i32) TestError!struct { []const u8, i32 } {
+    if (id == 1) return .{ "Alice", 30 };
+    return error.NotFound;
+}
+
+test "error handling in wrapped functions" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+    lua.openLibs();
+
+    const globals = lua.globals();
+    try globals.set("divide", divide);
+    try globals.set("findUser", findUser);
+
+    // Test success cases
+    try expectEq(try lua.eval("return divide(10, 2)", .{}, f64), 5.0);
+    const user = try lua.eval("return findUser(1)", .{}, struct { []const u8, i32 });
+    try expect(std.mem.eql(u8, user.@"0", "Alice"));
+    try expectEq(user.@"1", 30);
+
+    // Test error cases
+    try expect(lua.eval("return divide(10, 0)", .{}, f64) == error.Runtime);
+    try expect(lua.eval("return findUser(999)", .{}, struct { []const u8, i32 }) == error.Runtime);
+
+    // Test error messages via pcall
+    const err1 = try lua.eval("local ok, err = pcall(divide, 10, 0); return err", .{}, []const u8);
+    try expect(std.mem.eql(u8, err1, "InvalidInput"));
+
+    const err2 = try lua.eval("local ok, err = pcall(findUser, 999); return err", .{}, []const u8);
+    try expect(std.mem.eql(u8, err2, "NotFound"));
+
+    // Test userdata method with error
+    const Counter = struct {
+        count: i32,
+
+        pub fn init() @This() {
+            return .{ .count = 0 };
+        }
+
+        pub fn increment(self: *@This(), amount: i32) TestError!void {
+            if (amount < 0) return error.InvalidInput;
+            self.count += amount;
+        }
+
+        pub fn getValue(self: *const @This()) i32 {
+            return self.count;
+        }
+    };
+
+    try lua.registerUserData(Counter);
+
+    // Test successful method call
+    _ = try lua.eval("local c = Counter.new(); c:increment(5); return c:getValue()", .{}, i32);
+
+    // Test error in userdata method
+    try expect(lua.eval("local c = Counter.new(); c:increment(-1)", .{}, void) == error.Runtime);
+
+    // Test error message from userdata method
+    const err3 = try lua.eval("local c = Counter.new(); local ok, err = pcall(c.increment, c, -1); return err", .{}, []const u8);
+    try expect(std.mem.eql(u8, err3, "InvalidInput"));
+}

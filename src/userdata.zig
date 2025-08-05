@@ -249,9 +249,39 @@ fn getFunctionType(comptime T: type, comptime method_name: []const u8, method: a
     }
 }
 
-/// Creates a Lua C function wrapper from a Zig method that operates on userdata.
+/// Pushes a function result onto the Lua stack, with special handling for userdata types.
 ///
-/// Generates a C-compatible function that handles translation between Lua's stack-based
+/// If the result type is T (the userdata type), creates a new userdata instance.
+/// Otherwise delegates to stack.pushResult for standard handling.
+fn pushResult(comptime T: type, lua: Lua, result: anytype, comptime type_name: [:0]const u8) c_int {
+    const ResultType = @TypeOf(result);
+    const result_info = @typeInfo(ResultType);
+
+    // Check if the base type (without error union) is the userdata type
+    const base_type = if (result_info == .error_union) result_info.error_union.payload else ResultType;
+
+    if (base_type == T) {
+        // Extract value from error union if needed
+        const value = if (result_info == .error_union)
+            result catch |err| {
+                const err_msg = @errorName(err);
+                lua.state.pushString(err_msg);
+                lua.state.raiseError();
+            }
+        else
+            result;
+
+        // Create new userdata instance and copy the value
+        const result_ptr = createUserDataInstance(T, lua, type_name) orelse return 0;
+        result_ptr.* = value;
+        return 1;
+    }
+
+    // For all other types, use the standard pushResult
+    return stack.pushResult(lua, result);
+}
+
+/// Generates a function that handles translation between Lua's stack-based
 /// calling convention and Zig's typed function calls. Supports init functions (constructors),
 /// instance methods, and static functions. If the struct has a deinit method, userdata
 /// created by init functions will automatically call deinit when garbage collected.
@@ -321,26 +351,7 @@ fn createUserDataFunc(comptime T: type, comptime method_name: []const u8, method
             }
 
             // Otherwise handle pushing values returned from the function.
-            // Void pushes nothing.
-            // Tuples push all elements to the stack.
-            // Otherwise use push as a fallback to push a single item from the list of supported types to the stack.
-            const ResultType = @TypeOf(result);
-            const result_info = @typeInfo(ResultType);
-            if (result_info == .@"struct" and result_info.@"struct".is_tuple) {
-                // Multiple return values
-                inline for (0..result_info.@"struct".fields.len) |i| {
-                    stack.push(lua, result[i]);
-                }
-                return @intCast(result_info.@"struct".fields.len);
-            } else if (ResultType == T) {
-                // Handle userdata return type (e.g., from metamethods like __add)
-                const result_ptr = createUserDataInstance(T, lua, type_name) orelse return 0;
-                result_ptr.* = result;
-                return 1;
-            } else {
-                stack.push(lua, result);
-                return stack.slotCountFor(ResultType);
-            }
+            return pushResult(T, lua, result, type_name);
         }
     }.f;
 }

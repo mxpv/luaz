@@ -76,6 +76,14 @@ pub fn push(lua: Lua, value: anytype) void {
                 return;
             }
 
+            // Handle tuples by pushing each element individually
+            if (type_info.@"struct".is_tuple) {
+                inline for (0..type_info.@"struct".fields.len) |i| {
+                    push(lua, value[i]);
+                }
+                return;
+            }
+
             @compileError("Cannot push struct types to Lua stack, consider using userdata - see registerUserData() for registering struct types");
         },
         .@"union" => {
@@ -191,6 +199,38 @@ pub fn push(lua: Lua, value: anytype) void {
     }
 }
 
+/// Pushes a function result onto the Lua stack, handling error unions, tuples, and regular values.
+/// Returns the number of values pushed onto the stack.
+pub fn pushResult(lua: Lua, result: anytype) c_int {
+    const ResultType = @TypeOf(result);
+    const result_info = @typeInfo(ResultType);
+
+    // Handle error unions
+    if (result_info == .error_union) {
+        const payload = result catch |err| {
+            // Push error message to Lua and raise error
+            const err_msg = @errorName(err);
+            lua.state.pushString(err_msg);
+            lua.state.raiseError();
+        };
+
+        // Recursively handle the success payload
+        return pushResult(lua, payload);
+    }
+
+    // Handle tuple results by pushing each element individually
+    if (result_info == .@"struct" and result_info.@"struct".is_tuple) {
+        inline for (0..result_info.@"struct".fields.len) |i| {
+            push(lua, result[i]);
+        }
+        return @intCast(result_info.@"struct".fields.len);
+    }
+
+    // Handle non-tuple results normally
+    push(lua, result);
+    return slotCountFor(ResultType);
+}
+
 /// Creates a Lua C function from a Zig function.
 fn createFunc(_: Lua, value: anytype) State.CFunction {
     const T = @TypeOf(value);
@@ -206,22 +246,9 @@ fn createFunc(_: Lua, value: anytype) State.CFunction {
                 args[i] = checkArg(l, i + 1, field.type);
             }
 
-            // Call Zig func
+            // Call Zig func and push result
             const result = @call(.auto, value, args);
-            const ResultType = @TypeOf(result);
-
-            // Handle tuple results by pushing each element individually
-            const result_info = @typeInfo(ResultType);
-            if (result_info == .@"struct" and result_info.@"struct".is_tuple) {
-                inline for (0..result_info.@"struct".fields.len) |i| {
-                    push(l, result[i]);
-                }
-                return @intCast(result_info.@"struct".fields.len);
-            } else {
-                // Handle non-tuple results normally
-                push(l, result);
-                return slotCountFor(ResultType);
-            }
+            return pushResult(l, result);
         }
     }.f;
 }
