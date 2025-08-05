@@ -358,20 +358,15 @@ fn createUserDataFunc(comptime T: type, comptime method_name: []const u8, method
 
 /// Creates and registers a complete metatable for userdata type T.
 ///
-/// This is the main public API for userdata registration. It counts methods,
-/// creates the metatable, registers all methods (init, instance, static),
-/// and registers metamethods. Returns the number of methods registered.
+/// This is the main public API for userdata registration. It creates the metatable,
+/// registers all methods (init, instance, static), and registers metamethods.
 ///
 /// The type_name will be used for Lua userdata type checking and must be
 /// a compile-time string literal ending with null terminator.
-pub fn createMetaTable(comptime T: type, lua_state: *State, comptime type_name: [:0]const u8) u32 {
+pub fn createMetaTable(comptime T: type, lua_state: *State, comptime type_name: [:0]const u8) void {
     const struct_info = @typeInfo(T).@"struct";
 
-    // Detect what kind of methods we have in this struct
-    // We're interested in:
-    // - How many public methods (not deinit, not metamethods)
-    // - Whether __index metamethod is going to be defined by the user
-    var method_count: u32 = 0;
+    // Check if user defines __index metamethod
     comptime var has_user_index = false;
     inline for (struct_info.decls) |decl| {
         if (@hasDecl(T, decl.name)) {
@@ -380,13 +375,7 @@ pub fn createMetaTable(comptime T: type, lua_state: *State, comptime type_name: 
                 // Check for __index metamethod
                 if (comptime std.mem.eql(u8, decl.name, "__index")) {
                     has_user_index = true;
-                }
-
-                // Count regular methods (not deinit, not metamethods)
-                if (!comptime std.mem.eql(u8, decl.name, "deinit") and
-                    MetaMethod.fromStr(decl.name) == null)
-                {
-                    method_count += 1;
+                    break;
                 }
             }
         }
@@ -441,6 +430,4 @@ pub fn createMetaTable(comptime T: type, lua_state: *State, comptime type_name: 
 
     // Store the metatable in the registry for later use
     lua_state.setField(State.REGISTRYINDEX, type_name);
-
-    return method_count;
 }

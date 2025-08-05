@@ -1124,27 +1124,8 @@ pub const Lua = struct {
 
         const type_name: [:0]const u8 = @typeName(T);
 
-        // Count methods at compile time for validation
-        const struct_info = type_info.@"struct";
-        comptime var method_count = 0;
-        inline for (struct_info.decls) |decl| {
-            if (@hasDecl(T, decl.name)) {
-                const decl_info = @typeInfo(@TypeOf(@field(T, decl.name)));
-                if (decl_info == .@"fn" and
-                    !comptime std.mem.eql(u8, decl.name, "deinit"))
-                {
-                    method_count += 1;
-                }
-            }
-        }
-
-        // Ensure the type has at least one method to register
-        if (comptime method_count == 0) {
-            @compileError("Type " ++ @typeName(T) ++ " has no public methods to register as userdata");
-        }
-
         // Use the userdata module's createMetaTable function to handle all registration
-        _ = userdata.createMetaTable(T, @constCast(&self.state), type_name);
+        userdata.createMetaTable(T, @constCast(&self.state), type_name);
 
         // Extract just the type name without module prefix for global registration
         // Example: "myapp.data.User" -> "User", "TestUserData" -> "TestUserData"
