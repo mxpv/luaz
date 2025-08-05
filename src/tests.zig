@@ -817,13 +817,21 @@ test "Value enum all cases" {
         try expect(std.meta.activeTag(back.?) == std.meta.activeTag(case.value));
     }
 
-    // Test userdata (both types push as lightuserdata, so they retrieve as lightuserdata)
+    // Test lightuserdata
     try globals.set("light", Lua.Value{ .lightuserdata = ptr });
-    try globals.set("user", Lua.Value{ .userdata = ptr });
     const light_back = try globals.get("light", Lua.Value);
-    const user_back = try globals.get("user", Lua.Value);
     try expect(light_back.? == .lightuserdata);
-    try expect(user_back.? == .lightuserdata); // Both become lightuserdata when retrieved
+
+    // Test userdata (create proper userdata with reference)
+    _ = lua.state.newUserdata(@sizeOf(i32));
+    const userdata_ref = Lua.Ref.init(lua, -1);
+    lua.state.pop(1); // Remove from stack since we have a reference
+    defer userdata_ref.deinit();
+
+    try globals.set("user", Lua.Value{ .userdata = userdata_ref });
+    const user_back = try globals.get("user", Lua.Value);
+    try expect(user_back.? == .userdata);
+    defer user_back.?.deinit();
 
     // Test table
     const table = lua.createTable(.{});

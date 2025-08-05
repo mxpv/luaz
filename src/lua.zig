@@ -629,7 +629,7 @@ pub const Lua = struct {
         string: []const u8,
         table: Table,
         function: Function,
-        userdata: *anyopaque,
+        userdata: Ref,
         lightuserdata: *anyopaque,
 
         /// Releases any resources held by this Value.
@@ -647,6 +647,7 @@ pub const Lua = struct {
             switch (self) {
                 .table => |t| t.deinit(),
                 .function => |f| f.deinit(),
+                .userdata => |u| u.deinit(),
                 else => {}, // No cleanup needed for primitive types
             }
         }

@@ -123,7 +123,7 @@ pub fn push(lua: Lua, value: anytype) void {
                     .string => |s| lua.state.pushLString(s),
                     .table => |t| push(lua, t),
                     .function => |f| push(lua, f),
-                    .userdata => |u| lua.state.pushLightUserdata(u), // Note: full userdata push would need more complex handling
+                    .userdata => |u| push(lua, u), // Push userdata reference
                     .lightuserdata => |u| lua.state.pushLightUserdata(u),
                 }
                 return;
@@ -568,8 +568,8 @@ pub fn toValue(lua: Lua, comptime T: type, index: i32) ?T {
                         Lua.Value{ .function = func }
                     else
                         null,
-                    .userdata => if (lua.state.toUserdata(index)) |data|
-                        Lua.Value{ .userdata = data }
+                    .userdata => if (lua.state.isUserdata(index))
+                        Lua.Value{ .userdata = Lua.Ref{ .lua = lua, .ref = lua.state.ref(index) } }
                     else
                         null,
                     .lightuserdata => if (lua.state.toLightUserdata(index)) |data|
