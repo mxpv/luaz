@@ -39,12 +39,14 @@ directories.
 ### High-Level API (`src/lua.zig`)
 The main `Lua` struct provides an idiomatic Zig interface with automatic type conversions:
 - `init()` - Initialize Lua state with optional custom allocator
+- `enable_codegen()` - Enable Luau's JIT code generator for improved performance
 - `globals()` - Access to the global environment table for setting/getting global variables
 - `eval()` - Compile and execute Lua source code in one step
 - `exec()` - Execute pre-compiled bytecode
 - `createTable()` - Create new Lua tables with optional size hints
 - `dumpStack()` - Debug utility to inspect the current Lua stack state
 - `registerUserData()` - Register Zig structs as Lua userdata with automatic method binding
+- `setAssertHandler()` - Set custom handler for Luau VM assertions
 
 ### Type System Integration
 The library provides seamless conversion between Zig and Lua types through its high-level API:
@@ -53,12 +55,17 @@ The library provides seamless conversion between Zig and Lua types through its h
 - Tuples are converted to Lua tables with array semantics
 - Reference system (`Ref`) allows holding Lua values across function calls
 - Table wrapper (`Table`) provides safe access to Lua tables with automatic type conversion
+- Function wrapper (`Function`) provides direct access to Lua functions with automatic type conversion
+- Generic Value type for runtime Lua value handling when types are unknown at compile time
 
 ### Table Operations
 The library provides comprehensive table operations through the `Table` type:
 - **Raw operations** (`setRaw`/`getRaw`) bypass metamethods like `__index` and `__newindex` for direct table access
 - **Non-raw operations** (`set`/`get`) invoke metamethods when present, providing full Lua semantics
 - **Function calling** (`call`) retrieves and calls functions stored in tables with automatic argument and return type handling
+- **Function compilation** (`compile`) compiles table functions to native code via JIT for better performance
+- **Table length** (`len`) returns table length following Lua semantics, including metamethod support
+- **Table iteration** (`next`) provides entry-by-entry iteration with automatic resource management
 - Global access via `lua.globals()` returns a `Table` for interacting with the global environment
 - Tables are reference-counted and must be explicitly released with `deinit()` (except globals table)
 
@@ -112,13 +119,17 @@ corresponding unit tests. Tests use `&std.testing.allocator` for memory leak det
 - Global variable manipulation
 - Table operations (raw and non-raw)
 - Table function calling with various argument patterns
+- Table iteration and length operations
+- JIT code generation and function compilation
 - Compilation error handling
 - Reference and table management
+- Generic Value type operations
 - Custom allocator usage
 - UserData registration and method binding
 
 Write unit tests with good coverage, but no need to be comprehensive and try to cover every possible case.
-Keep unit tests reasonably short.
+Keep unit tests reasonably short and understandable - focus on clear, concise tests that verify functionality
+without unnecessary complexity or verbosity.
 
 ### Documentation
 Keep documentation for public interfaces current but reasonably sized. The codebase uses Zig's built-in doc comments
@@ -139,6 +150,9 @@ Keep documentation concise and focused. Don't write "comprehensive" documentatio
 - Compilation results must be freed with `Result.deinit()`
 - References must be released with `Ref.deinit()`
 - Tables must be released with `Table.deinit()`
+- Functions must be released with `Function.deinit()`
+- Generic Values must be released with `Value.deinit()` when containing reference types
+- Table iteration entries must be released with `Entry.deinit()` or passed to next `next()` call
 - The library uses Luau's garbage collector for Lua values
 - Custom allocators (if provided to `init()`) must outlive the Lua state
 - Use `&std.testing.allocator` in tests for memory leak detection
