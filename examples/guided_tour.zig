@@ -12,6 +12,7 @@
 //! - Use Luau's codegen feature
 //! - Push and retrieve arrays
 //! - Work with tuples and table-based structures
+//! - Control garbage collection for memory management
 
 const std = @import("std");
 const luaz = @import("luaz");
@@ -470,6 +471,82 @@ pub fn main() !void {
         const x_coord = try point_table.get("x", f32);
         const y_coord = try point_table.get("y", f32);
         print("Retrieved point coordinates: x={d:.1}, y={d:.1}\n", .{ x_coord.?, y_coord.? });
+    }
+
+    // Garbage collection control
+    {
+        print("\n-- Garbage Collection --\n", .{});
+
+        const gc = lua.gc();
+
+        // Monitor memory usage
+        const initial_memory_kb = gc.count();
+        const initial_memory_bytes = gc.countBytes();
+        const initial_total = initial_memory_kb * 1024 + initial_memory_bytes;
+        print("Initial memory usage: {} bytes ({} KB + {} bytes)\n", .{ initial_total, initial_memory_kb, initial_memory_bytes });
+
+        // Create some objects to increase memory usage
+        try lua.eval(
+            \\local large_table = {}
+            \\for i = 1, 1000 do
+            \\    large_table[i] = "String number " .. i .. " with some extra data to use more memory"
+            \\end
+            \\global_table = large_table  -- Keep reference to prevent immediate collection
+        , .{}, void);
+
+        const after_alloc_memory = gc.count();
+        print("Memory after allocation: {} KB (increased by {} KB)\n", .{ after_alloc_memory, after_alloc_memory - initial_memory_kb });
+
+        // Force garbage collection
+        print("Running full garbage collection...\n", .{});
+        gc.collect();
+        const after_gc_memory = gc.count();
+        print("Memory after GC: {} KB\n", .{after_gc_memory});
+
+        // Fine-tune GC parameters
+        print("Adjusting GC parameters...\n", .{});
+        const old_goal = gc.setGoal(150); // Start GC at 50% memory increase
+        const old_stepmul = gc.setStepMul(300); // More aggressive GC
+        const old_stepsize = gc.setStepSize(2048); // Larger GC steps
+        print("Previous GC settings - Goal: {}, StepMul: {}, StepSize: {}\n", .{ old_goal, old_stepmul, old_stepsize });
+
+        // Demonstrate manual GC control
+        print("Stopping GC for manual control...\n", .{});
+        gc.stop();
+        print("GC running: {}\n", .{gc.isRunning()});
+
+        // Create more garbage while GC is stopped
+        try lua.eval("global_table = nil", .{}, void); // Release reference
+        try lua.eval(
+            \\for i = 1, 100 do
+            \\    local temp = {}
+            \\    for j = 1, 50 do
+            \\        temp[j] = "Temporary string " .. i .. "," .. j
+            \\    end
+            \\end
+        , .{}, void);
+
+        // Perform stepped collection
+        print("Performing manual GC steps...\n", .{});
+        var steps: u32 = 0;
+        while (!gc.step(200) and steps < 5) {
+            steps += 1;
+            print("GC step {} completed\n", .{steps});
+        }
+        print("GC cycle completed in {} steps\n", .{steps});
+
+        // Restart normal GC
+        gc.restart();
+        print("GC restarted, running: {}\n", .{gc.isRunning()});
+
+        // Restore original GC parameters
+        _ = gc.setGoal(old_goal);
+        _ = gc.setStepMul(old_stepmul);
+        _ = gc.setStepSize(old_stepsize);
+        print("GC parameters restored\n", .{});
+
+        const final_memory = gc.count();
+        print("Final memory usage: {} KB\n", .{final_memory});
     }
 
     // Error handling
