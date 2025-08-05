@@ -23,7 +23,7 @@ These tools make it easy to compile, analyze, and embed `Luau` scripts directly 
 
 - Minimal yet flexible zero-cost [API](#basic-usage)
 - Bidirectional [function calls](#function-calls) between Zig and Lua
-- First-class [userdata support](#userdata-integration)
+- First-class [userdata support](#userdata-integration) including metamethods
 - Native support for refs, functions, tables, and vector types
 - Supports Luau code generation for improved performance on supported platforms
 - Built-in [Luau tools](#-using-luau-tools) (`luau-compile` and `luau-analyze`) provided by the build system
@@ -142,6 +142,19 @@ const Counter = struct {
     pub fn getValue(self: *const Counter) i32 {
         return self.value;
     }
+
+    // Metamethods for arithmetic operations
+    pub fn __add(self: Counter, other: i32) Counter {
+        return Counter{ .value = self.value + other };
+    }
+
+    pub fn __tostring(self: Counter) []const u8 {
+        return std.fmt.allocPrint(std.heap.page_allocator, "Counter({})", .{self.value}) catch "Counter";
+    }
+
+    pub fn __len(self: Counter) i32 {
+        return self.value;
+    }
 };
 
 pub fn main() !void {
@@ -152,12 +165,18 @@ pub fn main() !void {
     try lua.registerUserData(Counter);
 
     _ = try lua.eval(
-        \\local counter = Counter.new(0)      -- Use constructor
-        \\assert(counter:increment(5) == 5)   -- Call instance method
-        \\assert(counter:getValue() == 5)    -- Get current value
+        \\local counter = Counter.new(10)     -- Use constructor
+        \\assert(counter:increment(5) == 15)  -- Call instance method
+        \\assert(counter:getValue() == 15)   -- Get current value
         \\
         \\local max = Counter.getMaxValue()   -- Call static method
         \\assert(max == 2147483647)           -- Max i32 value
+        \\
+        \\-- Metamethods in action
+        \\local new_counter = counter + 5     -- Uses __add metamethod
+        \\assert(new_counter:getValue() == 20)
+        \\assert(#counter == 15)              -- Uses __len metamethod
+        \\print(tostring(counter))            -- Uses __tostring metamethod
     , .{}, void);
 }
 ```
@@ -172,7 +191,6 @@ The following features are planned after the initial release:
 - Luau sandbox APIs - Safe execution environments for untrusted code
 - Coroutine / threads support - Full Luau coroutine and threading capabilities
 - Debug APIs - Debugging hooks and introspection tools
-- ~Userdata metatables - Custom metamethod support for userdata types~ (https://github.com/mxpv/luaz/issues/3)
 - GC API - Fine-grained garbage collection control
 - Optional JSON support - Built-in JSON serialization/deserialization
 
