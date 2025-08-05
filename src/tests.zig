@@ -198,7 +198,7 @@ test "Zig function integration" {
 
     // Test 11: Function returning array (should create Lua table with integer indices)
     try globals.set("arrayFunc", testArrayReturn);
-    const array_1 = try lua.eval("return arrayFunc(10)[1]", .{}, i32);  // Lua is 1-indexed
+    const array_1 = try lua.eval("return arrayFunc(10)[1]", .{}, i32); // Lua is 1-indexed
     try expectEq(array_1, 10);
     const array_2 = try lua.eval("return arrayFunc(10)[2]", .{}, i32);
     try expectEq(array_2, 20);
