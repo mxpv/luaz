@@ -828,3 +828,72 @@ test "Value enum all cases" {
 
     try expectEq(lua.top(), 0);
 }
+
+// Global counters for tracking metamethod calls
+var index_call_count: u32 = 0;
+var newindex_call_count: u32 = 0;
+
+const TestUserDataWithIndexing = struct {
+    x: i32 = 0,
+    y: i32 = 0,
+
+    pub fn init() TestUserDataWithIndexing {
+        return TestUserDataWithIndexing{};
+    }
+
+    pub fn __index(self: TestUserDataWithIndexing, key: i32) Lua.Value {
+        index_call_count += 1;
+        return switch (key) {
+            1 => Lua.Value{ .number = @floatFromInt(self.x) },
+            2 => Lua.Value{ .number = @floatFromInt(self.y) },
+            else => Lua.Value.nil,
+        };
+    }
+
+    pub fn __newindex(self: *TestUserDataWithIndexing, key: i32, value: f64) void {
+        newindex_call_count += 1;
+        switch (key) {
+            1 => self.x = @intFromFloat(value),
+            2 => self.y = @intFromFloat(value),
+            else => {},
+        }
+    }
+};
+
+test "userdata with __index and __newindex metamethods" {
+    // Reset call counters
+    index_call_count = 0;
+    newindex_call_count = 0;
+    
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    lua.state.openLibs();
+    try lua.registerUserData(TestUserDataWithIndexing);
+
+    const test_script =
+        \\local obj = TestUserDataWithIndexing.new()
+        \\
+        \\-- Test __newindex - setting values (2 calls to __newindex)
+        \\obj[1] = 42
+        \\obj[2] = 100
+        \\
+        \\-- Test __index - getting values (3 calls to __index)
+        \\assert(obj[1] == 42)
+        \\assert(obj[2] == 100)
+        \\assert(obj[999] == nil)
+        \\
+        \\-- Test overwriting values (1 call to __newindex, 1 call to __index)
+        \\obj[1] = 55
+        \\assert(obj[1] == 55)
+    ;
+
+    try lua.eval(test_script, .{}, void);
+    
+    // Validate expected number of calls:
+    // __index: 3 gets + 1 final assertion = 4 total
+    // __newindex: 2 initial sets + 1 overwrite = 3 total
+    try expectEq(index_call_count, 4);
+    try expectEq(newindex_call_count, 3);
+    try expectEq(lua.top(), 0);
+}

@@ -7,7 +7,7 @@ const stack = @import("stack.zig");
 const Lua = @import("lua.zig").Lua;
 
 /// Supported metamethods
-pub const MetaMethod = enum {
+const MetaMethod = enum {
     len, // __len
     tostring, // __tostring
     add, // __add
@@ -22,6 +22,32 @@ pub const MetaMethod = enum {
     lt, // __lt
     le, // __le
     concat, // __concat
+    index, // __index
+    newindex, // __newindex
+
+    /// Parse metamethod name from string, returns null if not a metamethod or unsupported
+    pub fn fromStr(method_name: []const u8) ?MetaMethod {
+        const name_map = std.StaticStringMap(MetaMethod).initComptime(.{
+            .{ "__len", .len },
+            .{ "__tostring", .tostring },
+            .{ "__add", .add },
+            .{ "__sub", .sub },
+            .{ "__mul", .mul },
+            .{ "__div", .div },
+            .{ "__idiv", .idiv },
+            .{ "__mod", .mod },
+            .{ "__pow", .pow },
+            .{ "__unm", .unm },
+            .{ "__eq", .eq },
+            .{ "__lt", .lt },
+            .{ "__le", .le },
+            .{ "__concat", .concat },
+            .{ "__index", .index },
+            .{ "__newindex", .newindex },
+        });
+
+        return name_map.get(method_name);
+    }
 };
 
 /// Function type categories for userdata methods
@@ -48,137 +74,104 @@ fn isSelf(comptime T: type, comptime param_type: type) bool {
 
 /// Detects if a method is a metamethod, validates its signature, and returns its type
 fn isMetaMethod(comptime method_name: []const u8, comptime method: anytype) ?MetaMethod {
-    // First check if it starts with __
-    if (method_name.len < 2 or method_name[0] != '_' or method_name[1] != '_') {
-        return null;
-    }
-
-    // Handle __len
-    if (comptime std.mem.eql(u8, method_name, "__len")) {
-        const method_info = @typeInfo(@TypeOf(method));
-
-        if (method_info.@"fn".params.len != 1) {
-            @compileError("__len metamethod must take exactly one parameter (self), got " ++
-                std.fmt.comptimePrint("{}", .{method_info.@"fn".params.len}));
-        }
-
-        const return_type = method_info.@"fn".return_type orelse
-            @compileError("__len metamethod must have a return type (should return a number)");
-
-        const return_info = @typeInfo(return_type);
-        const is_number = switch (return_info) {
-            .int, .comptime_int => true,
-            .float, .comptime_float => true,
-            else => false,
-        };
-
-        if (!is_number) {
-            @compileError("__len metamethod must return a number type, got " ++ @typeName(return_type));
-        }
-
-        return .len;
-    }
-
-    // Handle __tostring
-    if (comptime std.mem.eql(u8, method_name, "__tostring")) {
-        const method_info = @typeInfo(@TypeOf(method));
-
-        if (method_info.@"fn".params.len != 1) {
-            @compileError("__tostring metamethod must take exactly one parameter (self), got " ++
-                std.fmt.comptimePrint("{}", .{method_info.@"fn".params.len}));
-        }
-
-        const return_type = method_info.@"fn".return_type orelse
-            @compileError("__tostring metamethod must have a return type (should return []const u8)");
-
-        const return_info = @typeInfo(return_type);
-        const is_string = switch (return_info) {
-            .pointer => |ptr| ptr.size == .slice and ptr.child == u8 and ptr.is_const,
-            else => false,
-        };
-
-        if (!is_string) {
-            @compileError("__tostring metamethod must return []const u8, got " ++ @typeName(return_type));
-        }
-
-        return .tostring;
-    }
-
-    // Handle binary arithmetic operations
-    if (comptime std.mem.eql(u8, method_name, "__add")) {
-        validateBinaryOpSignature(method_name, method);
-        return .add;
-    }
-    if (comptime std.mem.eql(u8, method_name, "__sub")) {
-        validateBinaryOpSignature(method_name, method);
-        return .sub;
-    }
-    if (comptime std.mem.eql(u8, method_name, "__mul")) {
-        validateBinaryOpSignature(method_name, method);
-        return .mul;
-    }
-    if (comptime std.mem.eql(u8, method_name, "__div")) {
-        validateBinaryOpSignature(method_name, method);
-        return .div;
-    }
-    if (comptime std.mem.eql(u8, method_name, "__mod")) {
-        validateBinaryOpSignature(method_name, method);
-        return .mod;
-    }
-    if (comptime std.mem.eql(u8, method_name, "__idiv")) {
-        validateBinaryOpSignature(method_name, method);
-        return .idiv;
-    }
-    if (comptime std.mem.eql(u8, method_name, "__pow")) {
-        validateBinaryOpSignature(method_name, method);
-        return .pow;
-    }
-    if (comptime std.mem.eql(u8, method_name, "__unm")) {
-        // Validate __unm metamethod signature
-        const method_info = @typeInfo(@TypeOf(method));
-
-        if (method_info.@"fn".params.len != 1) {
-            @compileError("__unm metamethod must take exactly one parameter (self), got " ++
-                std.fmt.comptimePrint("{}", .{method_info.@"fn".params.len}));
-        }
-
-        _ = method_info.@"fn".return_type orelse
-            @compileError("__unm metamethod must have a return type");
-
-        return .unm;
-    }
-    if (comptime std.mem.eql(u8, method_name, "__eq")) {
-        validateBinaryOpSignature(method_name, method);
-        return .eq;
-    }
-    if (comptime std.mem.eql(u8, method_name, "__lt")) {
-        validateBinaryOpSignature(method_name, method);
-        return .lt;
-    }
-    if (comptime std.mem.eql(u8, method_name, "__le")) {
-        validateBinaryOpSignature(method_name, method);
-        return .le;
-    }
-    if (comptime std.mem.eql(u8, method_name, "__concat")) {
-        validateBinaryOpSignature(method_name, method);
-        return .concat;
-    }
-
-    // Unknown metamethod starting with __
-    @compileError("Unknown metamethod '" ++ method_name ++ "' - only __len, __tostring, __add, __sub, __mul, __div, __idiv, __mod, __pow, __unm, __eq, __lt, __le, and __concat are currently supported");
-}
-
-/// Helper function to validate binary operation metamethod signatures
-fn validateBinaryOpSignature(comptime method_name: []const u8, comptime method: anytype) void {
+    const meta_method = comptime MetaMethod.fromStr(method_name);
+    if (meta_method == null) return null;
     const method_info = @typeInfo(@TypeOf(method));
 
-    if (method_info.@"fn".params.len != 2) {
-        @compileError(method_name ++ " metamethod must take exactly two parameters (self, other), got " ++
-            std.fmt.comptimePrint("{}", .{method_info.@"fn".params.len}));
+    // Validate signature based on metamethod type
+    switch (meta_method.?) {
+        // Validates signature: fn(self) number_type
+        .len => {
+            if (method_info.@"fn".params.len != 1) {
+                @compileError("__len metamethod must take exactly one parameter (self), got " ++
+                    std.fmt.comptimePrint("{}", .{method_info.@"fn".params.len}));
+            }
+
+            const return_type = method_info.@"fn".return_type orelse
+                @compileError("__len metamethod must have a return type (should return a number)");
+
+            const return_info = @typeInfo(return_type);
+            const is_number = switch (return_info) {
+                .int, .comptime_int => true,
+                .float, .comptime_float => true,
+                else => false,
+            };
+
+            if (!is_number) {
+                @compileError("__len metamethod must return a number type, got " ++ @typeName(return_type));
+            }
+        },
+
+        // Validates signature: fn(self) []const u8
+        .tostring => {
+            if (method_info.@"fn".params.len != 1) {
+                @compileError("__tostring metamethod must take exactly one parameter (self), got " ++
+                    std.fmt.comptimePrint("{}", .{method_info.@"fn".params.len}));
+            }
+
+            const return_type = method_info.@"fn".return_type orelse
+                @compileError("__tostring metamethod must have a return type (should return []const u8)");
+
+            const return_info = @typeInfo(return_type);
+            const is_string = switch (return_info) {
+                .pointer => |ptr| ptr.size == .slice and ptr.child == u8 and ptr.is_const,
+                else => false,
+            };
+
+            if (!is_string) {
+                @compileError("__tostring metamethod must return []const u8, got " ++ @typeName(return_type));
+            }
+        },
+
+        // Validates signature: fn(self) return_type
+        .unm => {
+            if (method_info.@"fn".params.len != 1) {
+                @compileError("__unm metamethod must take exactly one parameter (self), got " ++
+                    std.fmt.comptimePrint("{}", .{method_info.@"fn".params.len}));
+            }
+
+            _ = method_info.@"fn".return_type orelse
+                @compileError("__unm metamethod must have a return type");
+        },
+
+        // Validates signature: fn(self, other) return_type
+        .add, .sub, .mul, .div, .idiv, .mod, .pow, .eq, .lt, .le, .concat => {
+            if (method_info.@"fn".params.len != 2) {
+                @compileError(method_name ++ " metamethod must take exactly two parameters (self, other), got " ++
+                    std.fmt.comptimePrint("{}", .{method_info.@"fn".params.len}));
+            }
+
+            _ = method_info.@"fn".return_type orelse
+                @compileError(method_name ++ " metamethod must have a return type");
+        },
+
+        // Validates signature: fn(self, key) return_type - key can be any valid Lua type or Lua.Value for generic runtime values
+        .index => {
+            if (method_info.@"fn".params.len != 2) {
+                @compileError("__index metamethod must take exactly two parameters (self, key), got " ++
+                    std.fmt.comptimePrint("{}", .{method_info.@"fn".params.len}));
+            }
+
+            _ = method_info.@"fn".return_type orelse
+                @compileError("__index metamethod must have a return type");
+        },
+
+        // Validates signature: fn(self, key, value) void - key and value can be any valid Lua type or Lua.Value for generic runtime values
+        .newindex => {
+            if (method_info.@"fn".params.len != 3) {
+                @compileError("__newindex metamethod must take exactly three parameters (self, key, value), got " ++
+                    std.fmt.comptimePrint("{}", .{method_info.@"fn".params.len}));
+            }
+
+            const return_type = method_info.@"fn".return_type;
+            if (return_type != null and return_type != void) {
+                @compileError("__newindex metamethod must return void or have no return type, got " ++
+                    @typeName(return_type.?));
+            }
+        },
     }
 
-    _ = method_info.@"fn".return_type orelse
-        @compileError(method_name ++ " metamethod must have a return type");
+    return meta_method.?;
 }
 
 /// Creates a new userdata instance and attaches the metatable.
@@ -301,7 +294,16 @@ fn createUserDataFunc(comptime T: type, comptime method_name: []const u8, method
                 } else {
                     // Handle regular parameters from Lua stack
                     const lua_stack_index = i + 1;
-                    args[i] = stack.checkArg(lua, @intCast(lua_stack_index), param_type);
+
+                    // Special handling for __index and __newindex metamethods that use Lua.Value
+                    if ((function_type == .metamethod) and
+                        (std.mem.eql(u8, method_name, "__index") or std.mem.eql(u8, method_name, "__newindex")) and
+                        param_type == Lua.Value)
+                    {
+                        args[i] = stack.toValue(lua, Lua.Value, @intCast(lua_stack_index)) orelse Lua.Value.nil;
+                    } else {
+                        args[i] = stack.checkArg(lua, @intCast(lua_stack_index), param_type);
+                    }
                 }
             }
 
@@ -354,16 +356,27 @@ fn createUserDataFunc(comptime T: type, comptime method_name: []const u8, method
 pub fn createMetaTable(comptime T: type, lua_state: *State, comptime type_name: [:0]const u8) u32 {
     const struct_info = @typeInfo(T).@"struct";
 
-    // Count non-metamethod, non-deinit methods
+    // Detect what kind of methods we have in this struct
+    // We're interested in:
+    // - How many public methods (not deinit, not metamethods)
+    // - Whether __index metamethod is going to be defined by the user
     var method_count: u32 = 0;
+    comptime var has_user_index = false;
     inline for (struct_info.decls) |decl| {
         if (@hasDecl(T, decl.name)) {
             const decl_info = @typeInfo(@TypeOf(@field(T, decl.name)));
-            if (decl_info == .@"fn" and
-                !comptime std.mem.eql(u8, decl.name, "deinit") and
-                    isMetaMethod(decl.name, @field(T, decl.name)) == null)
-            {
-                method_count += 1;
+            if (decl_info == .@"fn") {
+                // Check for __index metamethod
+                if (comptime std.mem.eql(u8, decl.name, "__index")) {
+                    has_user_index = true;
+                }
+
+                // Count regular methods (not deinit, not metamethods)
+                if (!comptime std.mem.eql(u8, decl.name, "deinit") and
+                    MetaMethod.fromStr(decl.name) == null)
+                {
+                    method_count += 1;
+                }
             }
         }
     }
@@ -373,9 +386,11 @@ pub fn createMetaTable(comptime T: type, lua_state: *State, comptime type_name: 
         @panic("Type " ++ @typeName(T) ++ " is already registered");
     }
 
-    // Set __index to self for method lookup
-    lua_state.pushValue(-1);
-    lua_state.setField(-2, "__index");
+    // Set __index to self for method lookup (when no user __index is defined)
+    if (!comptime has_user_index) {
+        lua_state.pushValue(-1);
+        lua_state.setField(-2, "__index");
+    }
 
     // Register all regular methods (init, instance, static) - excluding metamethods and deinit
     inline for (struct_info.decls) |decl| {
@@ -383,7 +398,7 @@ pub fn createMetaTable(comptime T: type, lua_state: *State, comptime type_name: 
             const decl_info = @typeInfo(@TypeOf(@field(T, decl.name)));
             if (decl_info == .@"fn" and
                 !comptime std.mem.eql(u8, decl.name, "deinit") and
-                    isMetaMethod(decl.name, @field(T, decl.name)) == null)
+                    MetaMethod.fromStr(decl.name) == null)
             {
                 const method_func = @field(T, decl.name);
 
@@ -401,7 +416,10 @@ pub fn createMetaTable(comptime T: type, lua_state: *State, comptime type_name: 
             const decl_info = @typeInfo(@TypeOf(@field(T, decl.name)));
             if (decl_info == .@"fn") {
                 const method_func = @field(T, decl.name);
-                if (isMetaMethod(decl.name, method_func)) |_| {
+                if (MetaMethod.fromStr(decl.name)) |_| {
+                    // Validate metamethod signature before registering
+                    _ = isMetaMethod(decl.name, method_func);
+
                     // Register metamethod in the metatable
                     lua_state.pushCFunction(createUserDataFunc(T, decl.name, method_func, type_name), decl.name);
                     lua_state.setField(-2, decl.name);
