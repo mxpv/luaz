@@ -123,6 +123,14 @@ fn testMixedTypes(n: i32, s: []const u8, flag: bool) struct { i32, []const u8, b
     return .{ n + 1, s, !flag };
 }
 
+fn testStructReturn(x: i32, y: i32) struct { x: i32, y: i32, sum: i32 } {
+    return .{ .x = x, .y = y, .sum = x + y };
+}
+
+fn testArrayReturn(n: i32) [3]i32 {
+    return [_]i32{ n, n * 2, n * 3 };
+}
+
 test "Zig function integration" {
     const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
@@ -178,6 +186,24 @@ test "Zig function integration" {
     try expectEq(mixed_result[0], 11); // 10 + 1
     try expect(std.mem.eql(u8, mixed_result[1], "test"));
     try expect(mixed_result[2]); // !false = true
+
+    // Test 10: Function returning struct (should create Lua table)
+    try globals.set("structFunc", testStructReturn);
+    const struct_x = try lua.eval("return structFunc(5, 7).x", .{}, i32);
+    try expectEq(struct_x, 5);
+    const struct_y = try lua.eval("return structFunc(5, 7).y", .{}, i32);
+    try expectEq(struct_y, 7);
+    const struct_sum = try lua.eval("return structFunc(5, 7).sum", .{}, i32);
+    try expectEq(struct_sum, 12);
+
+    // Test 11: Function returning array (should create Lua table with integer indices)
+    try globals.set("arrayFunc", testArrayReturn);
+    const array_1 = try lua.eval("return arrayFunc(10)[1]", .{}, i32);  // Lua is 1-indexed
+    try expectEq(array_1, 10);
+    const array_2 = try lua.eval("return arrayFunc(10)[2]", .{}, i32);
+    try expectEq(array_2, 20);
+    const array_3 = try lua.eval("return arrayFunc(10)[3]", .{}, i32);
+    try expectEq(array_3, 30);
 
     try expectEq(lua.top(), 0);
 }
