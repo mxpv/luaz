@@ -1084,3 +1084,242 @@ test "error handling in wrapped functions" {
     const err3 = try lua.eval("local c = Counter.new(); local ok, err = pcall(c.increment, c, -1); return err", .{}, []const u8);
     try expect(std.mem.eql(u8, err3, "InvalidInput"));
 }
+
+const stack = @import("stack.zig");
+
+test "thread creation and basic operations" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    lua.openLibs();
+
+    // Create a new thread - now just returns another Lua object
+    const thread_lua = lua.createThread();
+
+    // Basic test: thread can execute simple Lua code
+    const result = try thread_lua.eval("return 42", .{}, i32);
+    try expectEq(result, 42);
+
+    // Thread shares global environment with parent
+    try lua.eval("test_value = 123", .{}, void);
+    const shared = try thread_lua.eval("return test_value", .{}, i32);
+    try expectEq(shared, 123);
+
+    // Test thread API methods are available
+    try expect(thread_lua.isYieldable()); // Threads are yieldable when created
+    try expect(thread_lua.isReset()); // Threads start in reset state
+}
+
+test "coroutine yield and resume" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    lua.openLibs();
+
+    // Create a coroutine function in global environment
+    _ = try lua.eval(
+        \\function yielder()
+        \\    coroutine.yield(1)
+        \\    coroutine.yield(2)
+        \\    return 3
+        \\end
+    , .{}, void);
+
+    // Create thread - it shares the global environment
+    const thread_lua = lua.createThread();
+
+    // Load function onto thread stack and start coroutine
+    const func = try thread_lua.globals().get("yielder", Lua.Function);
+    defer func.?.deinit();
+    stack.push(thread_lua, func.?);
+
+    // First resume - should yield 1
+    const result1 = thread_lua.resume_(.{}, i32);
+    try expectEq(result1.status, .yield);
+    try expectEq(result1.result.?, 1);
+
+    // Second resume - should yield 2
+    const result2 = thread_lua.resume_(.{}, i32);
+    try expectEq(result2.status, .yield);
+    try expectEq(result2.result.?, 2);
+
+    // Third resume - should return 3 and finish
+    const result3 = thread_lua.resume_(.{}, i32);
+    try expectEq(result3.status, .ok);
+    try expectEq(result3.result.?, 3);
+}
+
+test "coroutine with arguments on yield" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    lua.openLibs();
+
+    // Create a coroutine that processes arguments
+    _ = try lua.eval(
+        \\function accumulator()
+        \\    local sum = 0
+        \\    while true do
+        \\        local value = coroutine.yield(sum)
+        \\        if value == nil then break end
+        \\        sum = sum + value
+        \\    end
+        \\    return sum
+        \\end
+    , .{}, void);
+
+    // Create thread and load the coroutine
+    const thread = lua.createThread();
+
+    const func = try thread.globals().get("accumulator", Lua.Function);
+    defer func.?.deinit();
+    stack.push(thread, func.?);
+
+    // First resume - starts the coroutine, yields 0
+    const result1 = thread.resume_(.{}, i32);
+    try expectEq(result1.status, .yield);
+    try expectEq(result1.result.?, 0);
+
+    // Resume with value 5
+    const result2 = thread.resume_(5, i32);
+    try expectEq(result2.status, .yield);
+    try expectEq(result2.result.?, 5);
+
+    // Resume with value 10
+    const result3 = thread.resume_(10, i32);
+    try expectEq(result3.status, .yield);
+    try expectEq(result3.result.?, 15);
+
+    // Resume with nil to finish
+    const result4 = thread.resume_(@as(?i32, null), i32);
+    try expectEq(result4.status, .ok);
+    try expectEq(result4.result.?, 15);
+}
+
+test "thread data via globals" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    const thread = lua.createThread();
+
+    // Test that threads can share data through globals
+    try lua.globals().set("shared_data", 42);
+    const retrieved = try thread.globals().get("shared_data", i32);
+    try expectEq(retrieved, 42);
+
+    // Test thread can modify shared data
+    try thread.globals().set("thread_value", 100);
+    const from_main = try lua.globals().get("thread_value", i32);
+    try expectEq(from_main, 100);
+}
+
+test "thread API methods" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    const thread = lua.createThread();
+
+    // Test thread status and state methods
+    try expectEq(thread.status(), .fin); // Empty threads are finished
+    try expect(thread.isReset()); // Threads start reset
+    try expect(thread.isYieldable()); // Threads are yieldable
+
+    // Test thread-specific data storage
+    try expectEq(thread.getData(), null); // Initially no data
+
+    var test_data: i32 = 123;
+    thread.setData(&test_data);
+    const retrieved_data = thread.getData();
+    try expect(retrieved_data != null);
+    const value = @as(*i32, @ptrCast(@alignCast(retrieved_data.?))).*;
+    try expectEq(value, 123);
+
+    // Test reset
+    thread.reset();
+    try expect(thread.isReset());
+    // Note: Thread data persists across reset - it's not cleared by resetThread()
+}
+
+test "isThread method" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    // Main Lua state should not be a thread
+    try expect(!lua.isThread());
+
+    // Create a thread - it should be identified as a thread
+    const thread_lua = lua.createThread();
+    try expect(thread_lua.isThread());
+
+    // Multiple threads should all be identified as threads
+    const thread2_lua = lua.createThread();
+    try expect(thread2_lua.isThread());
+
+    // Original main state should still not be a thread
+    try expect(!lua.isThread());
+}
+
+test "simple thread function execution" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    lua.openLibs();
+
+    // Create a simple function
+    _ = try lua.eval(
+        \\function simple()
+        \\    return 42
+        \\end
+    , .{}, void);
+
+    const thread_lua = lua.createThread();
+
+    // Load and run function in thread
+    const func = try thread_lua.globals().get("simple", Lua.Function);
+    defer func.?.deinit();
+    stack.push(thread_lua, func.?);
+
+    const result = thread_lua.resume_(.{}, i32);
+    try expectEq(result.status, .ok);
+    try expectEq(result.result.?, 42);
+}
+
+test "coroutine error handling" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    lua.openLibs();
+
+    // Create a coroutine that errors
+    _ = try lua.eval(
+        \\function error_coro()
+        \\    error("intentional error")
+        \\end
+    , .{}, void);
+
+    const thread_lua = lua.createThread();
+
+    const func = try thread_lua.globals().get("error_coro", Lua.Function);
+    defer func.?.deinit();
+    stack.push(thread_lua, func.?);
+
+    // Resume should return error status
+    const error_result = thread_lua.resume_(.{}, void);
+    try expectEq(error_result.status, .errrun);
+    try expect(error_result.result == null);
+}
+
+test "resume from main thread should return error" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    // Verify this is the main thread
+    try expect(!lua.isThread());
+
+    // Try to resume the main thread - this should fail
+    const result = lua.resume_(.{}, void);
+
+    // Should return .errrun status (cannot resume dead coroutine)
+    try expectEq(result.status, .errrun);
+    try expect(result.result == null);
+}

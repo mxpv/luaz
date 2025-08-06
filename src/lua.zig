@@ -113,10 +113,20 @@ pub const Lua = struct {
     }
 
     /// Deinitializes the Lua state and releases all associated resources.
+    ///
     /// Must be called when the Lua instance is no longer needed to prevent memory leaks.
+    ///
     /// NOTE: this should not be called from inside Lua callbacks.
+    ///
+    /// NOTE: Only call this on the main Lua state, not on threads created with createThread().
+    /// Threads are subject to garbage collection and should not be explicitly closed.
     pub fn deinit(self: Lua) void {
-        self.state.deinit();
+        // Only deinit if this is the main thread
+        // Threads are garbage collected automatically and should not be closed explicitly
+        if (!self.isThread()) {
+            self.state.deinit();
+        }
+        // If this is a thread, do nothing - threads are garbage collected
     }
 
     /// Enable Luau's JIT code generator for improved function execution performance.
@@ -404,7 +414,12 @@ pub const Lua = struct {
 
             defer self.state().pop(-1); // Pop table in the end.
 
-            return self.ref.lua.call(args, R);
+            const result = self.ref.lua.call(args, R, false);
+            return switch (result.status) {
+                .ok, .yield => result.result.?,
+                .errmem => error.OutOfMemory,
+                else => error.Runtime,
+            };
         }
 
         /// Compile a function stored in this table using Luau's JIT code generator for improved performance.
@@ -714,6 +729,54 @@ pub const Lua = struct {
         return Table{ .ref = Ref.init(self, -1) };
     }
 
+    /// Creates a new thread (coroutine) in the Lua state.
+    ///
+    /// Creates an independent execution context that shares the global environment
+    /// with the original thread but has its own execution stack. The thread can be
+    /// used to run Lua functions as coroutines.
+    ///
+    /// The returned Thread must be explicitly released using `deinit()` to free the reference.
+    /// The underlying Lua thread is subject to garbage collection.
+    ///
+    /// Examples:
+    /// ```zig
+    /// // Create a new thread
+    /// const thread = lua.createThread();
+    /// defer thread.deinit();
+    ///
+    /// // Load a function into the thread
+    /// _ = try lua.eval(
+    ///     \\function counter(start)
+    ///     \\    local i = start
+    ///     \\    while true do
+    ///     \\        coroutine.yield(i)
+    ///     \\        i = i + 1
+    ///     \\    end
+    ///     \\end
+    /// , .{}, void);
+    ///
+    /// // Get the function and push it to the thread
+    /// const globals = lua.globals();
+    /// const counter_fn = try globals.get("counter", Lua.Function);
+    /// defer counter_fn.?.deinit();
+    ///
+    /// // Resume the coroutine with initial value
+    /// const res1 = try thread.resume_(.{10}, i32);
+    /// std.debug.print("First: {}\n", .{res1.result}); // Prints: First: 10
+    ///
+    /// // Resume again to get next value
+    /// const res2 = try thread.resume_(.{}, i32);
+    /// std.debug.print("Second: {}\n", .{res2.result}); // Prints: Second: 11
+    /// ```
+    ///
+    /// Returns: `Thread` - A wrapper around the newly created Lua thread
+    /// Creates a new thread (coroutine) and returns a Lua object for it.
+    /// The returned Lua object can be used to call functions and resume coroutines.
+    pub inline fn createThread(self: Self) Self {
+        const thread_state = self.state.newThread();
+        return Self.fromState(thread_state.lua);
+    }
+
     /// Returns a table wrapper for the Lua global environment.
     ///
     /// Provides access to the global table (_G) where all global variables are stored.
@@ -816,7 +879,12 @@ pub const Lua = struct {
 
             stack.push(self.ref.lua, self.ref); // Push function ref
 
-            return self.ref.lua.call(args, R);
+            const result = self.ref.lua.call(args, R, false);
+            return switch (result.status) {
+                .ok, .yield => result.result.?,
+                .errmem => error.OutOfMemory,
+                else => error.Runtime,
+            };
         }
 
         /// Compile this function using Luau's JIT code generator for improved performance.
@@ -913,11 +981,11 @@ pub const Lua = struct {
     pub fn exec(self: Self, blob: []const u8, comptime T: type) !T {
         // Push byte code onto stack
         {
-            const status = self.state.load("", blob, 0);
+            const load_status = self.state.load("", blob, 0);
 
             // Load can either succeed or get an OOM error
             // See https://github.com/luau-lang/luau/blob/66202dc4ac15f39a6ce8f732e2be19b636ee2af1/VM/src/lvmload.cpp#L643
-            switch (status) {
+            switch (load_status) {
                 .ok => {},
                 .errmem => return Error.OutOfMemory,
                 else => unreachable,
@@ -926,11 +994,188 @@ pub const Lua = struct {
             std.debug.assert(self.state.isFunction(-1));
         }
 
-        return self.call(.{}, T);
+        const result = self.call(.{}, T, false);
+        return switch (result.status) {
+            .ok, .yield => result.result.?,
+            .errmem => error.OutOfMemory,
+            else => error.Runtime,
+        };
     }
 
-    fn call(self: Self, args: anytype, comptime R: type) Error!R {
-        // Count and push args.
+    /// Resume a coroutine with the given arguments and return type.
+    ///
+    /// This method resumes execution of a suspended coroutine (thread) that was previously
+    /// yielded. It's designed to work with threads created by createThread().
+    ///
+    /// **Important**: This method should only be called on thread objects created with
+    /// `createThread()`. Calling `resume_()` on the main Lua state will return an error
+    /// status (`.errrun`) with a null result, as the main thread cannot be resumed.
+    ///
+    /// Parameters:
+    /// - `args`: Arguments to pass to the resumed coroutine (can be tuple, single value, or void)
+    /// - `R`: Compile-time return type expected from the coroutine
+    ///
+    /// Returns:
+    /// A struct containing both the execution status and the result:
+    /// - `.status`: The execution status (.ok, .yield, .errrun, etc.)
+    /// - `.result`: The value returned/yielded by the coroutine (null for errors)
+    ///
+    /// Example:
+    /// ```zig
+    /// const thread_lua = lua.createThread();
+    /// _ = try thread_lua.eval("function coro() coroutine.yield(42); return 100 end; return coro()", .{}, void);
+    ///
+    /// const result1 = thread_lua.resume_(.{}, i32);  // Yields 42
+    /// if (result1.result) |value| std.debug.print("Yielded: {}\n", .{value}); // Prints: Yielded: 42
+    ///
+    /// const result2 = thread_lua.resume_(.{}, i32);  // Returns 100
+    /// if (result2.result) |value| std.debug.print("Returned: {}\n", .{value}); // Prints: Returned: 100
+    ///
+    /// // Error case - trying to resume main thread:
+    /// const main_result = lua.resume_(.{}, void);  // lua is main thread
+    /// if (main_result.status == .errrun) std.debug.print("Cannot resume main thread\n", .{});
+    /// ```
+    pub fn resume_(self: Self, args: anytype, comptime R: type) CallResult(R) {
+        return self.call(args, R, true);
+    }
+
+    /// Get the current status of this coroutine thread.
+    ///
+    /// Returns the execution state of the coroutine without resuming it.
+    ///
+    /// Possible states:
+    /// - `.run`: Currently running (only possible if checking from within the coroutine)
+    /// - `.sus`: Suspended (either not started or yielded)
+    /// - `.nor`: Normal (resumed another coroutine and waiting for it)
+    /// - `.fin`: Finished execution successfully
+    /// - `.err`: Terminated with an error
+    ///
+    /// Example:
+    /// ```zig
+    /// const thread_lua = lua.createThread();
+    /// const status = thread_lua.status();
+    /// switch (status) {
+    ///     .sus => std.debug.print("Coroutine is suspended\n", .{}),
+    ///     .fin => std.debug.print("Coroutine has finished\n", .{}),
+    ///     else => {},
+    /// }
+    /// ```
+    pub fn status(self: Self) State.CoStatus {
+        const main_thread = self.state.mainThread();
+        return main_thread.coStatus(self.state);
+    }
+
+    /// Check if this coroutine thread is currently yieldable.
+    ///
+    /// Returns true if the coroutine can yield (i.e., it's currently running
+    /// and not in a non-yieldable context like a metamethod).
+    ///
+    /// Example:
+    /// ```zig
+    /// const thread_lua = lua.createThread();
+    /// if (thread_lua.isYieldable()) {
+    ///     // Safe to yield from this context
+    /// }
+    /// ```
+    pub fn isYieldable(self: Self) bool {
+        return self.state.isYieldable();
+    }
+
+    /// Reset this thread to its initial state.
+    ///
+    /// Clears the thread's stack and resets it to a fresh state, allowing
+    /// it to be reused for a new coroutine. Any previous execution state is lost.
+    ///
+    /// Example:
+    /// ```zig
+    /// const thread_lua = lua.createThread();
+    /// thread_lua.reset();
+    /// // Thread can now be used for a new coroutine
+    /// ```
+    pub fn reset(self: Self) void {
+        self.state.resetThread();
+    }
+
+    /// Check if this thread is in a reset state.
+    ///
+    /// Returns true if the thread has been reset and is ready for reuse.
+    ///
+    /// Example:
+    /// ```zig
+    /// const thread_lua = lua.createThread();
+    /// if (thread_lua.isReset()) {
+    ///     // Thread is ready for a new coroutine
+    /// }
+    /// ```
+    pub fn isReset(self: Self) bool {
+        return self.state.isThreadReset();
+    }
+
+    /// Get thread-specific data for this thread.
+    ///
+    /// Each thread can have an associated opaque pointer for storing
+    /// thread-local data. This is useful for associating custom state
+    /// with specific coroutines.
+    ///
+    /// Example:
+    /// ```zig
+    /// const thread_lua = lua.createThread();
+    /// // Store custom data
+    /// const my_data = try allocator.create(MyData);
+    /// thread_lua.setData(my_data);
+    ///
+    /// // Retrieve custom data
+    /// if (thread_lua.getData()) |data| {
+    ///     const my_data = @as(*MyData, @ptrCast(@alignCast(data)));
+    ///     // Use my_data...
+    /// }
+    /// ```
+    pub fn getData(self: Self) ?*anyopaque {
+        return self.state.getThreadData();
+    }
+
+    /// Set thread-specific data for this thread.
+    pub fn setData(self: Self, data: ?*anyopaque) void {
+        self.state.setThreadData(data);
+    }
+
+    /// Check if this Lua object is a thread/coroutine.
+    ///
+    /// Returns `true` if this Lua object represents a thread (coroutine),
+    /// `false` if it's the main Lua state.
+    ///
+    /// This is useful for determining whether `deinit()` should actually
+    /// close the state or not, since threads are garbage collected automatically.
+    ///
+    /// Example:
+    /// ```zig
+    /// const main_lua = try Lua.init(&allocator);
+    /// defer main_lua.deinit(); // This will close the state
+    ///
+    /// const thread_lua = main_lua.createThread();
+    /// defer thread_lua.deinit(); // This will NOT close anything
+    ///
+    /// if (thread_lua.isThread()) {
+    ///     std.debug.print("This is a thread\n", .{});
+    /// }
+    /// if (!main_lua.isThread()) {
+    ///     std.debug.print("This is the main state\n", .{});
+    /// }
+    /// ```
+    pub inline fn isThread(self: Self) bool {
+        // Check if the current state is different from the main thread
+        const main_thread = self.state.mainThread();
+        return self.state.lua != main_thread.lua;
+    }
+
+    /// Lua function call result type (status + return).
+    inline fn CallResult(comptime R: type) type {
+        return struct { status: State.Status, result: ?R };
+    }
+
+    /// Calls (or resumes) a Lua function with the provided arguments and returns the result.
+    fn call(self: Self, args: anytype, comptime R: type, comptime is_resume: bool) CallResult(R) {
+        // Count and push args - unified logic for both call types
         const arg_count = blk: {
             const args_type_info = @typeInfo(@TypeOf(args));
             switch (args_type_info) {
@@ -956,45 +1201,50 @@ pub const Lua = struct {
 
         const ret_count = stack.slotCountFor(R);
 
-        // Use pcall instead of call for protected execution
-        const status = self.state.pcall(arg_count, ret_count, 0);
+        // Execute based on is_resume flag - determine states internally
+        const exec_status = if (is_resume) blk: {
+            // For resume, we need the main thread state
+            const main_thread = self.state.mainThread();
+            break :blk self.state.resume_(main_thread, arg_count);
+        } else self.state.pcall(arg_count, ret_count, 0);
 
-        // Check if there was an error
-        if (status != .ok) {
-            // Debug print the error message before popping it
-            if (self.state.isString(-1)) {
-                if (self.state.toString(-1)) |error_msg| {
-                    std.debug.print("Lua runtime error: {s}\n", .{error_msg});
-                }
-            }
-
-            // Pop the error message from the stack
-            self.state.pop(1);
-            return switch (status) {
-                .errmem => Error.OutOfMemory,
-                .errrun, .errsyntax, .errerr => Error.Runtime,
-                else => Error.Runtime,
-            };
-        }
-
-        // Fetch ret args
-        const ret_type_info = @typeInfo(R);
-        if (ret_type_info == .void) {
-            return;
-        } else if (ret_type_info == .@"struct") {
-            const info = ret_type_info.@"struct";
-            if (info.is_tuple) {
+        switch (exec_status) {
+            .ok, .yield => {
+                const ret_type_info = @typeInfo(R);
                 var result: R = undefined;
-                // Pop tuple elements in reverse order (stack is LIFO)
-                inline for (0..info.fields.len) |i| {
-                    const field_index = info.fields.len - 1 - i;
-                    result[field_index] = stack.pop(self, info.fields[field_index].type).?;
-                }
-                return result;
-            }
-        }
 
-        return stack.pop(self, R).?;
+                if (ret_type_info == .void) {
+                    // No return value expected
+                    result = {};
+                } else if (ret_type_info == .@"struct") {
+                    const info = ret_type_info.@"struct";
+                    if (info.is_tuple) {
+                        // Pop tuple elements in reverse order (stack is LIFO)
+                        inline for (0..info.fields.len) |i| {
+                            const field_index = info.fields.len - 1 - i;
+                            result[field_index] = stack.pop(self, info.fields[field_index].type).?;
+                        }
+                    } else {
+                        result = stack.pop(self, R).?;
+                    }
+                } else {
+                    result = stack.pop(self, R).?;
+                }
+
+                return .{ .status = exec_status, .result = result };
+            },
+            else => {
+                // Error occurred - return status with null result
+                if (self.state.isString(-1)) {
+                    if (self.state.toString(-1)) |error_msg| {
+                        std.debug.print("Lua error: {s}\n", .{error_msg});
+                    }
+                }
+                self.state.pop(1);
+
+                return .{ .status = exec_status, .result = null };
+            },
+        }
     }
 
     /// Compiles and executes Luau source code, returning the result.
@@ -1463,6 +1713,7 @@ pub const Lua = struct {
 
 const expect = std.testing.expect;
 const expectEq = std.testing.expectEqual;
+const expectError = std.testing.expectError;
 
 // Test functions for function push test
 fn testCFunction(state: ?State.LuaState) callconv(.C) c_int {

@@ -108,12 +108,12 @@ pub const State = struct {
     /// There is no explicit function to close or to destroy a thread.
     /// Threads are subject to garbage collection, like any Lua object.
     pub inline fn newThread(self: State) State {
-        return State{ .lua = c.lua_newthread(self.lua) };
+        return State{ .lua = c.lua_newthread(self.lua).? };
     }
 
     /// Get the main thread from any thread
     pub inline fn mainThread(self: State) State {
-        return State{ .lua = c.lua_mainthread(self.lua) };
+        return State{ .lua = c.lua_mainthread(self.lua).? };
     }
 
     /// Reset a thread to its initial state
