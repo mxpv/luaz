@@ -1304,6 +1304,85 @@ pub const State = struct {
     pub inline fn codegenCompile(self: State, idx: i32) void {
         c.luau_codegen_compile(self.lua, idx);
     }
+
+    // Debug API
+
+    /// Debug info structure
+    pub const Debug = c.lua_Debug;
+
+    /// Debug hook function type
+    pub const Hook = c.lua_Hook;
+
+    /// Coverage callback function type
+    pub const Coverage = c.lua_Coverage;
+
+    /// Callbacks structure for VM events
+    pub const Callbacks = c.lua_Callbacks;
+
+    /// Get current stack depth
+    pub inline fn stackDepth(self: State) i32 {
+        return c.lua_stackdepth(self.lua);
+    }
+
+    /// Get information about a specific function or function invocation
+    pub inline fn getInfo(self: State, level: i32, what: [:0]const u8, ar: *Debug) i32 {
+        return c.lua_getinfo(self.lua, level, what.ptr, ar);
+    }
+
+    /// Get function argument at given level and position
+    pub inline fn getArgument(self: State, level: i32, n: i32) i32 {
+        return c.lua_getargument(self.lua, level, n);
+    }
+
+    /// Get local variable name and value at given level and position
+    pub inline fn getLocal(self: State, level: i32, n: i32) ?[:0]const u8 {
+        const result = c.lua_getlocal(self.lua, level, n);
+        return if (result) |str| std.mem.span(str) else null;
+    }
+
+    /// Set local variable value at given level and position
+    pub inline fn setLocal(self: State, level: i32, n: i32) ?[:0]const u8 {
+        const result = c.lua_setlocal(self.lua, level, n);
+        return if (result) |str| std.mem.span(str) else null;
+    }
+
+    /// Get upvalue name and value of function at given index
+    pub inline fn getUpvalue(self: State, funcindex: i32, n: i32) ?[:0]const u8 {
+        const result = c.lua_getupvalue(self.lua, funcindex, n);
+        return if (result) |str| std.mem.span(str) else null;
+    }
+
+    /// Set upvalue value of function at given index
+    pub inline fn setUpvalue(self: State, funcindex: i32, n: i32) ?[:0]const u8 {
+        const result = c.lua_setupvalue(self.lua, funcindex, n);
+        return if (result) |str| std.mem.span(str) else null;
+    }
+
+    /// Enable or disable single step mode for debugging
+    pub inline fn singleStep(self: State, enabled: bool) void {
+        c.lua_singlestep(self.lua, if (enabled) 1 else 0);
+    }
+
+    /// Set or clear a breakpoint at specified line in function
+    pub inline fn breakpoint(self: State, funcindex: i32, line: i32, enabled: bool) i32 {
+        return c.lua_breakpoint(self.lua, funcindex, line, if (enabled) 1 else 0);
+    }
+
+    /// Get coverage information for function at given index
+    pub inline fn getCoverage(self: State, funcindex: i32, context: ?*anyopaque, callback: Coverage) void {
+        c.lua_getcoverage(self.lua, funcindex, context, callback);
+    }
+
+    /// Get debug trace (warning: not thread-safe, for debugging only)
+    pub inline fn debugTrace(self: State) [:0]const u8 {
+        const result = c.lua_debugtrace(self.lua);
+        return std.mem.span(result);
+    }
+
+    /// Get callbacks structure for configuring VM event handlers
+    pub inline fn callbacks(self: State) *Callbacks {
+        return c.lua_callbacks(self.lua);
+    }
 };
 
 const expect = std.testing.expect;
