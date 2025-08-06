@@ -129,6 +129,35 @@ pub const Lua = struct {
         // If this is a thread, do nothing - threads are garbage collected
     }
 
+    /// Get unsafe access to the underlying Lua state.
+    ///
+    /// Provides direct access to the low-level `State` wrapper for advanced operations
+    /// that aren't available through the high-level API. Use with caution as this
+    /// bypasses the safety guarantees of the high-level interface.
+    ///
+    /// This is useful for:
+    /// - Direct stack manipulation
+    /// - Custom debugging operations
+    /// - Advanced VM configuration
+    /// - Interfacing with C libraries that expect raw lua_State
+    ///
+    /// Example:
+    /// ```zig
+    /// const lua = try Lua.init(null);
+    /// defer lua.deinit();
+    ///
+    /// const state = lua.raw();
+    /// state.pushNumber(42);
+    /// const value = state.toNumber(-1);
+    /// state.pop(1);
+    /// ```
+    ///
+    /// Warning: Operations on the raw state can break assumptions made by the
+    /// high-level API and may lead to undefined behavior if not used carefully.
+    pub inline fn raw(self: Self) State {
+        return self.state;
+    }
+
     /// Enable Luau's JIT code generator for improved function execution performance.
     ///
     /// This method checks if code generation is supported on the current platform and
