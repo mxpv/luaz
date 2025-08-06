@@ -1,6 +1,6 @@
 .{
     .name = .luaz,
-    .version = "0.1.0",
+    .version = "0.2.0",
 
     .fingerprint = 0xceb8ffd87c49e0c3, // Changing this has security and trust implications.
     .minimum_zig_version = "0.14.1",
