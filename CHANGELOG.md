@@ -6,6 +6,13 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - Closure support with `Table.setClosure()` for Lua-style upvalues
+- Canonical Zig iterator pattern for table iteration with `Table.iterator()`
+
+### Changed
+- **BREAKING**: Table iteration API now uses standard Zig iterator pattern (`iterator.next()`)
+
+### Removed
+- **BREAKING**: Old manual table iteration method `Table.next()` in favor of canonical iterator
 
 ## [0.2.0] - 2025-08-06
 
