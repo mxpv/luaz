@@ -406,10 +406,15 @@ pub const Lua = struct {
         /// - `upvalues`: Values to be captured as upvalues (single value or tuple)
         /// - `func`: A Zig function that accepts upvalues as its first parameter
         ///
-        /// Example:
+        /// Examples:
         /// ```zig
-        /// fn scaledAdd(upvalues: struct { scale: f32, offset: f32 }, x: f32) f32 {
-        ///     return x * upvalues.scale + upvalues.offset;
+        /// // Single upvalue
+        /// fn add(increment: i32, x: i32) i32 { return x + increment; }
+        /// try table.setClosure("add5", .{5}, add);
+        ///
+        /// // Multiple upvalues (tuple)
+        /// fn scaledAdd(upvals: struct { f32, f32 }, x: f32) f32 {
+        ///     return x * upvals[0] + upvals[1];
         /// }
         /// try table.setClosure("transform", .{ 2.0, 10.0 }, scaledAdd);
         /// ```

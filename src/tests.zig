@@ -1365,29 +1365,33 @@ test "table readonly" {
     try expect(try table.get("after", ?i32) == null);
 }
 
-fn closureAdd5(upv: struct { n: i32 }, x: i32) i32 {
-    return x + upv.n;
+fn closureAdd5(n: i32, x: i32) i32 {
+    return x + n;
 }
 
-fn closureTransform(upv: struct { a: f32, b: f32 }, x: f32) f32 {
-    return x * upv.a + upv.b;
+fn closureTransform(upv: struct { f32, f32 }, x: f32) f32 {
+    return x * upv[0] + upv[1];
 }
 
-fn closureOptAdd(upv: struct { thresh: i32 }, x: i32, y: ?i32) i32 {
-    return if (x > upv.thresh) x + (y orelse 0) else x;
+fn closureOptAdd(thresh: i32, x: i32, y: ?i32) i32 {
+    return if (x > thresh) x + (y orelse 0) else x;
 }
 
-fn closureMultiply(upv: struct { cfg: Lua.Table }, x: i32) !i32 {
-    const m = try upv.cfg.get("mult", i32) orelse 1;
+fn closureMultiply(cfg: Lua.Table, x: i32) !i32 {
+    const m = try cfg.get("mult", i32) orelse 1;
     return x * m;
 }
 
-fn closureConstant(upv: struct { val: i32 }) i32 {
-    return upv.val;
+fn closureConstant(val: i32) i32 {
+    return val;
 }
 
-fn closureSumAll(upv: struct { base: i32 }, a: ?i32, b: ?i32) i32 {
-    return upv.base + (a orelse 0) + (b orelse 0);
+fn closureSumAll(base: i32, a: ?i32, b: ?i32) i32 {
+    return base + (a orelse 0) + (b orelse 0);
+}
+
+fn closureSingle(increment: i32, x: i32) i32 {
+    return x + increment;
 }
 
 test "table setClosure" {
@@ -1418,6 +1422,9 @@ test "table setClosure" {
     // Multiple optionals
     try table.setClosure("sum", .{100}, closureSumAll);
 
+    // Single upvalue (not wrapped in struct)
+    try table.setClosure("single", .{42}, closureSingle);
+
     try lua.globals().set("f", table);
     try lua.globals().set("config", config);
 
@@ -1431,6 +1438,7 @@ test "table setClosure" {
     try expect(try lua.eval("return f.const()", .{}, i32) == 42);
     try expect(try lua.eval("return f.sum()", .{}, i32) == 100);
     try expect(try lua.eval("return f.sum(1, 2)", .{}, i32) == 103);
+    try expect(try lua.eval("return f.single(8)", .{}, i32) == 50);
 
     // Test config modification
     _ = try lua.eval("config.mult = 7", .{}, void);

@@ -306,11 +306,21 @@ pub fn createFunc(_: Lua, value: anytype, comptime ClosureType: ?type) State.CFu
             const arg_start_idx = if (has_upvalues) blk: {
                 // First parameter is upvalues - populate from upvalue indices
                 const CT = ClosureType.?;
-                const upvalues_fields = std.meta.fields(CT);
-                inline for (upvalues_fields, 0..) |field, i| {
-                    const idx = State.upvalueIndex(@intCast(i + 1));
-                    @field(args[0], field.name) = toValue(l, field.type, idx) orelse
-                        l.state.typeError(idx, @typeName(field.type));
+                const ct_info = @typeInfo(CT);
+
+                if (ct_info == .@"struct" and ct_info.@"struct".is_tuple) {
+                    // Multiple upvalues as tuple
+                    const upvalues_fields = std.meta.fields(CT);
+                    inline for (upvalues_fields, 0..) |field, i| {
+                        const idx = State.upvalueIndex(@intCast(i + 1));
+                        args[0][i] = toValue(l, field.type, idx) orelse
+                            l.state.typeError(idx, @typeName(field.type));
+                    }
+                } else {
+                    // Single upvalue
+                    const idx = State.upvalueIndex(1);
+                    args[0] = toValue(l, CT, idx) orelse
+                        l.state.typeError(idx, @typeName(CT));
                 }
                 break :blk 1; // Start stack args from index 1, skip upvalue parameter
             } else blk: {

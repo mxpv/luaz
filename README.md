@@ -138,6 +138,21 @@ pub fn main() !void {
     // Call Lua function from Zig
     const result2 = try lua.globals().call("multiply", .{6, 7}, i32);
     assert(result2 == 42);
+
+    // Closures with captured values
+    const table = lua.createTable(.{});
+    defer table.deinit();
+    
+    fn getGlobal(lua_ptr: *luaz.Lua, key: []const u8) !i32 {
+        return try lua_ptr.globals().get(key, i32) orelse 0;
+    }
+    const lua_ptr = @constCast(&lua);
+    try table.setClosure("getGlobal", .{lua_ptr}, getGlobal);
+    try lua.globals().set("funcs", table);
+    try lua.globals().set("myValue", @as(i32, 123));
+    
+    const result3 = try lua.eval("return funcs.getGlobal('myValue')", .{}, i32);
+    assert(result3 == 123);
 }
 ```
 
