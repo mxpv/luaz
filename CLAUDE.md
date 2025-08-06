@@ -160,6 +160,7 @@ Keep commit messages brief and to the point:
 - Don't add "Co-Authored-By: Claude noreply@anthropic.com" to commit messages or pull request descriptions
 - Keep commits focused and atomic - one logical change per commit
 - Ensure unit tests pass
+- Before committing: verify all documentation examples match the current API signatures and behavior
 
 ### Pull Request Guidelines
 Keep PR descriptions concise and focused:
@@ -167,3 +168,4 @@ Keep PR descriptions concise and focused:
 - Avoid verbose sections like "Changes Made", "Test Plan", or extensive bullet lists
 - Focus on what the change does and why, not exhaustive implementation details
 - Include code examples only when they help demonstrate usage or key functionality
+- Before creating PR: ensure all documentation examples are tested and work with the current API

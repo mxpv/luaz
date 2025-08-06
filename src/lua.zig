@@ -248,8 +248,41 @@ pub const Lua = struct {
         }
     };
 
-    /// table values with automatic type conversion. Must be explicitly released
-    /// using deinit() to avoid memory leaks.
+    /// High-level table wrapper providing type-safe access to Lua tables.
+    ///
+    /// Tables are Lua's primary data structure, serving as arrays, dictionaries, objects,
+    /// and namespaces. This wrapper provides idiomatic Zig access to Lua tables with
+    /// automatic type conversion and memory management.
+    ///
+    /// Key features:
+    /// - Type-safe get/set operations with automatic Zig <-> Lua type conversion
+    /// - Raw access methods that bypass Lua metamethods for performance
+    /// - Function calling support for tables containing functions
+    /// - Iteration support with automatic resource management
+    /// - Length operations following Lua semantics
+    ///
+    /// Memory management:
+    /// Tables hold a reference in the Lua registry and must be explicitly released
+    /// using `deinit()` to avoid memory leaks. The only exception is the globals
+    /// table from `lua.globals()`, which uses a pseudo-index and doesn't require
+    /// explicit cleanup (though calling `deinit()` on it is safe).
+    ///
+    /// Examples:
+    /// ```zig
+    /// const table = lua.createTable(.{ .rec = 10 });
+    /// defer table.deinit();
+    ///
+    /// // Set and get values with automatic type conversion
+    /// try table.set("name", "example");
+    /// const name = try table.get("name", []const u8);
+    ///
+    /// // Use raw access to bypass metamethods
+    /// try table.setRaw(1, 42);
+    /// const value = try table.getRaw(1, i32);
+    ///
+    /// // Call functions stored in tables
+    /// const result = try table.call("process", .{10, 20}, i32);
+    /// ```
     pub const Table = struct {
         ref: Ref,
 
@@ -341,7 +374,7 @@ pub const Lua = struct {
         /// try table.set("helper", helper);        // Store function in table
         ///
         /// // Nested tables
-        /// const inner = lua.createTable(0, 2);
+        /// const inner = lua.createTable(.{ .rec = 2 });
         /// defer inner.deinit();
         /// try inner.set("x", 5);
         /// try table.set("inner", inner);          // Store table in table
