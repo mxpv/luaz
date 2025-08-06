@@ -25,7 +25,8 @@ These tools make it easy to compile, analyze, and embed `Luau` scripts directly 
 - Bidirectional [function calls](#function-calls) between Zig and Lua
 - First-class [userdata support](#userdata-integration) including metamethods
 - Native support for refs, functions, tables, and vector types
-- [Fine-grained garbage collection control](#garbage-collection) for memory management
+- Full coroutine and thread support.
+- Garbage collection APIs.
 - Supports Luau code generation for improved performance on supported platforms
 - Built-in [Luau tools](#-using-luau-tools) (`luau-compile` and `luau-analyze`) provided by the build system
 - Excellent [test coverage](https://app.codecov.io/gh/mxpv/luaz) and API [documentation](https://mxpv.github.io/luaz/#luaz.lua)
@@ -220,7 +221,6 @@ pub fn main() !void {
 The following features are planned after the initial release:
 
 - Luau sandbox APIs - Safe execution environments for untrusted code
-- Coroutine / threads support - Full Luau coroutine and threading capabilities
 - Debug APIs - Debugging hooks and introspection tools
 - Optional JSON support - Built-in JSON serialization/deserialization
 
