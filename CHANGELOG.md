@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- Closure support with `Table.setClosure()` for Lua-style upvalues
+
 ## [0.2.0] - 2025-08-06
 
 ### Added
