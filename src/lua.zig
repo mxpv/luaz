@@ -634,14 +634,10 @@ pub const Lua = struct {
             return self.state().objLen(-1);
         }
 
-        /// Creates an iterator over table entries.
+        /// Creates an iterator for this table.
         ///
-        /// Advances table iteration by taking the current entry and returning the next one.
-        /// Automatically deallocates the passed entry's resources before returning.
-        ///
-        /// To start iteration, pass `null` as the entry parameter.
-        /// When iteration is complete, returns `null`. Note that the passed entry
-        /// is always deallocated, even when iteration ends.
+        /// The returned iterator automatically handles all resource management
+        /// for safe iteration over table entries.
         ///
         /// Examples:
         /// ```zig
@@ -651,59 +647,20 @@ pub const Lua = struct {
         /// try table.set("name", "Alice");
         /// try table.set(1, "first");
         ///
-        /// var current: ?Table.Entry = null;
-        /// while (try table.next(current)) |entry| {
-        ///     current = entry;
-        ///
-        ///     // Use helper methods to access values
+        /// var iterator = table.iterator();
+        /// while (try iterator.next()) |entry| {
         ///     if (entry.key.asString()) |s| {
         ///         std.debug.print("String key: {s}\n", .{s});
-        ///     } else if (entry.key.asNumber()) |n| {
-        ///         std.debug.print("Number key: {d}\n", .{n});
-        ///     }
-        ///
-        ///     if (entry.value.asString()) |s| {
-        ///         std.debug.print("String value: {s}\n", .{s});
-        ///     } else if (entry.value.asInt()) |i| {
-        ///         std.debug.print("Int value: {d}\n", .{i});
         ///     }
         /// }
         /// ```
         ///
-        /// Parameters:
-        /// - `current_entry`: The current entry from previous iteration, or `null` to start
-        ///
-        /// Returns: `?Entry` - The next key-value pair, or `null` if iteration is complete
-        /// Errors: `Error.OutOfMemory` if stack allocation fails
-        pub fn next(self: Table, current_entry: ?Entry) !?Entry {
-            defer if (current_entry) |entry| entry.deinit();
-
-            try self.ref.lua.checkStack(3);
-
-            // Push table onto stack
-            stack.push(self.ref.lua, self.ref);
-            defer self.state().pop(1);
-
-            // Push key for lua_next (nil if null)
-            if (current_entry) |entry| {
-                stack.push(self.ref.lua, entry.key);
-            } else {
-                self.state().pushNil();
-            }
-
-            // Call lua_next: pops key, pushes next key-value pair (or nothing if done)
-            if (self.state().next(-2)) {
-                // Stack now has: table, key, value
-
-                // Pop value and key
-                const value = stack.pop(self.ref.lua, Lua.Value).?;
-                const key = stack.pop(self.ref.lua, Lua.Value).?;
-
-                return Entry{ .key = key, .value = value };
-            } else {
-                // No more entries
-                return null;
-            }
+        /// Returns: `Iterator` - A new iterator instance ready for use
+        pub fn iterator(self: Table) Iterator {
+            return Iterator{
+                .table = self,
+                .current_entry = null,
+            };
         }
 
         /// Set the readonly state of this table.
@@ -788,17 +745,77 @@ pub const Lua = struct {
         }
 
         /// Entry representing a key-value pair from table iteration.
-        /// Must be explicitly cleaned up using `deinit()` or passed to the next
-        /// `next()` call for automatic deallocation.
+        /// Resources are automatically managed when using the `Iterator` type.
         pub const Entry = struct {
             key: Lua.Value,
             value: Lua.Value,
 
             /// Releases the resources held by this entry.
-            /// Note: This is automatically called when passing the entry to `next()`.
+            /// Note: This is automatically called by the Iterator.
             pub fn deinit(self: Entry) void {
                 self.key.deinit();
                 self.value.deinit();
+            }
+        };
+
+        /// Iterator for table entries.
+        ///
+        /// The iterator handles all entry cleanup automatically.
+        ///
+        /// Examples:
+        /// ```zig
+        /// const table = lua.createTable(.{});
+        /// defer table.deinit();
+        ///
+        /// try table.set("name", "Alice");
+        /// try table.set(1, "first");
+        ///
+        /// var iterator = table.iterator();
+        /// while (try iterator.next()) |entry| {
+        ///     if (entry.key.asString()) |s| {
+        ///         std.debug.print("String key: {s}\n", .{s});
+        ///     }
+        /// }
+        /// ```
+        pub const Iterator = struct {
+            table: Table,
+            current_entry: ?Entry,
+
+            /// Advances the iterator and returns the next entry, or null if done.
+            /// Automatically manages cleanup of previous entries.
+            ///
+            /// Returns: `?*const Entry` - Pointer to the next entry, or null if iteration complete
+            /// Errors: `Error.OutOfMemory` if stack allocation fails
+            pub fn next(self: *Iterator) !?*const Entry {
+                try self.table.ref.lua.checkStack(3);
+
+                // Push table onto stack
+                stack.push(self.table.ref.lua, self.table.ref);
+                defer self.table.state().pop(1);
+
+                // Push key for lua_next (nil if null)
+                if (self.current_entry) |entry| {
+                    stack.push(self.table.ref.lua, entry.key);
+                    entry.deinit();
+                } else {
+                    self.table.state().pushNil();
+                }
+
+                // Call lua_next: pops key, pushes next key-value pair (or nothing if done)
+                if (self.table.state().next(-2)) {
+                    // Stack now has: table, key, value
+
+                    // Pop value and key
+                    const value = stack.pop(self.table.ref.lua, Lua.Value).?;
+                    const key = stack.pop(self.table.ref.lua, Lua.Value).?;
+
+                    self.current_entry = Entry{ .key = key, .value = value };
+                    return &self.current_entry.?;
+                } else {
+                    // No more entries
+                    self.current_entry = null;
+                    return null;
+                }
             }
         };
     };

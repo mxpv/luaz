@@ -932,11 +932,9 @@ test "userdata with __index and __newindex metamethods" {
     try expectEq(lua.top(), 0);
 }
 
-test "table iterator" {
+test "table canonical iterator" {
     const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
-
-    lua.openLibs();
 
     const table = lua.createTable(.{});
     defer table.deinit();
@@ -947,16 +945,15 @@ test "table iterator" {
     try table.set(1, "first");
     try table.set(2, "second");
 
-    // Test iteration using next() method
+    // Test canonical Zig iterator pattern
     var count: i32 = 0;
     var found_name = false;
     var found_age = false;
     var found_first = false;
     var found_second = false;
 
-    var current: ?Lua.Table.Entry = null;
-    while (try table.next(current)) |entry| {
-        current = entry;
+    var iterator = table.iterator();
+    while (try iterator.next()) |entry| {
         count += 1;
 
         // Check what we found using helper methods
@@ -971,20 +968,20 @@ test "table iterator" {
             } else if (std.mem.eql(u8, s, "age")) {
                 found_age = true;
                 if (entry.value.asNumber()) |v| {
-                    try expectEq(v, 30.0);
+                    try expectEq(v, 30);
                 } else {
                     try expect(false);
                 }
             }
         } else if (entry.key.asNumber()) |n| {
-            if (n == 1.0) {
+            if (n == 1) {
                 found_first = true;
                 if (entry.value.asString()) |v| {
                     try expect(std.mem.eql(u8, v, "first"));
                 } else {
                     try expect(false);
                 }
-            } else if (n == 2.0) {
+            } else if (n == 2) {
                 found_second = true;
                 if (entry.value.asString()) |v| {
                     try expect(std.mem.eql(u8, v, "second"));
@@ -995,21 +992,19 @@ test "table iterator" {
         }
     }
 
-    // Verify we found all entries
     try expectEq(count, 4);
     try expect(found_name);
     try expect(found_age);
     try expect(found_first);
     try expect(found_second);
 
-    // Test iteration on empty table
+    // Test iterator with empty table
     const empty_table = lua.createTable(.{});
     defer empty_table.deinit();
 
+    var empty_iterator = empty_table.iterator();
     var empty_count: i32 = 0;
-    var empty_current: ?Lua.Table.Entry = null;
-    while (try empty_table.next(empty_current)) |entry| {
-        empty_current = entry;
+    while (try empty_iterator.next()) |_| {
         empty_count += 1;
     }
     try expectEq(empty_count, 0);
