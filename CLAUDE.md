@@ -8,9 +8,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 scripting language, focusing specifically on Luau's unique features and performance characteristics.
 
 The project consists of three main Zig modules:
-- **State** (`src/state.zig`): Low-level Lua state wrapper providing direct access to Lua VM operations
-- **Compiler** (`src/compile.zig`): Luau compiler interface for converting Lua source to bytecode
-- **Lua** (`src/lua.zig`): High-level idiomatic Zig API with automatic type conversions
+- State (`src/state.zig`): Low-level Lua state wrapper providing direct access to Lua VM operations
+- Compiler (`src/compile.zig`): Luau compiler interface for converting Lua source to bytecode
+- Lua (`src/lua.zig`): High-level idiomatic Zig API with automatic type conversions
 
 ## Build System
 
@@ -27,9 +27,9 @@ The build system is written in Zig and provides several targets:
 - `zig build luau-codegen` - Build Luau codegen library only
 
 ### Key Libraries Built
-- **luau_vm**: Core Luau virtual machine (from `luau/VM/src`)
-- **luau_codegen**: JIT code generation (from `luau/CodeGen/src`) 
-- **luau_compiler**: Luau compiler and AST (from `luau/Compiler/src` and `luau/Ast/src`)
+- luau_vm: Core Luau virtual machine (from `luau/VM/src`)
+- luau_codegen: JIT code generation (from `luau/CodeGen/src`) 
+- luau_compiler: Luau compiler and AST (from `luau/Compiler/src` and `luau/Ast/src`)
 
 The build system automatically discovers and compiles all `.cpp` and `.c` files in the respective Luau source
 directories.
@@ -59,13 +59,13 @@ The library provides seamless conversion between Zig and Lua types through its h
 - Generic Value type for runtime Lua value handling when types are unknown at compile time
 
 ### Table Operations
-The library provides comprehensive table operations through the `Table` type:
-- **Raw operations** (`setRaw`/`getRaw`) bypass metamethods like `__index` and `__newindex` for direct table access
-- **Non-raw operations** (`set`/`get`) invoke metamethods when present, providing full Lua semantics
-- **Function calling** (`call`) retrieves and calls functions stored in tables with automatic argument and return type handling
-- **Function compilation** (`compile`) compiles table functions to native code via JIT for better performance
-- **Table length** (`len`) returns table length following Lua semantics, including metamethod support
-- **Table iteration** (`next`) provides entry-by-entry iteration with automatic resource management
+The library provides table operations through the `Table` type:
+- Raw operations (`setRaw`/`getRaw`) bypass metamethods like `__index` and `__newindex` for direct table access
+- Non-raw operations (`set`/`get`) invoke metamethods when present, providing full Lua semantics
+- Function calling (`call`) retrieves and calls functions stored in tables with automatic argument and return type handling
+- Function compilation (`compile`) compiles table functions to native code via JIT for better performance
+- Table length (`len`) returns table length following Lua semantics, including metamethod support
+- Table iteration (`next`) provides entry-by-entry iteration with automatic resource management
 - Global access via `lua.globals()` returns a `Table` for interacting with the global environment
 - Tables are reference-counted and must be explicitly released with `deinit()` (except globals table)
 
@@ -108,28 +108,15 @@ Write idiomatic Zig code following the established patterns in the codebase:
 - Leverage Zig's comptime features for type safety and zero-cost abstractions
 - Follow Zig naming conventions (camelCase for functions, PascalCase for types)
 - Prefer explicit memory management over implicit allocation
-- **Do not write implementation comments** that explain why code was written a certain way or reference previous implementations
-- **Always run `zig fmt .` after making code changes** to ensure consistent formatting
+- Do not write implementation comments that explain why code was written a certain way or reference previous implementations
+- Always run `zig fmt .` after making code changes to ensure consistent formatting
 
 ### Testing
 Unit tests should be written against public APIs in `tests.zig`. New functionality must include
-corresponding unit tests. Tests use `&std.testing.allocator` for memory leak detection. Tests cover:
-- Type conversion edge cases
-- Function wrapping and calling
-- Global variable manipulation
-- Table operations (raw and non-raw)
-- Table function calling with various argument patterns
-- Table iteration and length operations
-- JIT code generation and function compilation
-- Compilation error handling
-- Reference and table management
-- Generic Value type operations
-- Custom allocator usage
-- UserData registration and method binding
+corresponding unit tests. Tests use `&std.testing.allocator` for memory leak detection.
 
-Write unit tests with good coverage, but no need to be comprehensive and try to cover every possible case.
-Keep unit tests reasonably short and understandable - focus on clear, concise tests that verify functionality
-without unnecessary complexity or verbosity.
+Keep unit tests minimal and focused. Tests must demonstrate that functionality works.
+Write clear, concise tests that verify the feature without unnecessary complexity.
 
 ### Documentation
 Keep documentation for public interfaces current but reasonably sized. The codebase uses Zig's built-in doc comments
@@ -140,9 +127,9 @@ Keep documentation for public interfaces current but reasonably sized. The codeb
 - Usage examples where helpful
 - Error conditions and handling
 
-Keep documentation concise and focused. Don't write "comprehensive" documentation - aim for reasonable size that covers the essentials without being verbose.
+Keep documentation concise and focused. Don't write extensive documentation - aim for reasonable size that covers the essentials without being verbose.
 
-**Documentation Formatting**: 
+Documentation Formatting:
 - Avoid empty lines in doc comments (lines with only `///`) as they will be skipped during documentation generation.
 
 ### Memory Management
