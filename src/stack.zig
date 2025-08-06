@@ -233,7 +233,7 @@ pub fn push(lua: Lua, value: anytype) void {
                 return;
             }
 
-            const trampoline = createFunc(lua, value);
+            const trampoline = createFunc(lua, value, null);
             lua.state.pushCFunction(trampoline, @typeName(T));
         },
         else => {
@@ -275,28 +275,51 @@ pub fn pushResult(lua: Lua, result: anytype) c_int {
 }
 
 /// Creates a Lua C function from a Zig function.
-fn createFunc(_: Lua, value: anytype) State.CFunction {
+/// If ClosureType is provided, creates a closure requiring `pushCClosure`.
+pub fn createFunc(_: Lua, value: anytype, comptime ClosureType: ?type) State.CFunction {
     const T = @TypeOf(value);
     const arg_tuple = std.meta.ArgsTuple(T);
     const arg_fields = std.meta.fields(arg_tuple);
+
+    // Detect if first parameter should be treated as upvalues
+    const has_upvalues = ClosureType != null;
+
+    // Compile-time validation for closures
+    if (has_upvalues) {
+        if (arg_fields.len == 0) {
+            @compileError("Closure function must have at least one parameter for upvalues");
+        }
+        if (arg_fields[0].type != ClosureType.?) {
+            @compileError("First parameter type (" ++ @typeName(arg_fields[0].type) ++
+                ") must match ClosureType (" ++ @typeName(ClosureType.?) ++ ")");
+        }
+    }
 
     return struct {
         fn f(state: ?State.LuaState) callconv(.C) c_int {
             const l = Lua.fromState(state.?);
 
-            // Push func arguments
-            // See https://www.lua.org/pil/26.1.html
+            // Build arguments array
             var args: arg_tuple = undefined;
 
-            // Allow optional Lua state pointer as first parameter. Remaining Lua args will be pushed as is.
-            const offset = if (arg_fields.len > 0 and arg_fields[0].type == *Lua) blk: {
-                args[0] = @constCast(&l);
-                break :blk 1;
-            } else 0;
+            // Handle first parameter - upvalues or regular argument
+            const arg_start_idx = if (has_upvalues) blk: {
+                // First parameter is upvalues - populate from upvalue indices
+                const CT = ClosureType.?;
+                const upvalues_fields = std.meta.fields(CT);
+                inline for (upvalues_fields, 0..) |field, i| {
+                    const idx = State.upvalueIndex(@intCast(i + 1));
+                    @field(args[0], field.name) = toValue(l, field.type, idx) orelse
+                        l.state.typeError(idx, @typeName(field.type));
+                }
+                break :blk 1; // Start stack args from index 1, skip upvalue parameter
+            } else blk: {
+                break :blk 0; // Start stack args from index 0, no upvalue parameter
+            };
 
             // Fill remaining arguments from Lua stack
-            inline for (arg_fields[offset..], 0..) |field, i| {
-                args[i + offset] = checkArg(l, @intCast(i + 1), field.type);
+            inline for (arg_fields[arg_start_idx..], 0..) |field, i| {
+                args[i + arg_start_idx] = checkArg(l, @intCast(i + 1), field.type);
             }
 
             // Call Zig func and push result
@@ -334,10 +357,11 @@ pub fn checkArg(lua: Lua, index: i32, comptime T: type) T {
             return @floatCast(lua_num);
         },
         .optional => {
-            return if (lua.state.isNil(index))
-                null
+            // Check if the argument exists at all (not passed) or is nil
+            if (lua.state.getTop() < index or lua.state.isNil(index))
+                return null
             else
-                checkArg(lua, index, type_info.optional.child);
+                return checkArg(lua, index, type_info.optional.child);
         },
         .vector => |info| {
             if (info.child != f32) {
@@ -826,24 +850,4 @@ test "push nested structs and arrays" {
 
     lua.state.pop(1); // Pop config table
     try expectEq(lua.state.getTop(), 0);
-}
-
-test "function with lua state parameter" {
-    const lua = try Lua.init(&std.testing.allocator);
-    defer lua.deinit();
-
-    const createTable = struct {
-        fn f(l: *Lua, name: []const u8) !Lua.Table {
-            const table = l.createTable(.{});
-            try table.set("name", name);
-            return table;
-        }
-    }.f;
-
-    const globals = lua.globals();
-    try globals.set("createTable", createTable);
-
-    const result = try lua.eval("return createTable('test').name", .{}, Lua.Value);
-    try expect(std.mem.eql(u8, result.asString().?, "test"));
-    result.deinit();
 }

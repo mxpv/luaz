@@ -474,7 +474,7 @@ pub const State = struct {
     }
 
     /// Push a C closure onto the stack
-    pub inline fn pushCClosureK(self: State, func: CFunction, debugname: ?[*:0]const u8, nup: c_int, cont: ?Continuation) void {
+    pub inline fn pushCClosureK(self: State, func: CFunction, debugname: ?[*:0]const u8, nup: c_int, cont: Continuation) void {
         c.lua_pushcclosurek(self.lua, func, debugname, nup, cont);
     }
 

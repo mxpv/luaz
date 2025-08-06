@@ -392,6 +392,63 @@ pub const Lua = struct {
             self.state().pop(1); // Pop table
         }
 
+        /// Sets a function in the table as a closure with upvalues.
+        ///
+        /// Similar to `set(key, func)` but allows creating Lua closures with captured values.
+        /// Upvalues are values that are captured and accessible to the function.
+        /// The function must accept the upvalues as its first parameter.
+        ///
+        /// WARNING: When using light user data pointers as upvalues, the user is responsible
+        /// for ensuring the pointer remains valid for the lifetime of the closure.
+        ///
+        /// Parameters:
+        /// - `key`: The table key where the closure will be stored
+        /// - `upvalues`: Values to be captured as upvalues (single value or tuple)
+        /// - `func`: A Zig function that accepts upvalues as its first parameter
+        ///
+        /// Example:
+        /// ```zig
+        /// fn scaledAdd(upvalues: struct { scale: f32, offset: f32 }, x: f32) f32 {
+        ///     return x * upvalues.scale + upvalues.offset;
+        /// }
+        /// try table.setClosure("transform", .{ 2.0, 10.0 }, scaledAdd);
+        /// ```
+        ///
+        /// Errors: `Error.OutOfMemory` if stack allocation fails
+        pub fn setClosure(self: Table, key: anytype, upvalues: anytype, func: anytype) !void {
+            const upvalues_info = @typeInfo(@TypeOf(upvalues));
+            const upvalue_count = if (upvalues_info == .@"struct" and upvalues_info.@"struct".is_tuple)
+                upvalues_info.@"struct".fields.len
+            else
+                1;
+
+            try self.ref.lua.checkStack(@intCast(3 + upvalue_count));
+
+            stack.push(self.ref.lua, self.ref); // Push table ref
+            stack.push(self.ref.lua, key); // Push key
+
+            // Push upvalues onto the stack
+            if (upvalues_info == .@"struct" and upvalues_info.@"struct".is_tuple) {
+                inline for (0..upvalues_info.@"struct".fields.len) |i| {
+                    stack.push(self.ref.lua, upvalues[i]);
+                }
+            } else {
+                stack.push(self.ref.lua, upvalues);
+            }
+
+            // Create the closure with upvalues
+            const FuncType = @TypeOf(func);
+            const arg_fields = std.meta.fields(std.meta.ArgsTuple(FuncType));
+            if (arg_fields.len == 0) {
+                @compileError("Closure function must have at least one parameter for upvalues");
+            }
+            const trampoline: State.CFunction = stack.createFunc(self.ref.lua, func, arg_fields[0].type);
+            self.state().pushCClosureK(trampoline, @typeName(@TypeOf(func)), @intCast(upvalue_count), null);
+
+            self.state().setTable(-3); // Set table[key] = closure and pop key and value
+            self.state().pop(1); // Pop table
+        }
+
         /// Gets a table element by key with full Lua semantics (invokes __index metamethod).
         ///
         /// Retrieves `table[key]` following Lua's complete access protocol.

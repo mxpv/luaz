@@ -1364,3 +1364,75 @@ test "table readonly" {
     _ = lua.eval("t.after = 'blocked'", .{}, void) catch {};
     try expect(try table.get("after", ?i32) == null);
 }
+
+fn closureAdd5(upv: struct { n: i32 }, x: i32) i32 {
+    return x + upv.n;
+}
+
+fn closureTransform(upv: struct { a: f32, b: f32 }, x: f32) f32 {
+    return x * upv.a + upv.b;
+}
+
+fn closureOptAdd(upv: struct { thresh: i32 }, x: i32, y: ?i32) i32 {
+    return if (x > upv.thresh) x + (y orelse 0) else x;
+}
+
+fn closureMultiply(upv: struct { cfg: Lua.Table }, x: i32) !i32 {
+    const m = try upv.cfg.get("mult", i32) orelse 1;
+    return x * m;
+}
+
+fn closureConstant(upv: struct { val: i32 }) i32 {
+    return upv.val;
+}
+
+fn closureSumAll(upv: struct { base: i32 }, a: ?i32, b: ?i32) i32 {
+    return upv.base + (a orelse 0) + (b orelse 0);
+}
+
+test "table setClosure" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    const table = lua.createTable(.{});
+    defer table.deinit();
+
+    // Single upvalue
+    try table.setClosure("add5", .{5}, closureAdd5);
+
+    // Multiple upvalues
+    try table.setClosure("transform", .{ 2.0, 10.0 }, closureTransform);
+
+    // Optional parameters
+    try table.setClosure("optAdd", .{10}, closureOptAdd);
+
+    // Table reference upvalue
+    const config = lua.createTable(.{});
+    defer config.deinit();
+    try config.set("mult", @as(i32, 3));
+    try table.setClosure("multiply", .{config}, closureMultiply);
+
+    // No additional parameters
+    try table.setClosure("const", .{42}, closureConstant);
+
+    // Multiple optionals
+    try table.setClosure("sum", .{100}, closureSumAll);
+
+    try lua.globals().set("f", table);
+    try lua.globals().set("config", config);
+
+    // Test all closure types
+    try expect(try lua.eval("return f.add5(10)", .{}, i32) == 15);
+    try expect(@abs(try lua.eval("return f.transform(5)", .{}, f32) - 20.0) < 0.001);
+    try expect(try lua.eval("return f.optAdd(15, 5)", .{}, i32) == 20);
+    try expect(try lua.eval("return f.optAdd(15)", .{}, i32) == 15);
+    try expect(try lua.eval("return f.optAdd(5, 10)", .{}, i32) == 5);
+    try expect(try lua.eval("return f.multiply(5)", .{}, i32) == 15);
+    try expect(try lua.eval("return f.const()", .{}, i32) == 42);
+    try expect(try lua.eval("return f.sum()", .{}, i32) == 100);
+    try expect(try lua.eval("return f.sum(1, 2)", .{}, i32) == 103);
+
+    // Test config modification
+    _ = try lua.eval("config.mult = 7", .{}, void);
+    try expect(try lua.eval("return f.multiply(5)", .{}, i32) == 35);
+}
