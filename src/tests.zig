@@ -1319,3 +1319,48 @@ test "resume from main thread should return error" {
     const result = try func.?.call(.{}, i32);
     try expectEq(result, 42);
 }
+
+// Sandbox-related tests
+
+test "sandbox" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+    lua.openLibs();
+
+    // Before sandbox: can modify built-in library
+    _ = try lua.eval("math.huge = 'hacked'", .{}, void);
+    const hacked_value = try lua.eval("return math.huge", .{}, Lua.Value);
+    defer hacked_value.deinit();
+    try expect(std.mem.eql(u8, hacked_value.asString().?, "hacked"));
+
+    // Apply sandbox
+    lua.sandbox();
+
+    // After sandbox: cannot modify built-in library (throws error)
+    const result = lua.eval("math.huge = 'blocked'", .{}, void);
+    try std.testing.expectError(Lua.Error.Runtime, result);
+
+    // Verify the original value is still there
+    const protected_value = try lua.eval("return math.huge", .{}, Lua.Value);
+    defer protected_value.deinit();
+    try expect(std.mem.eql(u8, protected_value.asString().?, "hacked")); // Still the old value
+}
+
+test "table readonly" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    const table = lua.createTable(.{});
+    defer table.deinit();
+
+    try table.set("key", "value");
+    try lua.globals().set("t", table);
+
+    _ = try lua.eval("t.before = 'works'", .{}, void);
+    try expect(try table.get("before", []const u8) != null);
+
+    try table.setReadonly(true);
+
+    _ = lua.eval("t.after = 'blocked'", .{}, void) catch {};
+    try expect(try table.get("after", ?i32) == null);
+}

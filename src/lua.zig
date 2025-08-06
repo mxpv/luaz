@@ -611,6 +611,87 @@ pub const Lua = struct {
             }
         }
 
+        /// Set the readonly state of this table.
+        ///
+        /// When a table is set to readonly, attempting to modify it will fail.
+        /// This is useful for protecting tables from accidental or malicious modification.
+        ///
+        /// Examples:
+        /// ```zig
+        /// const table = lua.createTable(.{});
+        /// defer table.deinit();
+        ///
+        /// try table.set("key", "value");
+        /// table.setReadonly(true); // Make table read-only
+        ///
+        /// // This would now fail:
+        /// // table.set("new_key", "new_value");
+        /// ```
+        ///
+        /// Errors: `Error.OutOfMemory` if stack allocation fails
+        pub fn setReadonly(self: Table, readonly: bool) !void {
+            try self.ref.lua.checkStack(1);
+
+            stack.push(self.ref.lua, self.ref); // Push table ref
+            defer self.state().pop(1); // Pop table
+
+            self.state().setReadonly(-1, readonly);
+        }
+
+        /// Check if this table is readonly.
+        ///
+        /// Returns `true` if the table is read-only, `false` if it can be modified.
+        ///
+        /// Examples:
+        /// ```zig
+        /// const table = lua.createTable(.{});
+        /// defer table.deinit();
+        ///
+        /// try expect(!try table.isReadonly()); // Initially writable
+        /// try table.setReadonly(true);
+        /// try expect(try table.isReadonly());  // Now readonly
+        /// ```
+        ///
+        /// Returns: `true` if table is readonly, `false` otherwise
+        /// Errors: `Error.OutOfMemory` if stack allocation fails
+        pub fn isReadonly(self: Table) !bool {
+            try self.ref.lua.checkStack(1);
+
+            stack.push(self.ref.lua, self.ref); // Push table ref
+            defer self.state().pop(1); // Pop table
+
+            return self.state().getReadonly(-1);
+        }
+
+        /// Set the safe environment flag for this table.
+        ///
+        /// Controls import optimization behavior in the Luau VM when this table is used as an environment:
+        ///
+        /// **When `safeenv = true` (default for sandboxed environments):**
+        /// - Enables fast-path import resolution for better performance
+        /// - VM can use optimized built-in function calls and iterator operations
+        /// - Assumes the environment is immutable and hasn't been monkey-patched
+        /// - Used by sandboxing system to mark secure, read-only environments
+        ///
+        /// **When `safeenv = false`:**
+        /// - Disables import optimization for more flexible global access
+        /// - VM uses slower but more defensive code paths
+        /// - Required when environment may be modified at runtime
+        /// - Automatically set by operations like `getfenv()`/`setfenv()`
+        ///
+        /// This is a VM-level performance optimization flag. Setting it incorrectly may cause
+        /// unexpected behavior if the environment safety assumptions don't match actual usage.
+        ///
+        /// Errors: `Error.OutOfMemory` if stack allocation fails
+        pub fn setSafeEnv(self: Table, safe: bool) !void {
+            try self.ref.lua.checkStack(1);
+
+            stack.push(self.ref.lua, self.ref); // Push table ref
+            defer self.state().pop(1); // Pop table
+
+            self.state().setSafeEnv(-1, safe);
+        }
+
         /// Entry representing a key-value pair from table iteration.
         /// Must be explicitly cleaned up using `deinit()` or passed to the next
         /// `next()` call for automatic deallocation.
@@ -1715,6 +1796,39 @@ pub const Lua = struct {
     /// Returns: GC control interface
     pub fn gc(self: Self) GC {
         return GC{ .lua = self };
+    }
+
+    /// Apply sandbox restrictions to create a secure execution environment.
+    ///
+    /// This method performs the following security hardening operations:
+    /// - Sets all standard library tables (math, string, table, etc.) to read-only
+    /// - Sets builtin metatables (string, number) to read-only to prevent metamethod hijacking
+    /// - Makes the global environment table read-only to prevent modification
+    /// - Activates safe environment mode to isolate global access
+    /// - For threads: Creates an isolated global environment that proxies reads to main globals
+    ///
+    /// This method calls the appropriate Luau sandbox API based on whether this is
+    /// the main Lua state or a thread:
+    /// - For main state: Calls `luaL_sandbox()` to set all libraries to read-only
+    ///   and enable safe environment mode
+    /// - For threads: Calls `luaL_sandboxthread()` to create an isolated global
+    ///   environment that proxies reads to the main globals
+    ///
+    /// The sandbox system provides protection against:
+    /// - Monkey-patching of built-in functions and libraries
+    /// - Global environment pollution between scripts
+    /// - Access to dangerous functionality through metatable manipulation
+    ///
+    /// Note: For the main state, this should be called after `openLibs()` but
+    /// before creating threads. For threads, call this before executing any code.
+    pub fn sandbox(self: Self) void {
+        if (self.isThread()) {
+            // This is a thread - create sandboxed global environment
+            self.state.sandboxThread();
+        } else {
+            // This is the main state - protect built-in libraries
+            self.state.sandbox();
+        }
     }
 };
 
