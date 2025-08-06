@@ -861,6 +861,10 @@ pub const Lua = struct {
         /// Pushes the function onto the stack, followed by the arguments, then calls the function
         /// and returns the result converted to the specified type.
         ///
+        /// NOTE: When called on a function in a thread (created with
+        /// `createThread()`), this method automatically uses resume semantics, allowing the
+        /// function to yield. In the main state, it uses regular call semantics.
+        ///
         /// Examples:
         /// ```zig
         /// // Call a function with no arguments
@@ -871,6 +875,15 @@ pub const Lua = struct {
         ///
         /// // Call a function returning multiple values
         /// const result = try func.call(.{}, struct { f64, f64 });
+        ///
+        /// // Coroutine example - function can yield
+        /// const thread = lua.createThread();
+        /// const func = try thread.globals().get("coroutine_func", Function).?;
+        /// defer func.deinit();
+        ///
+        /// const result1 = try func.call(.{}, i32);     // Start coroutine, may yield
+        /// const result2 = try func.call(.{5}, i32);    // Continue coroutine with arg 5
+        /// const result3 = try func.call(.{}, i32);     // Final result
         /// ```
         ///
         /// Errors: `Error.OutOfMemory` if stack allocation fails, `Error.Runtime` if function execution fails
@@ -879,7 +892,9 @@ pub const Lua = struct {
 
             stack.push(self.ref.lua, self.ref); // Push function ref
 
-            const result = self.ref.lua.call(args, R, false);
+            // Use resume semantics if in a thread, call semantics if in main state
+            const result = self.ref.lua.call(args, R, self.ref.lua.isThread());
+
             return switch (result.status) {
                 .ok, .yield => result.result.?,
                 .errmem => error.OutOfMemory,
@@ -1000,43 +1015,6 @@ pub const Lua = struct {
             .errmem => error.OutOfMemory,
             else => error.Runtime,
         };
-    }
-
-    /// Resume a coroutine with the given arguments and return type.
-    ///
-    /// This method resumes execution of a suspended coroutine (thread) that was previously
-    /// yielded. It's designed to work with threads created by createThread().
-    ///
-    /// **Important**: This method should only be called on thread objects created with
-    /// `createThread()`. Calling `resume_()` on the main Lua state will return an error
-    /// status (`.errrun`) with a null result, as the main thread cannot be resumed.
-    ///
-    /// Parameters:
-    /// - `args`: Arguments to pass to the resumed coroutine (can be tuple, single value, or void)
-    /// - `R`: Compile-time return type expected from the coroutine
-    ///
-    /// Returns:
-    /// A struct containing both the execution status and the result:
-    /// - `.status`: The execution status (.ok, .yield, .errrun, etc.)
-    /// - `.result`: The value returned/yielded by the coroutine (null for errors)
-    ///
-    /// Example:
-    /// ```zig
-    /// const thread_lua = lua.createThread();
-    /// _ = try thread_lua.eval("function coro() coroutine.yield(42); return 100 end; return coro()", .{}, void);
-    ///
-    /// const result1 = thread_lua.resume_(.{}, i32);  // Yields 42
-    /// if (result1.result) |value| std.debug.print("Yielded: {}\n", .{value}); // Prints: Yielded: 42
-    ///
-    /// const result2 = thread_lua.resume_(.{}, i32);  // Returns 100
-    /// if (result2.result) |value| std.debug.print("Returned: {}\n", .{value}); // Prints: Returned: 100
-    ///
-    /// // Error case - trying to resume main thread:
-    /// const main_result = lua.resume_(.{}, void);  // lua is main thread
-    /// if (main_result.status == .errrun) std.debug.print("Cannot resume main thread\n", .{});
-    /// ```
-    pub fn resume_(self: Self, args: anytype, comptime R: type) CallResult(R) {
-        return self.call(args, R, true);
     }
 
     /// Get the current status of this coroutine thread.
@@ -1174,7 +1152,7 @@ pub const Lua = struct {
     }
 
     /// Calls (or resumes) a Lua function with the provided arguments and returns the result.
-    fn call(self: Self, args: anytype, comptime R: type, comptime is_resume: bool) CallResult(R) {
+    fn call(self: Self, args: anytype, comptime R: type, is_resume: bool) CallResult(R) {
         // Count and push args - unified logic for both call types
         const arg_count = blk: {
             const args_type_info = @typeInfo(@TypeOf(args));

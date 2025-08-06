@@ -13,6 +13,7 @@
 //! - Push and retrieve arrays
 //! - Work with tuples and table-based structures
 //! - Control garbage collection for memory management
+//! - Work with coroutines and threads
 
 const std = @import("std");
 const luaz = @import("luaz");
@@ -571,6 +572,43 @@ pub fn main() !void {
             \\    print("Caught runtime error: " .. result)
             \\end
         , .{}, void);
+    }
+
+    // Coroutines and threads
+    {
+        print("\n-- Coroutines and Threads --\n", .{});
+
+        // Create a coroutine function in global scope
+        _ = try lua.eval(
+            \\function accumulator()
+            \\    local sum = 0
+            \\    while true do
+            \\        local value = coroutine.yield(sum)
+            \\        if value == nil then break end
+            \\        sum = sum + value
+            \\    end
+            \\    return sum
+            \\end
+        , .{}, void);
+
+        const thread = lua.createThread();
+        const func = try thread.globals().get("accumulator", luaz.Lua.Function);
+        defer func.?.deinit();
+
+        // Start the coroutine - yields initial sum (0)
+        const result1 = try func.?.call(.{}, i32);
+        print("Start: sum={}\n", .{result1});
+
+        // Continue with values to accumulate
+        const result2 = try func.?.call(.{10}, i32);
+        print("Add 10: sum={}\n", .{result2});
+
+        const result3 = try func.?.call(.{25}, i32);
+        print("Add 25: sum={}\n", .{result3});
+
+        // Send nil to finish
+        const final_result = try func.?.call(.{@as(?i32, null)}, i32);
+        print("Final: sum={}\n", .{final_result});
     }
 
     print("\n=== Tour Complete! ===\n", .{});
