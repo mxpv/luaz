@@ -22,7 +22,9 @@ These tools make it easy to compile, analyze, and embed `Luau` scripts directly 
 ## ✨ Features
 
 - Minimal yet flexible zero-cost [API](#basic-usage)
-- Bidirectional [function calls](#function-calls) between Zig and Lua with closures support
+- Bidirectional [function calls](#function-calls) between Zig and Lua
+  - Closures support with upvalue capture
+  - Variadic arguments support
 - First-class [userdata support](#userdata-integration) including metamethods
 - Support for reference types, functions, tables, and vector types
 - Full coroutine and thread support
