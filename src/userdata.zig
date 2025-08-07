@@ -7,7 +7,7 @@ const stack = @import("stack.zig");
 const Lua = @import("lua.zig").Lua;
 
 /// Supported metamethods
-const MetaMethod = enum {
+pub const MetaMethod = enum {
     len, // __len
     tostring, // __tostring
     add, // __add
@@ -73,7 +73,7 @@ fn isSelf(comptime T: type, comptime param_type: type) bool {
 }
 
 /// Detects if a method is a metamethod, validates its signature, and returns its type
-fn isMetaMethod(comptime method_name: []const u8, comptime method: anytype) ?MetaMethod {
+pub fn isMetaMethod(comptime method_name: []const u8, comptime method: anytype) ?MetaMethod {
     const meta_method = comptime MetaMethod.fromStr(method_name);
     if (meta_method == null) return null;
     const method_info = @typeInfo(@TypeOf(method));
@@ -285,7 +285,7 @@ fn pushResult(comptime T: type, lua: Lua, result: anytype, comptime type_name: [
 /// calling convention and Zig's typed function calls. Supports init functions (constructors),
 /// instance methods, and static functions. If the struct has a deinit method, userdata
 /// created by init functions will automatically call deinit when garbage collected.
-fn createUserDataFunc(comptime T: type, comptime method_name: []const u8, method: anytype, comptime type_name: [:0]const u8) State.CFunction {
+pub fn createUserDataFunc(comptime T: type, comptime method_name: []const u8, method: anytype, comptime type_name: [:0]const u8) State.CFunction {
     const MethodType = @TypeOf(method);
     const method_info = @typeInfo(MethodType);
     const function_type = comptime getFunctionType(T, method_name, method);
@@ -356,13 +356,10 @@ fn createUserDataFunc(comptime T: type, comptime method_name: []const u8, method
     }.f;
 }
 
-/// Creates and registers a complete metatable for userdata type T.
+/// Creates a metatable for userdata type T and leaves it on the stack.
 ///
-/// This is the main public API for userdata registration. It creates the metatable,
-/// registers all methods (init, instance, static), and registers metamethods.
-///
-/// The type_name will be used for Lua userdata type checking and must be
-/// a compile-time string literal ending with null terminator.
+/// The caller must handle the metatable on the stack (store in registry, set as global, or pop).
+/// The type_name must be a compile-time null-terminated string for userdata type checking.
 pub fn createMetaTable(comptime T: type, lua_state: *State, comptime type_name: [:0]const u8) void {
     const struct_info = @typeInfo(T).@"struct";
 
@@ -381,10 +378,8 @@ pub fn createMetaTable(comptime T: type, lua_state: *State, comptime type_name: 
         }
     }
 
-    // Create the metatable for this userdata type
-    if (!lua_state.newMetatable(type_name)) {
-        @panic("Type " ++ @typeName(T) ++ " is already registered");
-    }
+    // Create a new table for the metatable (doesn't register in Lua's internal registry)
+    lua_state.createTable(0, 0);
 
     // Set __index to self for method lookup (when no user __index is defined)
     if (!comptime has_user_index) {
@@ -427,7 +422,4 @@ pub fn createMetaTable(comptime T: type, lua_state: *State, comptime type_name: 
             }
         }
     }
-
-    // Store the metatable in the registry for later use
-    lua_state.setField(State.REGISTRYINDEX, type_name);
 }

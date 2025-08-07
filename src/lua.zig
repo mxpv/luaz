@@ -744,6 +744,83 @@ pub const Lua = struct {
             self.state().setSafeEnv(-1, safe);
         }
 
+        /// Set the metatable for this table.
+        ///
+        /// Associates a metatable with this table, enabling custom behavior through metamethods.
+        /// The metatable can define special functions like `__index`, `__newindex`, `__len`, etc.
+        /// that will be called when performing operations on the table.
+        ///
+        /// Examples:
+        /// ```zig
+        /// const table = lua.createTable(.{});
+        /// defer table.deinit();
+        ///
+        /// const metatable = lua.createTable(.{});
+        /// defer metatable.deinit();
+        ///
+        /// // Add metamethods to the metatable
+        /// try metatable.set("__index", custom_index_func);
+        /// try metatable.set("__len", custom_len_func);
+        ///
+        /// // Apply metatable to table
+        /// try table.setMetaTable(metatable);
+        /// ```
+        ///
+        /// Errors: `Error.OutOfMemory` if stack allocation fails
+        pub fn setMetaTable(self: Table, metatable: Table) !void {
+            try self.ref.lua.checkStack(2);
+
+            stack.push(self.ref.lua, self.ref); // Push table ref
+            stack.push(self.ref.lua, metatable.ref); // Push metatable ref
+
+            _ = self.state().setMetatable(-2); // Set metatable and pop it
+            self.state().pop(1); // Pop table
+        }
+
+        /// Get the metatable for this table.
+        ///
+        /// Retrieves the metatable associated with this table, if any. Returns `null`
+        /// if the table has no metatable. The returned metatable can be inspected
+        /// or modified to change the table's behavior.
+        ///
+        /// Examples:
+        /// ```zig
+        /// const table = lua.createTable(.{});
+        /// defer table.deinit();
+        ///
+        /// // Initially no metatable
+        /// const maybe_metatable = try table.getMetaTable();
+        /// try expect(maybe_metatable == null);
+        ///
+        /// // After setting a metatable
+        /// const metatable = lua.createTable(.{});
+        /// defer metatable.deinit();
+        /// try table.setMetaTable(metatable);
+        ///
+        /// const retrieved_metatable = try table.getMetaTable();
+        /// defer if (retrieved_metatable) |mt| mt.deinit();
+        /// try expect(retrieved_metatable != null);
+        /// ```
+        ///
+        /// Returns: `?Table` - The metatable if present, `null` if no metatable
+        /// Errors: `Error.OutOfMemory` if stack allocation fails
+        pub fn getMetaTable(self: Table) !?Table {
+            try self.ref.lua.checkStack(1);
+
+            stack.push(self.ref.lua, self.ref); // Push table ref
+            defer self.state().pop(1); // Pop table
+
+            if (self.state().getMetatable(-1)) {
+                // Metatable is now on top of the stack, create a reference to it
+                const metatable_ref = Ref.init(self.ref.lua, -1);
+                self.state().pop(1); // Remove metatable from stack
+                return Table{ .ref = metatable_ref };
+            } else {
+                // No metatable
+                return null;
+            }
+        }
+
         /// Entry representing a key-value pair from table iteration.
         /// Resources are automatically managed when using the `Iterator` type.
         pub const Entry = struct {
@@ -1498,74 +1575,45 @@ pub const Lua = struct {
         return self.exec(blob, T);
     }
 
-    /// Register a user-defined type to be used from Lua.
+    /// Creates a metatable for a struct type without registering it globally.
     ///
-    /// Takes a Zig struct type and creates Lua bindings for all its methods.
-    /// Each public method becomes callable from Lua with automatic type conversion.
-    /// The struct must have public methods that follow Lua calling conventions.
+    /// Provides flexibility to modify the metatable before use. For simple registration
+    /// with global access, use `registerUserData` instead.
     ///
-    /// Creates a metatable for the type and registers all methods as Lua functions.
-    /// Methods are wrapped using the same `createFunc` mechanism as regular Zig functions.
+    /// Returns: `Table` - A wrapper around the newly created metatable
+    /// Errors: `Error.OutOfMemory` if memory allocation fails
+    pub fn createMetaTable(self: Self, comptime T: type) !Table {
+        const type_info = @typeInfo(T);
+        if (type_info != .@"struct") {
+            @compileError("createMetaTable can only be used with struct types, got " ++ @typeName(T));
+        }
+
+        const type_name: [:0]const u8 = @typeName(T);
+
+        try self.checkStack(1);
+
+        // Create the metatable (leaves it on stack)
+        userdata.createMetaTable(T, @constCast(&self.state), type_name);
+
+        // Create a reference to the metatable on the stack
+        const metatable_ref = Ref.init(self, -1);
+        self.state.pop(1); // Remove metatable from stack
+
+        return Table{ .ref = metatable_ref };
+    }
+
+    /// Register a struct type for global access from Lua.
     ///
-    /// Examples:
-    /// ```zig
-    /// const Person = struct {
-    ///     name: []const u8,
-    ///     age: i32,
+    /// Creates method bindings and registers the type globally so static methods
+    /// are accessible as `TypeName.method()`. Use `createMetaTable` if you need
+    /// to modify the metatable before registration.
     ///
-    ///     pub fn getName(self: Person) []const u8 {
-    ///         return self.name;
-    ///     }
+    /// Requirements:
+    /// - Must be a struct type with public methods
+    /// - Functions starting with `__` are treated as metamethods (see userdata module)
+    /// - Each type can only be registered once per Lua state
     ///
-    ///     pub fn getAge(self: Person) i32 {
-    ///         return self.age;
-    ///     }
-    ///
-    ///     pub fn setAge(self: *Person, new_age: i32) void {
-    ///         self.age = new_age;
-    ///     }
-    ///
-    ///     // Metamethod examples
-    ///     pub fn __len(self: Person) i32 {
-    ///         return self.age;  // #person returns age
-    ///     }
-    ///
-    ///     pub fn __tostring(self: Person) []const u8 {
-    ///         return self.name;  // tostring(person) returns name
-    ///     }
-    /// };
-    ///
-    /// lua.registerUserData(Person);
-    /// ```
-    ///
-    /// The registered type can then be used from Lua:
-    /// ```lua
-    /// -- After creating a Person instance in Zig and pushing it to Lua
-    /// print(person:getName())  -- Calls Person.getName
-    /// print(person:getAge())   -- Calls Person.getAge
-    /// person:setAge(30)        -- Calls Person.setAge
-    /// print(#person)           -- Calls Person.__len, prints 30
-    /// print(tostring(person))  -- Calls Person.__tostring, prints name
-    /// ```
-    ///
-    /// Type requirements:
-    /// - Must be a struct type
-    /// - Must have at least one public method (excluding deinit)
-    /// - Methods must be public (pub)
-    /// - Methods should follow Lua calling conventions for arguments and return values
-    ///
-    /// Metamethod support:
-    /// - Functions starting with `__` are treated as Lua metamethods
-    /// - Currently supported metamethods:
-    ///   - `__len(self) -> number` - called when using `#obj` in Lua
-    ///   - `__tostring(self) -> []const u8` - called by `tostring(obj)` in Lua
-    /// - Metamethods must conform to specific signatures or will cause compile-time errors
-    /// - Unknown metamethods (those starting with `__` but not supported) cause compile-time errors
-    ///
-    /// NOTE: Each type can only be registered once per Lua state. Attempting to register
-    /// the same type twice will panic with a clear error message.
-    ///
-    /// Errors: `Error.OutOfMemory` if memory allocation fails during registration
+    /// Errors: `Error.OutOfMemory` if memory allocation fails
     pub fn registerUserData(self: Self, comptime T: type) !void {
         const type_info = @typeInfo(T);
         if (type_info != .@"struct") {
@@ -1574,8 +1622,20 @@ pub const Lua = struct {
 
         const type_name: [:0]const u8 = @typeName(T);
 
-        // Use the userdata module's createMetaTable function to handle all registration
+        try self.checkStack(1);
+
+        // Check if type is already registered
+        if (self.state.getField(State.REGISTRYINDEX, type_name) != State.Type.nil) {
+            @panic("Type " ++ @typeName(T) ++ " is already registered");
+        }
+        self.state.pop(1); // Pop nil
+
+        // Create the metatable (leaves it on stack)
         userdata.createMetaTable(T, @constCast(&self.state), type_name);
+
+        // Store the metatable in the registry for userdata type checking
+        self.state.pushValue(-1); // Duplicate metatable on stack
+        self.state.setField(State.REGISTRYINDEX, type_name); // Store copy in registry
 
         // Extract just the type name without module prefix for global registration
         // Example: "myapp.data.User" -> "User", "TestUserData" -> "TestUserData"
@@ -1585,9 +1645,8 @@ pub const Lua = struct {
         else
             full_type_name;
 
-        // Get the metatable from registry and register it globally so static methods
-        // are accessible as TypeName.method()
-        _ = self.state.getField(State.REGISTRYINDEX, type_name);
+        // Register it globally so static methods are accessible as TypeName.method()
+        // Metatable is still on stack, set it as global directly
         self.state.setGlobal(type_name_only);
     }
 

@@ -425,8 +425,8 @@ test "userdata with destructor support" {
         try lua.registerUserData(TestUserDataWithDeinit);
 
         // Create objects that should trigger destructors when Lua state is destroyed
-        try lua.eval("local obj1 = TestUserDataWithDeinit.new(10, 'obj1')", .{}, void);
-        try lua.eval("local obj2 = TestUserDataWithDeinit.new(20, 'obj2')", .{}, void);
+        try lua.eval("local obj1 = TestUserDataWithDeinit.new()", .{}, void);
+        try lua.eval("local obj2 = TestUserDataWithDeinit.new()", .{}, void);
 
         try expectEq(lua.top(), 0);
     } // Lua state destroyed here, destructors should be called
@@ -1481,4 +1481,46 @@ test "setClosure with pointer receiver" {
     try expect(try lua.eval("return counter.increment(3)", .{}, i32) == 18);
     try expect(try lua.eval("return counter.increment(2)", .{}, i32) == 20);
     try expect(try lua.eval("return counter.getValue()", .{}, i32) == 20);
+}
+
+test "metatable with closure function and table attachment" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    lua.state.openLibs(); // Need standard libraries
+
+    // Step 1: Create empty metatable (not from struct type)
+    const metatable = lua.createTable(.{});
+    defer metatable.deinit();
+
+    // Step 2: Set function with upvalue (i32 = 4) and one parameter
+    // The function returns sum of upvalue + passed parameter
+    const AddFunc = struct {
+        fn add(upvalue: i32, param: i32) i32 {
+            return upvalue + param;
+        }
+    };
+
+    try metatable.setClosure("compute", .{4}, AddFunc.add);
+
+    // Set __index to metatable itself for method lookup
+    try metatable.set("__index", metatable);
+
+    // Step 3: Create empty table
+    const empty_table = lua.createTable(.{});
+    defer empty_table.deinit();
+
+    // Step 4: Attach metatable to empty table
+    try empty_table.setMetaTable(metatable);
+
+    // Step 5: Set this table as global
+    try lua.globals().set("myTable", empty_table);
+
+    // Step 6: Run lua script to call static function with param = 6 from empty table
+    const result = try lua.eval("return myTable.compute(6)", .{}, i32);
+
+    // Step 7: Verify returned result = 10 (4 + 6)
+    try expectEq(result, 10);
+
+    try expectEq(lua.top(), 0);
 }
