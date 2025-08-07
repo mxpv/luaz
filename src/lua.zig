@@ -1577,6 +1577,16 @@ pub const Lua = struct {
 
     /// Creates a metatable for a struct type without registering it globally.
     ///
+    /// Iterates over all public and meta functions in the struct to create bindings.
+    /// Functions with comptime parameters are not supported and will throw compile time errors.
+    ///
+    /// The `init` function will be renamed to `new` and treated as a userdata constructor.
+    /// If the struct has a `deinit` function, it will be registered with Luau's newUserdataDtor
+    /// (see `createUserDataInstance` for implementation specifics).
+    ///
+    /// Instance methods are supported, but the first parameter must be a userdata pointer.
+    /// Metamethods (functions starting with `__`) are also supported.
+    ///
     /// Provides flexibility to modify the metatable before use. For simple registration
     /// with global access, use `registerUserData` instead.
     ///
