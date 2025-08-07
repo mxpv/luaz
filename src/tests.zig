@@ -1389,6 +1389,19 @@ fn closureSingle(increment: i32, x: i32) i32 {
     return x + increment;
 }
 
+const ClosureCounter = struct {
+    count: i32,
+
+    fn increment(self: *@This(), amount: i32) i32 {
+        self.count += amount;
+        return self.count;
+    }
+
+    fn getValue(self: *const @This()) i32 {
+        return self.count;
+    }
+};
+
 test "table setClosure" {
     const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
@@ -1438,4 +1451,34 @@ test "table setClosure" {
     // Test config modification
     _ = try lua.eval("config.mult = 7", .{}, void);
     try expect(try lua.eval("return f.multiply(5)", .{}, i32) == 35);
+}
+
+test "setClosure with pointer receiver" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    const table = lua.createTable(.{});
+    defer table.deinit();
+
+    // Create a counter instance
+    var counter = ClosureCounter{ .count = 10 };
+
+    // Register methods with *Self receivers as closures (direct pointer)
+    // Note: User is responsible for ensuring the pointer remains valid for the lifetime of the closure
+    try table.setClosure("increment", &counter, ClosureCounter.increment);
+    try table.setClosure("getValue", &counter, ClosureCounter.getValue);
+
+    try lua.globals().set("counter", table);
+
+    // Test initial value
+    try expect(try lua.eval("return counter.getValue()", .{}, i32) == 10);
+
+    // Test increment with mutable *Self
+    try expect(try lua.eval("return counter.increment(5)", .{}, i32) == 15);
+    try expect(try lua.eval("return counter.getValue()", .{}, i32) == 15);
+
+    // Test multiple increments
+    try expect(try lua.eval("return counter.increment(3)", .{}, i32) == 18);
+    try expect(try lua.eval("return counter.increment(2)", .{}, i32) == 20);
+    try expect(try lua.eval("return counter.getValue()", .{}, i32) == 20);
 }
