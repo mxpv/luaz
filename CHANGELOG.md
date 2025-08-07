@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Variadic arguments support with `Varargs` iterator for functions accepting variable number of arguments
+  - `Varargs.raiseError()` method for throwing descriptive type validation errors
 - Closure support with `Table.setClosure()` for Lua-style upvalues
 - Canonical Zig iterator pattern for table iteration with `Table.iterator()`
 - Metatable management APIs:
