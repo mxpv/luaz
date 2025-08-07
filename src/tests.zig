@@ -1524,3 +1524,118 @@ test "metatable with closure function and table attachment" {
 
     try expectEq(lua.top(), 0);
 }
+
+test "varargs basic functionality" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    const TestFuncs = struct {
+        fn countArgs(args: Lua.Varargs) i32 {
+            return @intCast(args.len());
+        }
+    };
+
+    const globals = lua.globals();
+    try globals.set("countArgs", TestFuncs.countArgs);
+
+    // Test count
+    const count_result = try lua.eval("return countArgs(1, 2, 3, 4)", .{}, i32);
+    try expectEq(count_result, 4);
+
+    try expectEq(lua.top(), 0);
+}
+
+test "varargs at method only" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    const TestFuncs = struct {
+        fn getAt(args: Lua.Varargs) f64 {
+            return args.at(f64, 1) orelse 0;
+        }
+    };
+
+    const globals = lua.globals();
+    try globals.set("getAt", TestFuncs.getAt);
+
+    // Test at() method only
+    const at_result = try lua.eval("return getAt(1, 42.5, 3)", .{}, f64);
+    try expectEq(at_result, 42.5);
+
+    try expectEq(lua.top(), 0);
+}
+
+test "varargs next method only" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    const TestFuncs = struct {
+        fn getFirst(args: Lua.Varargs) f64 {
+            var iter = args;
+            return iter.next(f64) orelse 0;
+        }
+    };
+
+    const globals = lua.globals();
+    try globals.set("getFirst", TestFuncs.getFirst);
+
+    // Test next() method only
+    const result = try lua.eval("return getFirst(42.5, 2, 3)", .{}, f64);
+    try expectEq(result, 42.5);
+
+    try expectEq(lua.top(), 0);
+}
+
+test "varargs iterator reset" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    const TestFuncs = struct {
+        fn doubleIterate(args: Lua.Varargs) i32 {
+            var mutable_args = args;
+            var first_sum: i32 = 0;
+            var second_sum: i32 = 0;
+
+            // First iteration
+            while (mutable_args.next(i32)) |value| {
+                first_sum += value;
+            }
+
+            // Reset and iterate again
+            mutable_args.reset();
+            while (mutable_args.next(i32)) |value| {
+                second_sum += value;
+            }
+
+            return first_sum + second_sum;
+        }
+    };
+
+    const globals = lua.globals();
+    try globals.set("doubleIterate", TestFuncs.doubleIterate);
+
+    // Test reset functionality - should sum twice
+    const result = try lua.eval("return doubleIterate(5, 10, 15)", .{}, i32);
+    try expectEq(result, 60); // (5+10+15) * 2 = 60
+    try expectEq(lua.top(), 0);
+}
+
+test "varargs error handling" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    const TestFuncs = struct {
+        fn typeCheck(args: Lua.Varargs) void {
+            var iter = args;
+            _ = iter.next([]const u8) orelse {
+                iter.raiseError("expected string");
+            };
+        }
+    };
+
+    const globals = lua.globals();
+    try globals.set("typeCheck", TestFuncs.typeCheck);
+
+    try expect(lua.eval("typeCheck({})", .{}, void) == error.Runtime);
+    try expectEq(lua.top(), 0);
+}

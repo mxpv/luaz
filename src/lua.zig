@@ -992,6 +992,83 @@ pub const Lua = struct {
         }
     };
 
+    /// Variadic arguments iterator for functions accepting variable number of arguments from Lua.
+    ///
+    /// This type enables Zig functions to accept any number of arguments from Lua
+    /// without allocating memory. It provides an iterator interface to access remaining
+    /// stack arguments. Varargs must always be the last parameter in a function signature.
+    ///
+    /// Example:
+    /// ```zig
+    /// fn sum(initial: f64, args: Varargs) f64 {
+    ///     var total = initial;
+    ///     var iter = args;
+    ///     while (iter.next(f64)) |n| {
+    ///         total += n;
+    ///     }
+    ///     return total;
+    /// }
+    /// ```
+    ///
+    /// The iterator does not allocate memory and directly accesses values from the Lua stack.
+    pub const Varargs = struct {
+        lua: Lua,
+        base: i32,
+        index: i32,
+        count: i32,
+
+        /// Marker field to distinguish from regular types
+        pub const is_varargs = true;
+
+        /// Get the number of variadic arguments
+        pub fn len(self: Varargs) usize {
+            return @intCast(self.count);
+        }
+
+        /// Check if any variadic arguments were provided
+        pub fn isEmpty(self: Varargs) bool {
+            return self.count == 0;
+        }
+
+        /// Get the next value from varargs, returns null when done
+        pub fn next(self: *Varargs, comptime T: type) ?T {
+            const offset = self.index - self.base;
+            if (offset >= self.count) return null;
+
+            const result = self.at(T, @intCast(offset));
+            self.index += 1;
+            return result;
+        }
+
+        /// Get value at specific index (0-based)
+        pub fn at(self: Varargs, comptime T: type, index: usize) ?T {
+            if (index >= self.len()) return null;
+
+            const stack_index = self.base + @as(i32, @intCast(index));
+
+            return stack.checkArg(self.lua, stack_index, T);
+        }
+
+        /// Get the Lua type of value at specific index (0-based)
+        pub fn typeAt(self: Varargs, index: usize) ?State.Type {
+            if (index >= self.len()) return null;
+
+            const stack_index = self.base + @as(i32, @intCast(index));
+            return self.lua.state.getType(stack_index);
+        }
+
+        /// Reset iterator to beginning
+        pub fn reset(self: *Varargs) void {
+            self.index = self.base;
+        }
+
+        /// Throw an error with custom message for the current iterator position
+        pub fn raiseError(self: Varargs, message: [:0]const u8) noreturn {
+            const arg_index = (self.index - self.base) + 1; // Convert to 1-based argument numbering
+            self.lua.state.argError(@intCast(arg_index), message);
+        }
+    };
+
     /// Creates a new Lua table and returns a high-level Table wrapper.
     ///
     /// Creates an empty table with optional size hints for optimization.

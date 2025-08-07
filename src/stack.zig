@@ -295,6 +295,16 @@ pub fn createFunc(_: Lua, value: anytype, comptime ClosureType: ?type) State.CFu
         }
     }
 
+    // Validate Varargs is only used as the last parameter
+    inline for (arg_fields, 0..) |field, i| {
+        if (field.type == Lua.Varargs) {
+            if (i != arg_fields.len - 1) {
+                @compileError("Varargs must be the last parameter in function signature, but found at position " ++
+                    std.fmt.comptimePrint("{}", .{i}) ++ " of " ++ std.fmt.comptimePrint("{}", .{arg_fields.len}));
+            }
+        }
+    }
+
     return struct {
         fn f(state: ?State.LuaState) callconv(.C) c_int {
             const l = Lua.fromState(state.?);
@@ -354,6 +364,21 @@ pub inline fn pop(lua: Lua, comptime T: type) ?T {
 /// Used to invoke Lua functions with Zig arguments.
 pub fn checkArg(lua: Lua, index: i32, comptime T: type) T {
     const type_info = @typeInfo(T);
+
+    // Check if this is a Varargs type
+    if (T == Lua.Varargs) {
+        // This is a Varargs type - create iterator for remaining arguments
+        const top = lua.state.getTop();
+        const count = @max(0, top - index + 1);
+
+        return T{
+            .lua = lua,
+            .base = index,
+            .index = index,
+            .count = count,
+        };
+    }
+
     switch (type_info) {
         .bool => {
             return lua.state.checkBoolean(index);
@@ -454,12 +479,48 @@ pub fn checkArg(lua: Lua, index: i32, comptime T: type) T {
                 return @as(T, Lua.Table{ .ref = Lua.Ref{ .lua = lua, .ref = lua.state.ref(index) } });
             }
 
+            // Check for Function type
+            if (T == Lua.Function) {
+                // Check that the value is actually a function
+                if (!lua.state.isFunction(index)) {
+                    lua.state.typeError(index, "function");
+                }
+                // Create a Function reference from the stack value
+                return @as(T, Lua.Function{ .ref = Lua.Ref{ .lua = lua, .ref = lua.state.ref(index) } });
+            }
+
             // Handle other struct types (user data passed by value)
             // Use the struct type name as the userdata type name
             const type_name: [:0]const u8 = @typeName(T);
             const userdata_ptr = lua.state.checkUdata(index, type_name);
             const struct_ptr: *T = @ptrCast(@alignCast(userdata_ptr));
             return struct_ptr.*;
+        },
+        .@"union" => {
+            // Check for Value type
+            if (T == Lua.Value) {
+                // Value can represent any Lua type, so convert based on actual type
+                const lua_type = lua.state.getType(index);
+                return switch (lua_type) {
+                    .nil => Lua.Value{ .nil = {} },
+                    .boolean => Lua.Value{ .boolean = checkArg(lua, index, bool) },
+                    .number => Lua.Value{ .number = checkArg(lua, index, f64) },
+                    .string => Lua.Value{ .string = checkArg(lua, index, []const u8) },
+                    .table => Lua.Value{ .table = checkArg(lua, index, Lua.Table) },
+                    .function => Lua.Value{ .function = checkArg(lua, index, Lua.Function) },
+                    .userdata => Lua.Value{ .userdata = Lua.Ref.init(lua, index) },
+                    .lightuserdata => blk: {
+                        if (lua.state.toPointer(index)) |ptr| {
+                            break :blk Lua.Value{ .lightuserdata = @constCast(ptr) };
+                        } else {
+                            break :blk Lua.Value{ .nil = {} };
+                        }
+                    },
+                    else => Lua.Value{ .nil = {} },
+                };
+            }
+
+            lua.state.typeError(index, "unsupported union type");
         },
         else => {
             lua.state.typeError(index, "unsupported type");
