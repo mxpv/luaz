@@ -7,9 +7,13 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Closure support with `Table.setClosure()` for Lua-style upvalues
 - Canonical Zig iterator pattern for table iteration with `Table.iterator()`
+- Metatable management APIs:
+  - `Lua.createMetaTable()` for flexible metatable creation without global registration
+  - `Table.setMetaTable()` and `Table.getMetaTable()` for metatable attachment and retrieval
 
 ### Changed
 - **BREAKING**: Table iteration API now uses standard Zig iterator pattern (`iterator.next()`)
+- Refactored `registerUserData` implementation to use new metatable APIs internally
 
 ### Removed
 - **BREAKING**: Old manual table iteration method `Table.next()` in favor of canonical iterator
