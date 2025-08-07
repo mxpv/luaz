@@ -131,6 +131,7 @@ Keep documentation concise and focused. Don't write extensive documentation - ai
 
 Documentation Formatting:
 - Avoid empty lines in doc comments (lines with only `///`) as they will be skipped during documentation generation.
+- Never use bold formatting (** **) for titles or headers in documentation files
 
 ### Memory Management
 - Lua states must be explicitly deinitialized with `deinit()`
