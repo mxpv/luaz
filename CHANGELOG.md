@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
   - `Table.setMetaTable()` and `Table.getMetaTable()` for metatable attachment and retrieval
 - `Table.clear()` method to remove all entries from a table
 - `Table.clone()` method to create a shallow copy of a table
+- `Function.clone()` method to create a copy of a function with shared upvalue references
 
 ### Changed
 - **BREAKING**: Table iteration API now uses standard Zig iterator pattern (`iterator.next()`)

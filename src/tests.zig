@@ -1396,6 +1396,25 @@ test "table clone" {
     try expect(std.mem.eql(u8, name.?, "Alice"));
 }
 
+test "function clone" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    _ = try lua.eval("function add(a, b) return a + b end", .{}, void);
+
+    const func = try lua.globals().get("add", Lua.Function);
+    defer func.?.deinit();
+
+    const cloned = try func.?.clone();
+    defer cloned.deinit();
+
+    // Both functions work the same
+    const result1 = try func.?.call(.{ 10, 20 }, i32);
+    const result2 = try cloned.call(.{ 10, 20 }, i32);
+    try expect(result1 == 30);
+    try expect(result2 == 30);
+}
+
 fn closureAdd5(n: i32, x: i32) i32 {
     return x + n;
 }

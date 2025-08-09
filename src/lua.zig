@@ -1395,6 +1395,36 @@ pub const Lua = struct {
             self.state().codegenCompile(-1);
         }
 
+        /// Creates a clone of the function.
+        ///
+        /// Returns a new function with the same bytecode and upvalue references.
+        /// The cloned function is independent but shares upvalue references with
+        /// the original. The environment is set to the current global table.
+        ///
+        /// Example:
+        /// ```zig
+        /// const func = try lua.globals().get("myFunc", Lua.Function);
+        /// defer func.?.deinit();
+        ///
+        /// const cloned = try func.?.clone();
+        /// defer cloned.deinit();
+        /// ```
+        ///
+        /// Returns: `Function` - A new function with copied upvalue references
+        /// Errors: `Error.OutOfMemory` if allocation fails
+        pub fn clone(self: Function) !Function {
+            try self.ref.lua.checkStack(2);
+
+            stack.push(self.ref.lua, self.ref); // Push function ref
+            self.state().cloneFunction(-1); // Clone function, pushes clone on stack
+
+            // Create a reference to the cloned function on the stack
+            const cloned_ref = Ref.init(self.ref.lua, -1);
+            self.state().pop(2); // Pop both original and cloned functions
+
+            return Function{ .ref = cloned_ref };
+        }
+
         /// Returns the registry reference ID if valid, otherwise null.
         pub inline fn getRef(self: Function) ?c_int {
             return self.ref.getRef();
