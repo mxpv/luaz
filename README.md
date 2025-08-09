@@ -234,13 +234,6 @@ pub fn main() !void {
 > [!WARNING]
 > This library is still evolving and the API is not stable. Backward incompatible changes may be introduced up until the 1.0 release. Consider pinning to a specific commit or tag if you need stability.
 
-## 🗺️ Roadmap
-
-The following features are planned after the initial release:
-
-- Debug APIs - Debugging hooks and introspection tools
-- Optional JSON support - Built-in JSON serialization/deserialization
-
 ## 🛠️ Using Luau Tools
 
 The build system provides prebuilt Luau tools that can be invoked directly:
