@@ -821,6 +821,45 @@ pub const Lua = struct {
             }
         }
 
+        /// Clears all entries from the table.
+        ///
+        /// Removes all key-value pairs from the table, resetting it to an empty state.
+        /// The table's metatable (if any) is preserved. This operation affects both
+        /// the array part and hash part of the table.
+        ///
+        /// If the table is readonly, this operation will trigger a Lua error at runtime.
+        /// Readonly tables cannot be modified, including clearing their contents.
+        ///
+        /// Examples:
+        /// ```zig
+        /// const table = lua.createTable(.{});
+        /// defer table.deinit();
+        ///
+        /// // Add some entries
+        /// try table.set("name", "Alice");
+        /// try table.set(1, 42);
+        /// try table.set("data", true);
+        ///
+        /// // Clear all entries
+        /// try table.clear();
+        ///
+        /// // Table is now empty
+        /// const name = try table.get("name", []const u8);
+        /// try expect(name == null);
+        /// ```
+        ///
+        /// Note: Attempting to clear a readonly table will result in a runtime error
+        /// from the Lua VM rather than returning an error through Zig's error system.
+        ///
+        /// Errors: `Error.OutOfMemory` if stack allocation fails
+        pub fn clear(self: Table) !void {
+            try self.ref.lua.checkStack(1);
+
+            stack.push(self.ref.lua, self.ref); // Push table ref
+            self.state().clearTable(-1); // Clear table
+            self.state().pop(1); // Pop table
+        }
+
         /// Entry representing a key-value pair from table iteration.
         /// Resources are automatically managed when using the `Iterator` type.
         pub const Entry = struct {

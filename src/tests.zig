@@ -1360,6 +1360,26 @@ test "table readonly" {
     try expect(try table.get("after", ?i32) == null);
 }
 
+test "table clear" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    const table = lua.createTable(.{});
+    defer table.deinit();
+
+    // Add some entries
+    try table.set("name", "Alice");
+    try table.set(1, 42);
+    try table.set("data", true);
+
+    // Clear all entries
+    try table.clear();
+
+    // Table is now empty
+    const name = try table.get("name", []const u8);
+    try expect(name == null);
+}
+
 fn closureAdd5(n: i32, x: i32) i32 {
     return x + n;
 }

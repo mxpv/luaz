@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 - Metatable management APIs:
   - `Lua.createMetaTable()` for flexible metatable creation without global registration
   - `Table.setMetaTable()` and `Table.getMetaTable()` for metatable attachment and retrieval
+- `Table.clear()` method to remove all entries from a table
 
 ### Changed
 - **BREAKING**: Table iteration API now uses standard Zig iterator pattern (`iterator.next()`)
