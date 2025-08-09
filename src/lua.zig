@@ -860,6 +860,45 @@ pub const Lua = struct {
             self.state().pop(1); // Pop table
         }
 
+        /// Creates a shallow copy of the table.
+        ///
+        /// Returns a new table with the same key-value pairs as the original.
+        /// This is a shallow copy: primitive values (numbers, strings, booleans) are
+        /// duplicated, but reference types (tables, functions, userdata) are shared
+        /// between the original and cloned table.
+        ///
+        /// The clone inherits the original table's metatable reference (not cloned).
+        /// The readonly and safeenv flags are not copied to the clone.
+        ///
+        /// Examples:
+        /// ```zig
+        /// const original = lua.createTable(.{});
+        /// defer original.deinit();
+        /// try original.set("name", "Alice");
+        ///
+        /// const cloned = try original.clone();
+        /// defer cloned.deinit();
+        ///
+        /// // Clone has same values
+        /// const name = try cloned.get("name", []const u8);
+        /// try expect(std.mem.eql(u8, name.?, "Alice"));
+        /// ```
+        ///
+        /// Returns: `Table` - A new table containing a shallow copy of the original
+        /// Errors: `Error.OutOfMemory` if allocation fails
+        pub fn clone(self: Table) !Table {
+            try self.ref.lua.checkStack(2);
+
+            stack.push(self.ref.lua, self.ref); // Push table ref
+            self.state().cloneTable(-1); // Clone table, pushes clone on stack
+
+            // Create a reference to the cloned table on the stack
+            const cloned_ref = Ref.init(self.ref.lua, -1);
+            self.state().pop(2); // Pop both original and cloned tables
+
+            return Table{ .ref = cloned_ref };
+        }
+
         /// Entry representing a key-value pair from table iteration.
         /// Resources are automatically managed when using the `Iterator` type.
         pub const Entry = struct {

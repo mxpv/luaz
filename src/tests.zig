@@ -1380,6 +1380,22 @@ test "table clear" {
     try expect(name == null);
 }
 
+test "table clone" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    const original = lua.createTable(.{});
+    defer original.deinit();
+    try original.set("name", "Alice");
+
+    const cloned = try original.clone();
+    defer cloned.deinit();
+
+    // Clone has same values
+    const name = try cloned.get("name", []const u8);
+    try expect(std.mem.eql(u8, name.?, "Alice"));
+}
+
 fn closureAdd5(n: i32, x: i32) i32 {
     return x + n;
 }
