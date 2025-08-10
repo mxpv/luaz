@@ -15,7 +15,7 @@
 //! - Vectors → Luau native vector types
 
 const std = @import("std");
-const State = @import("state.zig").State;
+const State = @import("State.zig");
 const Lua = @import("lua.zig").Lua;
 
 /// Fixup internal pointers after moving StrBuf by value.

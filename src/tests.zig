@@ -1,14 +1,14 @@
 comptime {
-    _ = @import("compile.zig");
+    _ = @import("Compiler.zig");
     _ = @import("lua.zig");
-    _ = @import("state.zig");
+    _ = @import("State.zig");
 }
 
 const std = @import("std");
 const Lua = @import("lua.zig").Lua;
 
 const Error = Lua.Error;
-const State = @import("state.zig").State;
+const State = @import("State.zig");
 
 const expect = std.testing.expect;
 const expectEq = std.testing.expectEqual;

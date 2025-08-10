@@ -24,6 +24,10 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - **BREAKING**: Table iteration API now uses standard Zig iterator pattern (`iterator.next()`)
 - Refactored `registerUserData` implementation to use new metatable APIs internally
+- Renamed module files to follow Zig naming conventions:
+  - `src/state.zig` → `src/State.zig`
+  - `src/compile.zig` → `src/Compiler.zig`
+  - Updated all imports to use the module directly instead of accessing nested types
 
 ### Removed
 - **BREAKING**: Old manual table iteration method `Table.next()` in favor of canonical iterator

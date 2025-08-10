@@ -43,8 +43,9 @@ const std = @import("std");
 const ArgsTuple = std.meta.ArgsTuple;
 const Allocator = std.mem.Allocator;
 
-pub const State = @import("state.zig").State;
-pub const Compiler = @import("compile.zig").Compiler;
+pub const State = @import("State.zig");
+pub const Compiler = @import("Compiler.zig");
+
 const userdata = @import("userdata.zig");
 const stack = @import("stack.zig");
 const alloc = @import("alloc.zig").alloc;

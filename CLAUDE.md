@@ -8,8 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 scripting language, focusing specifically on Luau's unique features and performance characteristics.
 
 The project consists of three main Zig modules:
-- State (`src/state.zig`): Low-level Lua state wrapper providing direct access to Lua VM operations
-- Compiler (`src/compile.zig`): Luau compiler interface for converting Lua source to bytecode
+- State (`src/State.zig`): Low-level Lua state wrapper providing direct access to Lua VM operations
+- Compiler (`src/Compiler.zig`): Luau compiler interface for converting Lua source to bytecode
 - Lua (`src/lua.zig`): High-level idiomatic Zig API with automatic type conversions
 
 ## Build System
@@ -78,7 +78,7 @@ The library provides automatic compile-time binding generation for Zig structs:
 - If struct has `deinit`, it's automatically called during Lua garbage collection
 - Methods support automatic type conversion for arguments and return values
 
-### Low-Level API (`src/state.zig`)
+### Low-Level API (`src/State.zig`)
 Direct wrapper around Luau C API providing:
 - Complete stack manipulation operations
 - Raw and non-raw table operations
@@ -86,7 +86,7 @@ Direct wrapper around Luau C API providing:
 - Thread/coroutine management
 - Standard library loading functions
 
-### Compiler Integration (`src/compile.zig`)
+### Compiler Integration (`src/Compiler.zig`)
 Interfaces with the Luau compiler to:
 - Compile Lua source to bytecode with configurable optimization levels
 - Handle compilation errors with detailed error messages
@@ -139,7 +139,7 @@ Write clear, concise tests that verify the feature without unnecessary complexit
 
 Important testing guidelines:
 - `tests.zig` should include unit tests that test only public APIs
-- Avoid using functions from `stack.zig` and `state.zig` in `tests.zig`
+- Avoid using functions from `stack.zig` and `State.zig` in `tests.zig`
 - Focus on testing the high-level API provided by `lua.zig`
 - Don't create excessive and too verbose unit tests
 - Each test must be minimal and aim to test a specific function

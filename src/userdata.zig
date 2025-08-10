@@ -1,7 +1,7 @@
 //! This module provides a bunch of magic comptime reflection helpers to build Lua userdata types.
 
 const std = @import("std");
-const State = @import("state.zig").State;
+const State = @import("State.zig");
 const ArgsTuple = std.meta.ArgsTuple;
 const stack = @import("stack.zig");
 const Lua = @import("lua.zig").Lua;
