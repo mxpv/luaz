@@ -118,6 +118,13 @@ corresponding unit tests. Tests use `&std.testing.allocator` for memory leak det
 Keep unit tests minimal and focused. Tests must demonstrate that functionality works.
 Write clear, concise tests that verify the feature without unnecessary complexity.
 
+Important testing guidelines:
+- `tests.zig` should include unit tests that test only public APIs
+- Avoid using functions from `stack.zig` and `state.zig` in `tests.zig`
+- Focus on testing the high-level API provided by `lua.zig`
+- Don't create excessive and too verbose unit tests
+- Each test must be minimal and aim to test a specific function
+
 ### Documentation
 Keep documentation for public interfaces current but reasonably sized. The codebase uses Zig's built-in doc comments
 (`///` syntax) extensively. When adding or modifying public functions, ensure documentation includes:
