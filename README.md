@@ -27,6 +27,7 @@ These tools make it easy to compile, analyze, and embed `Luau` scripts directly 
   - Variadic arguments support
 - First-class [userdata support](#userdata-integration) including metamethods
 - Support for reference types, functions, tables, and vector types
+- [Luau StrBuf support](#string-buffer-strbuf) for efficient string building
 - Full coroutine and thread support
 - Garbage collection APIs
 - `Luau` Sandboxing APIs for secure execution environments
@@ -230,6 +231,26 @@ pub fn main() !void {
 }
 ```
 
+### String Buffer (StrBuf)
+
+Efficient string building using Luau's StrBuf API with automatic memory management.
+
+```zig
+fn buildGreeting(lua: *luaz.Lua, name: []const u8, age: i32) !Lua.StrBuf {
+    var buf: luaz.Lua.StrBuf = undefined;
+    buf.init(lua);
+    buf.addString("Hello, ");
+    buf.addLString(name);
+    buf.addString("! You are ");
+    try buf.add(age);
+    buf.addString(" years old.");
+    return buf;
+}
+
+// Register and call from Lua
+try lua.globals().setClosure("buildGreeting", &lua, buildGreeting);
+const result = try lua.eval("return buildGreeting('Alice', 25)", .{}, []const u8);
+```
 
 > [!WARNING]
 > This library is still evolving and the API is not stable. Backward incompatible changes may be introduced up until the 1.0 release. Consider pinning to a specific commit or tag if you need stability.
