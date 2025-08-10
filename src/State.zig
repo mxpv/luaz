@@ -29,6 +29,7 @@ pub const Destructor = c.lua_Destructor;
 pub const LuaLReg = c.luaL_Reg;
 pub const StrBuf = c.luaL_Strbuf;
 pub const VECTOR_SIZE = c.LUA_VECTOR_SIZE;
+pub const BUFFERSIZE = c.LUA_BUFFERSIZE;
 
 // Constants
 pub const MULTRET = c.LUA_MULTRET;

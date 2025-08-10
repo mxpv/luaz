@@ -40,18 +40,18 @@ const Lua = @import("lua.zig").Lua;
 ///
 /// **Note:** Only applies to stack-allocated buffers (storage == null). Dynamic
 /// storage uses heap allocation via TString*, so pointers remain valid after copy.
-fn fixStrBufPointers(buf: State.StrBuf) State.StrBuf {
-    var fixed_buf = buf;
-
+fn fixStrBufPointers(buf: *State.StrBuf) void {
     // Only fix pointers for stack-allocated buffers
-    if (fixed_buf.storage == null) {
-        // Calculate how far into the original buffer the current position was
-        const p_offset = @intFromPtr(buf.p) - @intFromPtr(&buf.buffer);
-        // Adjust pointer to point into the new buffer at the same relative offset
-        fixed_buf.p = @ptrFromInt(@intFromPtr(&fixed_buf.buffer) + p_offset);
-    }
+    if (buf.storage == null) {
+        // When StrBuf is copied by value, buf.p and buf.end still point to the OLD buffer.
+        // Calculate the original buffer start: original_buffer = buf.end - BUFFERSIZE
+        const original_buffer_start = @intFromPtr(buf.end) - State.BUFFERSIZE;
+        const p_offset = @intFromPtr(buf.p) - original_buffer_start;
 
-    return fixed_buf;
+        // Adjust pointers to point into the new buffer at the same relative offsets
+        buf.p = @ptrFromInt(@intFromPtr(&buf.buffer) + p_offset);
+        buf.end = @ptrFromInt(@intFromPtr(&buf.buffer) + State.BUFFERSIZE);
+    }
 }
 
 /// Counts how many Lua stack slots are needed for the given type.
@@ -127,7 +127,8 @@ pub fn push(lua: Lua, value: anytype) void {
 
             // Handle StrBuf by fixing pointers and pushing as string
             if (T == Lua.StrBuf) {
-                var fixed_buf = fixStrBufPointers(value.buf);
+                var fixed_buf = value.buf;
+                fixStrBufPointers(&fixed_buf);
                 State.pushResult(@constCast(&fixed_buf));
                 return;
             }
@@ -198,7 +199,9 @@ pub fn push(lua: Lua, value: anytype) void {
                 .one => {
                     // Handle StrBuf pointer
                     if (ptr_info.child == Lua.StrBuf) {
-                        State.pushResult(@constCast(&value.buf));
+                        var fixed_buf = value.buf;
+                        fixStrBufPointers(&fixed_buf);
+                        State.pushResult(@constCast(&fixed_buf));
                         return;
                     }
 
@@ -969,5 +972,42 @@ test "push nested structs and arrays" {
     try expect(pop(lua, bool).?);
 
     lua.state.pop(1); // Pop config table
+    try expectEq(lua.state.getTop(), 0);
+}
+
+test "StrBuf pointer fixup on value copy" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    // This test specifically covers the bug we discovered in the guided tour:
+    // When StrBuf is returned by value from a function, the internal pointers
+    // need to be fixed to point to the new buffer location.
+
+    const TestFunction = struct {
+        fn buildMessage(l: *Lua, name: []const u8, age: i32) !Lua.StrBuf {
+            var buf: Lua.StrBuf = undefined;
+            buf.init(l);
+            buf.addLString(name);
+            buf.addString(" is ");
+            try buf.add(age);
+            buf.addString(" years old");
+            return buf; // This returns StrBuf by value, triggering the pointer fix
+        }
+    };
+
+    // Register the function that returns StrBuf by value
+    const globals = lua.globals();
+    try globals.setClosure("buildMessage", &lua, TestFunction.buildMessage);
+
+    // Call the function - this would segfault without proper pointer fixup
+    const result = try lua.eval("return buildMessage('Alice', 25)", .{}, []const u8);
+
+    // Verify the result is clean (no garbage characters)
+    try expect(std.mem.eql(u8, result, "Alice is 25 years old"));
+
+    // Test with different inputs to ensure the fix works consistently
+    const result2 = try lua.eval("return buildMessage('Bob', 30)", .{}, []const u8);
+    try expect(std.mem.eql(u8, result2, "Bob is 30 years old"));
+
     try expectEq(lua.state.getTop(), 0);
 }
