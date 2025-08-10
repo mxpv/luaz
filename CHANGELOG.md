@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Luau StrBuf support** for efficient string building with automatic memory management
+  - High-level `StrBuf` API with `init()`, `initSize()`, `addString()`, `addChar()`, and `add()` methods
+  - Support for returning StrBuf from Zig functions with automatic pointer fixup
+  - Integration with table operations and closure system
+  - Handles both stack buffer (small strings) and dynamic allocation (large strings)
 - Variadic arguments support with `Varargs` iterator for functions accepting variable number of arguments
   - `Varargs.raiseError()` method for throwing descriptive type validation errors
 - Closure support with `Table.setClosure()` for Lua-style upvalues
