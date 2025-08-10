@@ -42,7 +42,7 @@ const Lua = @import("lua.zig").Lua;
 /// storage uses heap allocation via TString*, so pointers remain valid after copy.
 fn fixStrBufPointers(buf: State.StrBuf) State.StrBuf {
     var fixed_buf = buf;
-    
+
     // Only fix pointers for stack-allocated buffers
     if (fixed_buf.storage == null) {
         // Calculate how far into the original buffer the current position was
@@ -50,10 +50,9 @@ fn fixStrBufPointers(buf: State.StrBuf) State.StrBuf {
         // Adjust pointer to point into the new buffer at the same relative offset
         fixed_buf.p = @ptrFromInt(@intFromPtr(&fixed_buf.buffer) + p_offset);
     }
-    
+
     return fixed_buf;
 }
-
 
 /// Counts how many Lua stack slots are needed for the given type.
 ///
@@ -310,7 +309,6 @@ pub fn pushResult(lua: Lua, result: anytype) c_int {
         // Recursively handle the success payload
         return pushResult(lua, payload);
     }
-
 
     // Handle tuple results by pushing each element individually
     if (result_info == .@"struct" and result_info.@"struct".is_tuple) {

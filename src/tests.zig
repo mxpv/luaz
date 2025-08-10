@@ -1825,7 +1825,6 @@ test "StrBuf integration with Table operations" {
     try expectEq(lua.top(), 0);
 }
 
-
 // Define a Zig function that builds and returns StrBuf by pointer
 fn makeMsg(l: *Lua, name: []const u8, value: i32) !Lua.StrBuf {
     var buf: Lua.StrBuf = undefined;
@@ -1863,7 +1862,7 @@ fn makeMsgTuple(l: *Lua, name: []const u8, value: i32) !struct { Lua.StrBuf, i32
     buf.addLString(name);
     buf.addString(" = ");
     try buf.add(value);
-    
+
     return .{ buf, value * 2 };
 }
 
@@ -1880,7 +1879,7 @@ test "StrBuf returned in tuple from Zig functions" {
 
     // Call function that returns tuple (StrBuf, i32)
     const result = try lua.eval("return makeTuple('test', 21)", .{}, struct { []const u8, i32 });
-    
+
     const expected_str = "Tuple: test = 21";
     try expectEq(std.mem.startsWith(u8, result[0], expected_str), true);
     try expectEq(result[1], 42);
@@ -1890,10 +1889,10 @@ test "StrBuf returned in tuple from Zig functions" {
 fn makeLargeMsg(l: *Lua, count: i32) !Lua.StrBuf {
     var buf: Lua.StrBuf = undefined;
     buf.init(l);
-    
+
     // Build a string longer than LUA_BUFFERSIZE (512 bytes) to force dynamic allocation
     buf.addString("Large message: ");
-    
+
     // Add enough content to exceed buffer size
     var i: i32 = 0;
     while (i < count) : (i += 1) {
@@ -1901,7 +1900,7 @@ fn makeLargeMsg(l: *Lua, count: i32) !Lua.StrBuf {
         try buf.add(i);
         buf.addString(" ");
     }
-    
+
     return buf;
 }
 
@@ -1915,12 +1914,12 @@ test "StrBuf with dynamic allocation returned from Zig functions" {
     // Test with enough iterations to exceed 512 bytes
     // Each iteration adds ~50+ bytes, so 15 iterations should exceed 512 bytes
     const result = try lua.eval("return makeLarge(15)", .{}, []const u8);
-    
+
     // Verify the result starts correctly and is reasonably long
     try expectEq(std.mem.startsWith(u8, result, "Large message: This is a repeated string"), true);
     try expectEq(result.len > 512, true); // Should be longer than buffer size
-    
+
     // Verify it contains content from both early and late iterations
-    try expectEq(std.mem.indexOf(u8, result, "0 ") != null, true);  // First iteration
+    try expectEq(std.mem.indexOf(u8, result, "0 ") != null, true); // First iteration
     try expectEq(std.mem.indexOf(u8, result, "14 ") != null, true); // Last iteration
 }
