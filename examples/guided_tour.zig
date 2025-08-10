@@ -14,6 +14,7 @@
 //! - Work with tuples and table-based structures
 //! - Control garbage collection for memory management
 //! - Work with coroutines and threads
+//! - Build strings efficiently with StrBuf
 
 const std = @import("std");
 const luaz = @import("luaz");
@@ -153,7 +154,7 @@ pub fn main() !void {
 
     // You can create a new Lua state with `Lua.init()`. Pass null to use Luau's
     // default allocator, or pass a Zig allocator for custom memory management.
-    const lua = try luaz.Lua.init(&allocator);
+    var lua = try luaz.Lua.init(&allocator);
     defer lua.deinit();
 
     // Load the standard Lua libraries
@@ -609,6 +610,42 @@ pub fn main() !void {
         // Send nil to finish
         const final_result = try func.?.call(.{@as(?i32, null)}, i32);
         print("Final: sum={}\n", .{final_result});
+    }
+
+    // String Buffer (StrBuf) for efficient string building
+    {
+        print("\n-- String Buffer (StrBuf) --\n", .{});
+
+        // Build strings efficiently with mixed types
+        var buf: luaz.Lua.StrBuf = undefined;
+        buf.init(&lua);
+        buf.addString("User #");
+        try buf.add(@as(i32, 42));
+        buf.addString(" logged in at ");
+        try buf.add(@as(f64, 3.14));
+        buf.addString(" seconds");
+
+        const globals = lua.globals();
+        try globals.set("message", &buf);
+        const message = try globals.get("message", []const u8);
+        print("Built string: {s}\n", .{message.?});
+
+        // Return StrBuf from Zig functions
+        const formatMessage = struct {
+            fn call(l: *luaz.Lua, name: []const u8, age: i32) !luaz.Lua.StrBuf {
+                var b: luaz.Lua.StrBuf = undefined;
+                b.init(l);
+                b.addLString(name);
+                b.addString(" is ");
+                try b.add(age);
+                b.addString(" years old");
+                return b;
+            }
+        }.call;
+
+        try globals.setClosure("formatMessage", &lua, formatMessage);
+        const result = try lua.eval("return formatMessage('Alice', 25)", .{}, []const u8);
+        print("From function: {s}\n", .{result});
     }
 
     print("\n=== Tour Complete! ===\n", .{});
