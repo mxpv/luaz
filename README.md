@@ -62,7 +62,7 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    var lua = try luaz.Lua.init(&gpa.allocator); // Create Lua state with custom allocator
+    var lua = try Lua.init(&gpa.allocator); // Create Lua state with custom allocator
     defer lua.deinit(); // Clean up Lua state
 
     // Set a global variable
@@ -92,7 +92,7 @@ const luaz = @import("luaz");
 const Point = struct { x: f64, y: f64 };
 
 pub fn main() !void {
-    var lua = try luaz.Lua.init(null);
+    var lua = try Lua.init(null);
     defer lua.deinit();
 
     // Struct becomes a Lua table with field names as keys
@@ -125,7 +125,7 @@ fn sum(a: i32, b: i32) i32 {
 }
 
 pub fn main() !void {
-    var lua = try luaz.Lua.init(null); // Use default allocator
+    var lua = try Lua.init(null); // Use default allocator
     defer lua.deinit();
 
     // Register Zig function in Lua
@@ -146,11 +146,11 @@ pub fn main() !void {
     const table = lua.createTable(.{});
     defer table.deinit();
     
-    fn getGlobal(lua_ptr: *luaz.Lua, key: []const u8) !i32 {
+    fn getGlobal(lua_ptr: *Lua, key: []const u8) !i32 {
         return try lua_ptr.globals().get(key, i32) orelse 0;
     }
     const lua_ptr = @constCast(&lua);
-    try table.setClosure("getGlobal", .{lua_ptr}, getGlobal);
+    try table.setClosure("getGlobal", .lua_ptr, getGlobal);
     try lua.globals().set("funcs", table);
     try lua.globals().set("myValue", @as(i32, 123));
     
@@ -236,8 +236,8 @@ pub fn main() !void {
 Efficient string building using Luau's StrBuf API with automatic memory management.
 
 ```zig
-fn buildGreeting(lua: *luaz.Lua, name: []const u8, age: i32) !Lua.StrBuf {
-    var buf: luaz.Lua.StrBuf = undefined;
+fn buildGreeting(lua: *Lua, name: []const u8, age: i32) !Lua.StrBuf {
+    var buf: Lua.StrBuf = undefined;
     buf.init(lua);
     buf.addString("Hello, ");
     buf.addLString(name);

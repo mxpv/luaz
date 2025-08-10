@@ -100,6 +100,25 @@ The library supports custom memory allocators through `Lua.init()`:
 - Deviates from typical Zig conventions due to C interop requirements
 - All Lua memory operations (allocation, reallocation, freeing) go through the custom allocator
 
+### Closure Upvalues (`setClosure`)
+The `setClosure` method accepts upvalues that can be either a single value or a tuple:
+- **Single value**: Pass directly without wrapping: `setClosure("func", value, fn)`
+- **Multiple values**: Pass as tuple: `setClosure("func", .{val1, val2}, fn)`
+- **No upvalues**: Pass empty tuple: `setClosure("func", .{}, fn)`
+
+Examples:
+```zig
+// Single upvalue - pass directly
+try table.setClosure("getValue", &state, getValueFn);
+try table.setClosure("addFive", 5, addFn);
+
+// Multiple upvalues - use tuple
+try table.setClosure("transform", .{ 2.0, 10.0 }, transformFn);
+
+// No upvalues
+try table.setClosure("helper", .{}, helperFn);
+```
+
 ## Development Patterns
 
 ### Code Style

@@ -1465,28 +1465,28 @@ test "table setClosure" {
     defer table.deinit();
 
     // Single upvalue
-    try table.setClosure("add5", .{5}, closureAdd5);
+    try table.setClosure("add5", 5, closureAdd5);
 
     // Multiple upvalues
     try table.setClosure("transform", .{ 2.0, 10.0 }, closureTransform);
 
     // Optional parameters
-    try table.setClosure("optAdd", .{10}, closureOptAdd);
+    try table.setClosure("optAdd", 10, closureOptAdd);
 
     // Table reference upvalue
     const config = lua.createTable(.{});
     defer config.deinit();
     try config.set("mult", @as(i32, 3));
-    try table.setClosure("multiply", .{config}, closureMultiply);
+    try table.setClosure("multiply", config, closureMultiply);
 
     // No additional parameters
-    try table.setClosure("const", .{42}, closureConstant);
+    try table.setClosure("const", 42, closureConstant);
 
     // Multiple optionals
-    try table.setClosure("sum", .{100}, closureSumAll);
+    try table.setClosure("sum", 100, closureSumAll);
 
     // Single upvalue (not wrapped in struct)
-    try table.setClosure("single", .{42}, closureSingle);
+    try table.setClosure("single", 42, closureSingle);
 
     try lua.globals().set("f", table);
     try lua.globals().set("config", config);
@@ -1556,7 +1556,7 @@ test "metatable with closure function and table attachment" {
         }
     };
 
-    try metatable.setClosure("compute", .{4}, AddFunc.add);
+    try metatable.setClosure("compute", 4, AddFunc.add);
 
     // Set __index to metatable itself for method lookup
     try metatable.set("__index", metatable);
