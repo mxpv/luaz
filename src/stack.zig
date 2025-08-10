@@ -18,6 +18,43 @@ const std = @import("std");
 const State = @import("state.zig").State;
 const Lua = @import("lua.zig").Lua;
 
+/// Fixup internal pointers after moving StrBuf by value.
+///
+/// **Problem:**
+/// The luaL_Strbuf struct contains internal pointers (p, end) that point into its own
+/// buffer array or dynamic storage. When a StrBuf is returned by value from a function,
+/// the struct gets copied to a new memory location, but the internal pointers still
+/// point to the old (now invalid) buffer location. This causes segmentation faults
+/// when luaL_pushresult tries to calculate string length as (p - buffer).
+///
+/// **Root Cause:**
+/// - StrBuf.buffer is a fixed-size array [512]u8 that gets copied during struct copy
+/// - StrBuf.p points somewhere inside this buffer array to track current write position
+/// - After copy: new buffer is at new address, but p still points to old buffer address
+/// - Result: luaL_pushresult calculates wrong length, reads invalid memory
+///
+/// **Fix:**
+/// Calculate the offset of p from the original buffer, then adjust p to point into
+/// the new buffer at the same relative offset. This preserves the logical position
+/// while fixing the absolute memory address.
+///
+/// **Note:** Only applies to stack-allocated buffers (storage == null). Dynamic
+/// storage uses heap allocation via TString*, so pointers remain valid after copy.
+fn fixStrBufPointers(buf: State.StrBuf) State.StrBuf {
+    var fixed_buf = buf;
+    
+    // Only fix pointers for stack-allocated buffers
+    if (fixed_buf.storage == null) {
+        // Calculate how far into the original buffer the current position was
+        const p_offset = @intFromPtr(buf.p) - @intFromPtr(&buf.buffer);
+        // Adjust pointer to point into the new buffer at the same relative offset
+        fixed_buf.p = @ptrFromInt(@intFromPtr(&fixed_buf.buffer) + p_offset);
+    }
+    
+    return fixed_buf;
+}
+
+
 /// Counts how many Lua stack slots are needed for the given type.
 ///
 /// This is typically 1 for most types, but there are edge cases:
@@ -89,6 +126,13 @@ pub fn push(lua: Lua, value: anytype) void {
                 return;
             }
 
+            // Handle StrBuf by fixing pointers and pushing as string
+            if (T == Lua.StrBuf) {
+                var fixed_buf = fixStrBufPointers(value.buf);
+                State.pushResult(@constCast(&fixed_buf));
+                return;
+            }
+
             // Handle tuples by pushing each element individually
             if (type_info.@"struct".is_tuple) {
                 inline for (0..type_info.@"struct".fields.len) |i| {
@@ -153,6 +197,12 @@ pub fn push(lua: Lua, value: anytype) void {
         .pointer => |ptr_info| {
             switch (ptr_info.size) {
                 .one => {
+                    // Handle StrBuf pointer
+                    if (ptr_info.child == Lua.StrBuf) {
+                        State.pushResult(@constCast(&value.buf));
+                        return;
+                    }
+
                     // Handle string literal pointers: *const [N:0]u8
                     const child_type_info = @typeInfo(ptr_info.child);
                     if (child_type_info == .array and child_type_info.array.child == u8) {
@@ -260,6 +310,7 @@ pub fn pushResult(lua: Lua, result: anytype) c_int {
         // Recursively handle the success payload
         return pushResult(lua, payload);
     }
+
 
     // Handle tuple results by pushing each element individually
     if (result_info == .@"struct" and result_info.@"struct".is_tuple) {

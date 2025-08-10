@@ -1694,3 +1694,233 @@ test "varargs error handling" {
     try expect(lua.eval("typeCheck({})", .{}, void) == error.Runtime);
     try expectEq(lua.top(), 0);
 }
+
+test "StrBuf basic functionality" {
+    var lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    // Test basic StrBuf functionality
+    var buf: Lua.StrBuf = undefined;
+    buf.init(&lua);
+    buf.addString("Hello");
+    buf.addChar(' ');
+    buf.addString("World");
+
+    const globals = lua.globals();
+    try globals.set("message", &buf);
+    const result = try globals.get("message", []const u8);
+    try expectEq(std.mem.eql(u8, result.?, "Hello World"), true);
+
+    try expectEq(lua.top(), 0);
+}
+
+test "StrBuf initialization with size" {
+    var lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    // Test initSize method
+    var buf: Lua.StrBuf = undefined;
+    buf.initSize(&lua, 100);
+
+    buf.addString("Testing ");
+    buf.addString("pre-allocated ");
+    buf.addString("buffer");
+
+    const globals = lua.globals();
+    try globals.set("sized_message", &buf);
+    const result = try globals.get("sized_message", []const u8);
+    try expectEq(std.mem.eql(u8, result.?, "Testing pre-allocated buffer"), true);
+
+    try expectEq(lua.top(), 0);
+}
+
+test "StrBuf add method with various types" {
+    var lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    var buf: Lua.StrBuf = undefined;
+    buf.init(&lua);
+
+    // Test different numeric types
+    try buf.add(@as(i32, 42));
+    buf.addChar(',');
+    try buf.add(@as(f64, 3.14));
+    buf.addChar(',');
+
+    // Test boolean
+    try buf.add(true);
+    buf.addChar(',');
+    try buf.add(false);
+    buf.addChar(',');
+
+    // Test optional/nil
+    try buf.add(@as(?i32, null));
+    buf.addChar(',');
+    try buf.add(@as(?i32, 123));
+
+    const globals = lua.globals();
+    try globals.set("values", &buf);
+    const result = try globals.get("values", []const u8);
+    try expectEq(std.mem.eql(u8, result.?, "42,3.14,true,false,nil,123"), true);
+
+    try expectEq(lua.top(), 0);
+}
+
+test "StrBuf with string values" {
+    var lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    var buf: Lua.StrBuf = undefined;
+    buf.init(&lua);
+    buf.addString("Prefix: ");
+    try buf.add("Hello");
+    buf.addChar(' ');
+    try buf.add(@as([]const u8, "from Zig!"));
+
+    const globals = lua.globals();
+    try globals.set("greeting", &buf);
+    const result = try globals.get("greeting", []const u8);
+    try expectEq(std.mem.eql(u8, result.?, "Prefix: Hello from Zig!"), true);
+
+    try expectEq(lua.top(), 0);
+}
+
+test "StrBuf integration with Table operations" {
+    var lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    const table = lua.createTable(.{ .arr = 0, .rec = 5 });
+    defer table.deinit();
+
+    // Create multiple StrBuf instances for different table entries
+    var buf1: Lua.StrBuf = undefined;
+    buf1.init(&lua);
+    buf1.addString("Item ");
+    try buf1.add(@as(i32, 1));
+    try table.set("first", &buf1);
+
+    var buf2: Lua.StrBuf = undefined;
+    buf2.init(&lua);
+    buf2.addString("Value: ");
+    try buf2.add(@as(f64, 42.5));
+    try table.set("second", &buf2);
+
+    var buf3: Lua.StrBuf = undefined;
+    buf3.init(&lua);
+    try buf3.add(true);
+    buf3.addString(" is ");
+    try buf3.add(false);
+    try table.set("third", &buf3);
+
+    // Verify values through table get
+    const val1 = try table.get("first", []const u8);
+    try expectEq(std.mem.eql(u8, val1.?, "Item 1"), true);
+
+    const val2 = try table.get("second", []const u8);
+    try expectEq(std.mem.eql(u8, val2.?, "Value: 42.5"), true);
+
+    const val3 = try table.get("third", []const u8);
+    try expectEq(std.mem.eql(u8, val3.?, "true is false"), true);
+
+    try expectEq(lua.top(), 0);
+}
+
+
+// Define a Zig function that builds and returns StrBuf by pointer
+fn makeMsg(l: *Lua, name: []const u8, value: i32) !Lua.StrBuf {
+    var buf: Lua.StrBuf = undefined;
+    buf.init(l);
+    buf.addString("Hello ");
+    buf.addLString(name);
+    buf.addString(", value is ");
+    try buf.add(value);
+
+    return buf;
+}
+
+test "StrBuf returned from Zig functions" {
+    var lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    // Test if function is registered at all
+    try lua.globals().setClosure("makeMsg", &lua, makeMsg);
+
+    // Check if the function exists
+    const funcExists = try lua.eval("return makeMsg ~= nil", .{}, bool);
+    try expectEq(funcExists, true);
+
+    // Simple call to see what happens
+    const result = try lua.eval("return makeMsg('Alice', 42)", .{}, []const u8);
+    const expected = "Hello Alice, value is 42";
+    try expectEq(std.mem.startsWith(u8, result, expected), true);
+}
+
+// Test function that returns StrBuf as part of a tuple
+fn makeMsgTuple(l: *Lua, name: []const u8, value: i32) !struct { Lua.StrBuf, i32 } {
+    var buf: Lua.StrBuf = undefined;
+    buf.init(l);
+    buf.addString("Tuple: ");
+    buf.addLString(name);
+    buf.addString(" = ");
+    try buf.add(value);
+    
+    return .{ buf, value * 2 };
+}
+
+test "StrBuf returned in tuple from Zig functions" {
+    var lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    // Set function that returns a tuple containing StrBuf
+    try lua.globals().setClosure("makeTuple", &lua, makeMsgTuple);
+
+    // Check if the function exists
+    const funcExists = try lua.eval("return makeTuple ~= nil", .{}, bool);
+    try expectEq(funcExists, true);
+
+    // Call function that returns tuple (StrBuf, i32)
+    const result = try lua.eval("return makeTuple('test', 21)", .{}, struct { []const u8, i32 });
+    
+    const expected_str = "Tuple: test = 21";
+    try expectEq(std.mem.startsWith(u8, result[0], expected_str), true);
+    try expectEq(result[1], 42);
+}
+
+// Test function that builds a large StrBuf to force dynamic allocation
+fn makeLargeMsg(l: *Lua, count: i32) !Lua.StrBuf {
+    var buf: Lua.StrBuf = undefined;
+    buf.init(l);
+    
+    // Build a string longer than LUA_BUFFERSIZE (512 bytes) to force dynamic allocation
+    buf.addString("Large message: ");
+    
+    // Add enough content to exceed buffer size
+    var i: i32 = 0;
+    while (i < count) : (i += 1) {
+        buf.addString("This is a repeated string to exceed buffer size! ");
+        try buf.add(i);
+        buf.addString(" ");
+    }
+    
+    return buf;
+}
+
+test "StrBuf with dynamic allocation returned from Zig functions" {
+    var lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    // Set function that creates large StrBuf requiring dynamic allocation
+    try lua.globals().setClosure("makeLarge", &lua, makeLargeMsg);
+
+    // Test with enough iterations to exceed 512 bytes
+    // Each iteration adds ~50+ bytes, so 15 iterations should exceed 512 bytes
+    const result = try lua.eval("return makeLarge(15)", .{}, []const u8);
+    
+    // Verify the result starts correctly and is reasonably long
+    try expectEq(std.mem.startsWith(u8, result, "Large message: This is a repeated string"), true);
+    try expectEq(result.len > 512, true); // Should be longer than buffer size
+    
+    // Verify it contains content from both early and late iterations
+    try expectEq(std.mem.indexOf(u8, result, "0 ") != null, true);  // First iteration
+    try expectEq(std.mem.indexOf(u8, result, "14 ") != null, true); // Last iteration
+}

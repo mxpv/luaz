@@ -1431,6 +1431,136 @@ pub const Lua = struct {
         }
     };
 
+    /// High-level string buffer for efficient string building in Lua
+    ///
+    /// StrBuf provides a high-level wrapper around Luau's luaL_Strbuf for efficient
+    /// string construction. It manages a growable buffer that can accumulate string
+    /// data from various sources and push the final result as a Lua string.
+    ///
+    /// The buffer uses an internal stack-based storage system. When the internal
+    /// buffer is exhausted, a mutable string object is placed on the Lua stack
+    /// and the buffer references that instead.
+    ///
+    /// Example:
+    /// ```zig
+    /// var buf: Lua.StrBuf = undefined;
+    /// buf.init(lua);
+    /// buf.addString("Hello");
+    /// buf.addChar(' ');
+    /// buf.addString("World");
+    /// buf.addChar('!');
+    /// try globals.set("message", &buf); // Sets global variable to "Hello World!"
+    /// ```
+    pub const StrBuf = struct {
+        buf: State.StrBuf,
+        lua: *Self,
+
+        /// Initialize buffer with default size in place
+        ///
+        /// Creates a new string buffer using Luau's internal buffer size (LUA_BUFFERSIZE).
+        /// The buffer starts empty and grows as needed when data is added.
+        ///
+        /// IMPORTANT: The StrBuf must NOT be moved after initialization. Always create it
+        /// as a local variable and use it by reference (&buf) to avoid corrupting internal pointers.
+        pub fn init(self: *StrBuf, lua: *Self) void {
+            self.lua = lua;
+            lua.state.bufInit(&self.buf);
+        }
+
+        /// Initialize buffer with specific capacity in place
+        ///
+        /// Creates a string buffer pre-allocated to hold at least `size` characters.
+        /// This can improve performance when the approximate final size is known.
+        ///
+        /// IMPORTANT: The StrBuf must NOT be moved after initialization. Always create it
+        /// as a local variable and use it by reference (&buf) to avoid corrupting internal pointers.
+        ///
+        /// Example:
+        /// ```zig
+        /// var buf: Lua.StrBuf = undefined;
+        /// buf.initSize(&lua, 100);
+        /// buf.addString("Large content goes here...");
+        /// try globals.set("content", &buf);
+        /// ```
+        pub fn initSize(self: *StrBuf, lua: *Self, size: usize) void {
+            self.lua = lua;
+            _ = lua.state.bufInitSize(&self.buf, size);
+        }
+
+        /// Add a single character to the buffer
+        ///
+        /// Appends one character to the buffer, growing it if necessary.
+        /// Uses the luaL_addchar macro for optimal performance.
+        ///
+        /// Example:
+        /// ```zig
+        /// buf.addChar('H');
+        /// buf.addChar('\n');
+        /// ```
+        pub fn addChar(self: *StrBuf, char: u8) void {
+            // Implement luaL_addchar macro: ((void)((B)->p < (B)->end || luaL_prepbuffsize(B, 1)), (*(B)->p++ = (char)(c)))
+            if (self.buf.p >= self.buf.end) {
+                _ = State.prepBuffSize(&self.buf, 1);
+            }
+            self.buf.p[0] = char;
+            self.buf.p += 1;
+        }
+
+        /// Add a null-terminated string to the buffer
+        ///
+        /// Appends a null-terminated string to the buffer. The null terminator
+        /// is not included in the buffer. Uses strlen internally to determine length.
+        ///
+        /// For better performance with known-length strings, use `addLString`.
+        ///
+        /// Example:
+        /// ```zig
+        /// buf.addString("Hello World");
+        /// ```
+        pub fn addString(self: *StrBuf, s: [*:0]const u8) void {
+            State.addLString(&self.buf, std.mem.span(s));
+        }
+
+        /// Add a length-specified string to the buffer
+        ///
+        /// Appends a string slice to the buffer. This is more efficient than
+        /// `addString` when the length is already known, as it avoids strlen.
+        ///
+        /// Example:
+        /// ```zig
+        /// const data = "Hello World";
+        /// buf.addLString(data);
+        /// ```
+        pub fn addLString(self: *StrBuf, s: []const u8) void {
+            State.addLString(&self.buf, s);
+        }
+
+        /// Add any Zig value to the buffer using generic type conversion
+        ///
+        /// Converts a Zig value to its Lua representation, then to string form,
+        /// and adds it to the buffer. This provides type-safe value addition
+        /// without manual stack manipulation.
+        ///
+        /// Type conversions follow the same rules as other Lua bindings:
+        /// - Numbers, strings, and booleans are converted directly
+        /// - nil values add "nil"
+        /// - Other types are converted via their string representation
+        ///
+        /// Example:
+        /// ```zig
+        /// try buf.add(@as(i32, 42));     // "42"
+        /// try buf.add(@as(f64, 3.14));   // "3.14"
+        /// try buf.add(true);             // "true"
+        /// try buf.add(@as(?i32, null));  // "nil"
+        /// ```
+        pub fn add(self: *StrBuf, value: anytype) !void {
+            try self.lua.checkStack(1);
+            stack.push(self.lua.*, value);
+            State.addValueAny(&self.buf, -1);
+            self.lua.state.pop(1);
+        }
+    };
+
     pub inline fn top(self: Self) i32 {
         return self.state.getTop();
     }
