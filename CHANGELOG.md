@@ -12,7 +12,7 @@ All notable changes to this project will be documented in this file.
   - Handles both stack buffer (small strings) and dynamic allocation (large strings)
 - Variadic arguments support with `Varargs` iterator for functions accepting variable number of arguments
   - `Varargs.raiseError()` method for throwing descriptive type validation errors
-- Closure support with `Table.setClosure()` for Lua-style upvalues
+- **BREAKING**: `setClosure` Lua closures must use `Upvalues(T)` as first parameter
 - Canonical Zig iterator pattern for table iteration with `Table.iterator()`
 - Metatable management APIs:
   - `Lua.createMetaTable()` for flexible metatable creation without global registration

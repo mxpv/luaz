@@ -101,22 +101,29 @@ The library supports custom memory allocators through `Lua.init()`:
 - All Lua memory operations (allocation, reallocation, freeing) go through the custom allocator
 
 ### Closure Upvalues (`setClosure`)
-The `setClosure` method accepts upvalues that can be either a single value or a tuple:
-- **Single value**: Pass directly without wrapping: `setClosure("func", value, fn)`
-- **Multiple values**: Pass as tuple: `setClosure("func", .{val1, val2}, fn)`
-- **No upvalues**: Pass empty tuple: `setClosure("func", .{}, fn)`
+The `setClosure` method creates Lua C closures using the `Upvalues(T)` wrapper type:
+- Functions must use `Upvalues(T)` as their first parameter
+- **Single upvalue**: `setClosure("func", value, fn)` where fn takes `Upvalues(T)`
+- **Multiple upvalues**: Use tuple `setClosure("func", .{val1, val2}, fn)` where fn takes `Upvalues(struct{T1, T2})`
 
 Examples:
 ```zig
-// Single upvalue - pass directly
-try table.setClosure("getValue", &state, getValueFn);
-try table.setClosure("addFive", 5, addFn);
+// Single upvalue
+fn getValue(upv: Upvalues(*State), key: []const u8) i32 {
+    return upv.value.getGlobal(key);
+}
+try table.setClosure("getValue", &state, getValue);
+
+fn addFive(upv: Upvalues(i32), x: i32) i32 {
+    return x + upv.value;
+}
+try table.setClosure("addFive", 5, addFive);
 
 // Multiple upvalues - use tuple
-try table.setClosure("transform", .{ 2.0, 10.0 }, transformFn);
-
-// No upvalues
-try table.setClosure("helper", .{}, helperFn);
+fn transform(upv: Upvalues(struct { f32, f32 }), x: f32) f32 {
+    return x * upv.value[0] + upv.value[1];
+}
+try table.setClosure("transform", .{ 2.0, 10.0 }, transform);
 ```
 
 ## Development Patterns

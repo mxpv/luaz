@@ -393,11 +393,11 @@ pub const Lua = struct {
             self.state().pop(1); // Pop table
         }
 
-        /// Sets a function in the table as a closure with upvalues.
+        /// Sets a function with upvalues in the table as a Lua C closure.
         ///
-        /// Similar to `set(key, func)` but allows creating Lua closures with captured values.
+        /// Similar to `set(key, func)` but allows creating closures with captured values.
         /// Upvalues are values that are captured and accessible to the function.
-        /// The function must accept the upvalues as its first parameter.
+        /// The function must accept upvalues as its first parameter using the `Upvalues(T)` wrapper type.
         ///
         /// WARNING: When using light user data pointers as upvalues, the user is responsible
         /// for ensuring the pointer remains valid for the lifetime of the closure.
@@ -405,23 +405,47 @@ pub const Lua = struct {
         /// Parameters:
         /// - `key`: The table key where the closure will be stored
         /// - `upvalues`: Values to be captured as upvalues (single value or tuple)
-        /// - `func`: A Zig function that accepts upvalues as its first parameter
+        /// - `func`: A Zig function with `Upvalues(T)` as its first parameter
         ///
         /// Examples:
         /// ```zig
-        /// // Single upvalue
-        /// fn add(increment: i32, x: i32) i32 { return x + increment; }
-        /// try table.setClosure("add5", .{5}, add);
-        ///
-        /// // Multiple upvalues (tuple)
-        /// fn scaledAdd(upvals: struct { f32, f32 }, x: f32) f32 {
-        ///     return x * upvals[0] + upvals[1];
+        /// fn add(upv: Upvalues(i32), x: i32) i32 {
+        ///     return upv.value + x;
         /// }
-        /// try table.setClosure("transform", .{ 2.0, 10.0 }, scaledAdd);
+        /// try table.setClosure("add5", 5, add);
+        ///
+        /// fn transform(upv: Upvalues(struct { scale: f32, offset: f32 }), x: f32) f32 {
+        ///     return x * upv.value.scale + upv.value.offset;
+        /// }
+        /// try table.setClosure("scale2add10", .{ .scale = 2.0, .offset = 10.0 }, transform);
         /// ```
         ///
         /// Errors: `Error.OutOfMemory` if stack allocation fails
         pub fn setClosure(self: Table, key: anytype, upvalues: anytype, func: anytype) !void {
+            const FuncType = @TypeOf(func);
+            const func_info = @typeInfo(FuncType);
+
+            if (func_info != .@"fn") {
+                @compileError("Third parameter must be a function");
+            }
+
+            const arg_tuple = std.meta.ArgsTuple(FuncType);
+            const arg_fields = std.meta.fields(arg_tuple);
+
+            if (arg_fields.len == 0) {
+                @compileError("Function must have at least one parameter (Upvalues)");
+            }
+
+            const FirstParamType = arg_fields[0].type;
+            const first_param_info = @typeInfo(FirstParamType);
+
+            if (first_param_info != .@"struct" or
+                !@hasDecl(FirstParamType, "is_upvalues") or
+                !FirstParamType.is_upvalues)
+            {
+                @compileError("First parameter of the function must be an Upvalues type");
+            }
+
             const upvalues_info = @typeInfo(@TypeOf(upvalues));
             const upvalue_count = if (upvalues_info == .@"struct" and upvalues_info.@"struct".is_tuple)
                 upvalues_info.@"struct".fields.len
@@ -443,12 +467,7 @@ pub const Lua = struct {
             }
 
             // Create the closure with upvalues
-            const FuncType = @TypeOf(func);
-            const arg_fields = std.meta.fields(std.meta.ArgsTuple(FuncType));
-            if (arg_fields.len == 0) {
-                @compileError("Closure function must have at least one parameter for upvalues");
-            }
-            const trampoline: State.CFunction = stack.createFunc(self.ref.lua, func, arg_fields[0].type);
+            const trampoline: State.CFunction = stack.createFunc(self.ref.lua, func);
             self.state().pushCClosureK(trampoline, @typeName(@TypeOf(func)), @intCast(upvalue_count), null);
 
             self.state().setTable(-3); // Set table[key] = closure and pop key and value
@@ -1070,6 +1089,25 @@ pub const Lua = struct {
             };
         }
     };
+
+    /// Generic wrapper for upvalues passed to Lua C closure functions.
+    ///
+    /// This type enables functions to receive upvalues in a type-safe manner when registered
+    /// as Lua C closures with `table.setClosure()`. The upvalues are automatically injected
+    /// when the function is called from Lua.
+    ///
+    /// `Upvalues(T)` must be used as the first parameter of the function.
+    ///
+    /// See `Table.setClosure()` documentation for usage examples.
+    pub fn Upvalues(comptime T: type) type {
+        return struct {
+            value: T,
+
+            /// Marker field to distinguish from regular types
+            pub const is_upvalues = true;
+            pub const UpvalueType = T;
+        };
+    }
 
     /// Variadic arguments iterator for functions accepting variable number of arguments from Lua.
     ///

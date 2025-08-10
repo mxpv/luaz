@@ -285,7 +285,7 @@ pub fn push(lua: Lua, value: anytype) void {
                 return;
             }
 
-            const trampoline = createFunc(lua, value, null);
+            const trampoline = createFunc(lua, value);
             lua.state.pushCFunction(trampoline, @typeName(T));
         },
         else => {
@@ -327,25 +327,21 @@ pub fn pushResult(lua: Lua, result: anytype) c_int {
 }
 
 /// Creates a Lua C function from a Zig function.
-/// If ClosureType is provided, creates a closure requiring `pushCClosure`.
-pub fn createFunc(_: Lua, value: anytype, comptime ClosureType: ?type) State.CFunction {
+/// Automatically detects Upvalues type in first parameter for closure functions.
+pub fn createFunc(_: Lua, value: anytype) State.CFunction {
     const T = @TypeOf(value);
     const arg_tuple = std.meta.ArgsTuple(T);
     const arg_fields = std.meta.fields(arg_tuple);
 
-    // Detect if first parameter should be treated as upvalues
-    const has_upvalues = ClosureType != null;
-
-    // Compile-time validation for closures
-    if (has_upvalues) {
-        if (arg_fields.len == 0) {
-            @compileError("Closure function must have at least one parameter for upvalues");
+    // Detect if first parameter is an Upvalues type
+    const first_param_is_upvalues = if (arg_fields.len > 0) blk: {
+        const FirstParamType = arg_fields[0].type;
+        const type_info = @typeInfo(FirstParamType);
+        if (type_info == .@"struct" and @hasDecl(FirstParamType, "is_upvalues")) {
+            break :blk FirstParamType.is_upvalues;
         }
-        if (arg_fields[0].type != ClosureType.?) {
-            @compileError("First parameter type (" ++ @typeName(arg_fields[0].type) ++
-                ") must match ClosureType (" ++ @typeName(ClosureType.?) ++ ")");
-        }
-    }
+        break :blk false;
+    } else false;
 
     // Validate Varargs is only used as the last parameter
     inline for (arg_fields, 0..) |field, i| {
@@ -365,24 +361,28 @@ pub fn createFunc(_: Lua, value: anytype, comptime ClosureType: ?type) State.CFu
             var args: arg_tuple = undefined;
 
             // Handle first parameter - upvalues or regular argument
-            const arg_start_idx = if (has_upvalues) blk: {
-                // First parameter is upvalues - populate from upvalue indices
-                const CT = ClosureType.?;
-                const ct_info = @typeInfo(CT);
+            const arg_start_idx = if (first_param_is_upvalues) blk: {
+                // First parameter is Upvalues type - populate from upvalue indices
+                const FirstParamType = arg_fields[0].type;
+                const UpvalueType = FirstParamType.UpvalueType;
+                const upvalue_info = @typeInfo(UpvalueType);
 
-                if (ct_info == .@"struct" and ct_info.@"struct".is_tuple) {
+                if (upvalue_info == .@"struct" and upvalue_info.@"struct".is_tuple) {
                     // Multiple upvalues as tuple
-                    const upvalues_fields = std.meta.fields(CT);
-                    inline for (upvalues_fields, 0..) |field, i| {
+                    var upvalue_tuple: UpvalueType = undefined;
+                    const upvalue_fields = std.meta.fields(UpvalueType);
+                    inline for (upvalue_fields, 0..) |field, i| {
                         const idx = State.upvalueIndex(@intCast(i + 1));
-                        args[0][i] = toValue(l, field.type, idx) orelse
+                        upvalue_tuple[i] = toValue(l, field.type, idx) orelse
                             l.state.typeError(idx, @typeName(field.type));
                     }
+                    args[0] = FirstParamType{ .value = upvalue_tuple };
                 } else {
                     // Single upvalue
                     const idx = State.upvalueIndex(1);
-                    args[0] = toValue(l, CT, idx) orelse
-                        l.state.typeError(idx, @typeName(CT));
+                    const upvalue = toValue(l, UpvalueType, idx) orelse
+                        l.state.typeError(idx, @typeName(UpvalueType));
+                    args[0] = FirstParamType{ .value = upvalue };
                 }
                 break :blk 1; // Start stack args from index 1, skip upvalue parameter
             } else blk: {
@@ -984,7 +984,8 @@ test "StrBuf pointer fixup on value copy" {
     // need to be fixed to point to the new buffer location.
 
     const TestFunction = struct {
-        fn buildMessage(l: *Lua, name: []const u8, age: i32) !Lua.StrBuf {
+        fn buildMessage(upv: Lua.Upvalues(*Lua), name: []const u8, age: i32) !Lua.StrBuf {
+            const l = upv.value;
             var buf: Lua.StrBuf = undefined;
             buf.init(l);
             buf.addLString(name);

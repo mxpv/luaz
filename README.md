@@ -146,11 +146,11 @@ pub fn main() !void {
     const table = lua.createTable(.{});
     defer table.deinit();
     
-    fn getGlobal(lua_ptr: *Lua, key: []const u8) !i32 {
-        return try lua_ptr.globals().get(key, i32) orelse 0;
+    fn getGlobal(upv: Lua.Upvalues(*Lua), key: []const u8) !i32 {
+        return try upv.value.globals().get(key, i32) orelse 0;
     }
     const lua_ptr = @constCast(&lua);
-    try table.setClosure("getGlobal", .lua_ptr, getGlobal);
+    try table.setClosure("getGlobal", lua_ptr, getGlobal);
     try lua.globals().set("funcs", table);
     try lua.globals().set("myValue", @as(i32, 123));
     
@@ -236,9 +236,9 @@ pub fn main() !void {
 Efficient string building using Luau's StrBuf API with automatic memory management.
 
 ```zig
-fn buildGreeting(lua: *Lua, name: []const u8, age: i32) !Lua.StrBuf {
+fn buildGreeting(upv: Lua.Upvalues(*Lua), name: []const u8, age: i32) !Lua.StrBuf {
     var buf: Lua.StrBuf = undefined;
-    buf.init(lua);
+    buf.init(upv.value);
     buf.addString("Hello, ");
     buf.addLString(name);
     buf.addString("! You are ");

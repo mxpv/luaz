@@ -632,9 +632,9 @@ pub fn main() !void {
 
         // Return StrBuf from Zig functions
         const formatMessage = struct {
-            fn call(l: *luaz.Lua, name: []const u8, age: i32) !luaz.Lua.StrBuf {
+            fn call(upv: luaz.Lua.Upvalues(*luaz.Lua), name: []const u8, age: i32) !luaz.Lua.StrBuf {
                 var b: luaz.Lua.StrBuf = undefined;
-                b.init(l);
+                b.init(upv.value);
                 b.addLString(name);
                 b.addString(" is ");
                 try b.add(age);

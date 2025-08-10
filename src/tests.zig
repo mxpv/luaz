@@ -1415,45 +1415,47 @@ test "function clone" {
     try expect(result2 == 30);
 }
 
-fn closureAdd5(n: i32, x: i32) i32 {
-    return x + n;
+fn closureAdd5(upv: Lua.Upvalues(i32), x: i32) i32 {
+    return x + upv.value;
 }
 
-fn closureTransform(upv: struct { f32, f32 }, x: f32) f32 {
-    return x * upv[0] + upv[1];
+fn closureTransform(upv: Lua.Upvalues(struct { f32, f32 }), x: f32) f32 {
+    return x * upv.value[0] + upv.value[1];
 }
 
-fn closureOptAdd(thresh: i32, x: i32, y: ?i32) i32 {
+fn closureOptAdd(upv: Lua.Upvalues(i32), x: i32, y: ?i32) i32 {
+    const thresh = upv.value;
     return if (x > thresh) x + (y orelse 0) else x;
 }
 
-fn closureMultiply(cfg: Lua.Table, x: i32) !i32 {
+fn closureMultiply(upv: Lua.Upvalues(Lua.Table), x: i32) !i32 {
+    const cfg = upv.value;
     const m = try cfg.get("mult", i32) orelse 1;
     return x * m;
 }
 
-fn closureConstant(val: i32) i32 {
-    return val;
+fn closureConstant(upv: Lua.Upvalues(i32)) i32 {
+    return upv.value;
 }
 
-fn closureSumAll(base: i32, a: ?i32, b: ?i32) i32 {
-    return base + (a orelse 0) + (b orelse 0);
+fn closureSumAll(upv: Lua.Upvalues(i32), a: ?i32, b: ?i32) i32 {
+    return upv.value + (a orelse 0) + (b orelse 0);
 }
 
-fn closureSingle(increment: i32, x: i32) i32 {
-    return x + increment;
+fn closureSingle(upv: Lua.Upvalues(i32), x: i32) i32 {
+    return x + upv.value;
 }
 
 const ClosureCounter = struct {
     count: i32,
 
-    fn increment(self: *@This(), amount: i32) i32 {
-        self.count += amount;
-        return self.count;
+    fn increment(upv: Lua.Upvalues(*ClosureCounter), amount: i32) i32 {
+        upv.value.count += amount;
+        return upv.value.count;
     }
 
-    fn getValue(self: *const @This()) i32 {
-        return self.count;
+    fn getValue(upv: Lua.Upvalues(*ClosureCounter)) i32 {
+        return upv.value.count;
     }
 };
 
@@ -1551,8 +1553,8 @@ test "metatable with closure function and table attachment" {
     // Step 2: Set function with upvalue (i32 = 4) and one parameter
     // The function returns sum of upvalue + passed parameter
     const AddFunc = struct {
-        fn add(upvalue: i32, param: i32) i32 {
-            return upvalue + param;
+        fn add(upv: Lua.Upvalues(i32), param: i32) i32 {
+            return upv.value + param;
         }
     };
 
@@ -1826,7 +1828,8 @@ test "StrBuf integration with Table operations" {
 }
 
 // Define a Zig function that builds and returns StrBuf by pointer
-fn makeMsg(l: *Lua, name: []const u8, value: i32) !Lua.StrBuf {
+fn makeMsg(upv: Lua.Upvalues(*Lua), name: []const u8, value: i32) !Lua.StrBuf {
+    const l = upv.value;
     var buf: Lua.StrBuf = undefined;
     buf.init(l);
     buf.addString("Hello ");
@@ -1855,7 +1858,8 @@ test "StrBuf returned from Zig functions" {
 }
 
 // Test function that returns StrBuf as part of a tuple
-fn makeMsgTuple(l: *Lua, name: []const u8, value: i32) !struct { Lua.StrBuf, i32 } {
+fn makeMsgTuple(upv: Lua.Upvalues(*Lua), name: []const u8, value: i32) !struct { Lua.StrBuf, i32 } {
+    const l = upv.value;
     var buf: Lua.StrBuf = undefined;
     buf.init(l);
     buf.addString("Tuple: ");
@@ -1886,7 +1890,8 @@ test "StrBuf returned in tuple from Zig functions" {
 }
 
 // Test function that builds a large StrBuf to force dynamic allocation
-fn makeLargeMsg(l: *Lua, count: i32) !Lua.StrBuf {
+fn makeLargeMsg(upv: Lua.Upvalues(*Lua), count: i32) !Lua.StrBuf {
+    const l = upv.value;
     var buf: Lua.StrBuf = undefined;
     buf.init(l);
 
