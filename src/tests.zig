@@ -5,7 +5,9 @@ comptime {
 }
 
 const std = @import("std");
-const Lua = @import("lua.zig").Lua;
+const lua_mod = @import("lua.zig");
+const Lua = lua_mod.Lua;
+const Debug = lua_mod.Debug;
 
 const Error = Lua.Error;
 const State = @import("State.zig");
@@ -1999,17 +2001,17 @@ test "setCallbacks all callbacks" {
             return 0;
         }
 
-        pub fn debugbreak(state: *State, ar: *State.Debug) void {
+        pub fn debugbreak(state: *State, ar: Debug) void {
             _ = state;
             _ = ar;
         }
 
-        pub fn debugstep(state: *State, ar: *State.Debug) void {
+        pub fn debugstep(state: *State, ar: Debug) void {
             _ = state;
             _ = ar;
         }
 
-        pub fn debuginterrupt(state: *State, ar: *State.Debug) void {
+        pub fn debuginterrupt(state: *State, ar: Debug) void {
             _ = state;
             _ = ar;
         }

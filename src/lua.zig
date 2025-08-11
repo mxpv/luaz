@@ -45,11 +45,13 @@ const Allocator = std.mem.Allocator;
 
 pub const State = @import("State.zig");
 pub const Compiler = @import("Compiler.zig");
+pub const Debug = @import("debug.zig").Debug;
 
 const userdata = @import("userdata.zig");
 const stack = @import("stack.zig");
 const alloc = @import("alloc.zig").alloc;
 const assert = @import("assert.zig");
+const debug = @import("debug.zig");
 
 /// High-level Lua wrapper and main library entry point.
 /// Provides an idiomatic Zig interface with automatic type conversions for the Luau scripting language.
@@ -209,9 +211,9 @@ pub const Lua = struct {
     /// - `panic(state: *State, errcode: i32) void` - Called on unprotected errors (if longjmp is used)
     /// - `userthread(parent: ?*State, thread: *State) void` - Called when thread is created/destroyed
     /// - `useratom(s: []const u8) i16` - Called when string is created; returns atom ID
-    /// - `debugbreak(state: *State, ar: *State.Debug) void` - Called on BREAK instruction
-    /// - `debugstep(state: *State, ar: *State.Debug) void` - Called after each instruction in single step
-    /// - `debuginterrupt(state: *State, ar: *State.Debug) void` - Called on thread execution interrupt
+    /// - `debugbreak(state: *State, ar: Debug) void` - Called on BREAK instruction
+    /// - `debugstep(state: *State, ar: Debug) void` - Called after each instruction in single step
+    /// - `debuginterrupt(state: *State, ar: Debug) void` - Called on thread execution interrupt
     /// - `debugprotectederror(state: *State) void` - Called when protected call results in error
     /// - `onallocate(state: *State, osize: usize, nsize: usize) void` - Called when a memory operation occurs
     ///   (allocation when osize=0, deallocation when nsize=0, reallocation otherwise).
@@ -345,13 +347,14 @@ pub const Lua = struct {
             cb.debugbreak = struct {
                 fn wrapper(L: ?State.LuaState, ar: ?*State.Debug) callconv(.C) void {
                     var state = State{ .lua = L.? };
+                    const debug_info = debug.Debug.fromC(ar.?);
 
                     if (comptime is_instance) {
                         const callbacks_struct = state.callbacks();
                         const instance: *CallbackType = @ptrCast(@alignCast(callbacks_struct.userdata.?));
-                        instance.debugbreak(&state, ar.?);
+                        instance.debugbreak(&state, debug_info);
                     } else {
-                        CallbackType.debugbreak(&state, ar.?);
+                        CallbackType.debugbreak(&state, debug_info);
                     }
                 }
             }.wrapper;
@@ -361,13 +364,14 @@ pub const Lua = struct {
             cb.debugstep = struct {
                 fn wrapper(L: ?State.LuaState, ar: ?*State.Debug) callconv(.C) void {
                     var state = State{ .lua = L.? };
+                    const debug_info = debug.Debug.fromC(ar.?);
 
                     if (comptime is_instance) {
                         const callbacks_struct = state.callbacks();
                         const instance: *CallbackType = @ptrCast(@alignCast(callbacks_struct.userdata.?));
-                        instance.debugstep(&state, ar.?);
+                        instance.debugstep(&state, debug_info);
                     } else {
-                        CallbackType.debugstep(&state, ar.?);
+                        CallbackType.debugstep(&state, debug_info);
                     }
                 }
             }.wrapper;
@@ -377,13 +381,14 @@ pub const Lua = struct {
             cb.debuginterrupt = struct {
                 fn wrapper(L: ?State.LuaState, ar: ?*State.Debug) callconv(.C) void {
                     var state = State{ .lua = L.? };
+                    const debug_info = debug.Debug.fromC(ar.?);
 
                     if (comptime is_instance) {
                         const callbacks_struct = state.callbacks();
                         const instance: *CallbackType = @ptrCast(@alignCast(callbacks_struct.userdata.?));
-                        instance.debuginterrupt(&state, ar.?);
+                        instance.debuginterrupt(&state, debug_info);
                     } else {
-                        CallbackType.debuginterrupt(&state, ar.?);
+                        CallbackType.debuginterrupt(&state, debug_info);
                     }
                 }
             }.wrapper;
