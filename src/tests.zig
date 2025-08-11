@@ -1928,3 +1928,130 @@ test "StrBuf with dynamic allocation returned from Zig functions" {
     try expectEq(std.mem.indexOf(u8, result, "0 ") != null, true); // First iteration
     try expectEq(std.mem.indexOf(u8, result, "14 ") != null, true); // Last iteration
 }
+
+test "setCallbacks onallocate" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    const AllocCallbacks = struct {
+        var called: bool = false;
+
+        pub fn onallocate(state: *State, osize: usize, nsize: usize) void {
+            _ = state;
+            _ = osize;
+            _ = nsize;
+            called = true;
+        }
+    };
+
+    AllocCallbacks.called = false;
+    lua.setCallbacks(AllocCallbacks{});
+
+    const globals = lua.globals();
+    try globals.set("key", "value");
+
+    try expect(AllocCallbacks.called);
+}
+
+test "setCallbacks userthread" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    const ThreadCallbacks = struct {
+        var created: bool = false;
+
+        pub fn userthread(parent: ?*State, thread: *State) void {
+            _ = thread;
+            _ = parent;
+            created = true;
+        }
+    };
+
+    ThreadCallbacks.created = false;
+    lua.setCallbacks(ThreadCallbacks{});
+
+    _ = lua.createThread();
+    try expect(ThreadCallbacks.created);
+}
+
+test "setCallbacks all callbacks" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    const AllCallbacks = struct {
+        pub fn interrupt(state: *State, gc_flag: i32) void {
+            _ = state;
+            _ = gc_flag;
+        }
+
+        pub fn panic(state: *State, errcode: i32) void {
+            _ = state;
+            _ = errcode;
+        }
+
+        pub fn userthread(parent: ?*State, thread: *State) void {
+            _ = parent;
+            _ = thread;
+        }
+
+        pub fn useratom(s: []const u8) i16 {
+            _ = s;
+            return 0;
+        }
+
+        pub fn debugbreak(state: *State, ar: *State.Debug) void {
+            _ = state;
+            _ = ar;
+        }
+
+        pub fn debugstep(state: *State, ar: *State.Debug) void {
+            _ = state;
+            _ = ar;
+        }
+
+        pub fn debuginterrupt(state: *State, ar: *State.Debug) void {
+            _ = state;
+            _ = ar;
+        }
+
+        pub fn debugprotectederror(state: *State) void {
+            _ = state;
+        }
+
+        pub fn onallocate(state: *State, osize: usize, nsize: usize) void {
+            _ = state;
+            _ = osize;
+            _ = nsize;
+        }
+    };
+
+    lua.setCallbacks(AllCallbacks{});
+
+    _ = lua.createThread(); // Should trigger userthread
+    const globals = lua.globals();
+    try globals.set("test", "value"); // Should trigger onallocate
+}
+
+test "setCallbacks instance methods" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    const InstanceCallbacks = struct {
+        counter: u32 = 0,
+
+        pub fn onallocate(self: *@This(), state: *State, osize: usize, nsize: usize) void {
+            _ = state;
+            _ = osize;
+            _ = nsize;
+            self.counter += 1;
+        }
+    };
+
+    var callbacks = InstanceCallbacks{};
+    lua.setCallbacks(&callbacks);
+
+    const globals = lua.globals();
+    try globals.set("key", "value");
+
+    try expect(callbacks.counter > 0);
+}

@@ -199,6 +199,231 @@ pub const Lua = struct {
         return false;
     }
 
+    /// Configure VM event handlers using duck typing.
+    ///
+    /// Sets callback functions for various VM events. The callbacks object can contain
+    /// any combination of the following methods, which will be automatically registered
+    /// if present:
+    ///
+    /// - `interrupt(state: *State, gc: i32) void` - Called at safepoints (loop back edges, call/ret, gc)
+    /// - `panic(state: *State, errcode: i32) void` - Called on unprotected errors (if longjmp is used)
+    /// - `userthread(parent: ?*State, thread: *State) void` - Called when thread is created/destroyed
+    /// - `useratom(s: []const u8) i16` - Called when string is created; returns atom ID
+    /// - `debugbreak(state: *State, ar: *State.Debug) void` - Called on BREAK instruction
+    /// - `debugstep(state: *State, ar: *State.Debug) void` - Called after each instruction in single step
+    /// - `debuginterrupt(state: *State, ar: *State.Debug) void` - Called on thread execution interrupt
+    /// - `debugprotectederror(state: *State) void` - Called when protected call results in error
+    /// - `onallocate(state: *State, osize: usize, nsize: usize) void` - Called when a memory operation occurs
+    ///   (allocation when osize=0, deallocation when nsize=0, reallocation otherwise).
+    ///   Note: This callback is only triggered for Luau's internal allocations, not for all memory operations
+    ///
+    /// Only methods that exist on the callbacks object will be set. Missing methods are ignored.
+    ///
+    /// Note: Callbacks are set globally on the Lua state and remain active until the state is destroyed
+    /// or new callbacks are set.
+    ///
+    /// Supports two modes:
+    /// 1. Static methods: Pass a struct instance - methods are called as static functions.
+    ///    The struct instance is not stored, only the function pointers are registered.
+    ///    Methods cannot access instance state and must be stateless.
+    ///
+    /// 2. Instance methods: Pass a pointer to struct instance - methods are called on the instance.
+    ///    The instance pointer is stored in the `userdata` field of the VM callbacks structure.
+    ///    Methods receive `self` as the first parameter and can access/modify instance state.
+    ///
+    ///    IMPORTANT: The user is responsible for keeping the instance alive for the entire
+    ///    lifetime of the Lua state. If the instance is destroyed while callbacks are still
+    ///    registered, calling the callbacks will result in undefined behavior (likely a crash).
+    ///    The pointer must remain valid until the Lua state is destroyed or new callbacks are set.
+    ///
+    /// Examples:
+    /// ```zig
+    /// // Static methods
+    /// const MyCallbacks = struct {
+    ///     fn interrupt(state: *State, gc: i32) void {
+    ///         std.debug.print("VM interrupt: gc={}\n", .{gc});
+    ///     }
+    /// };
+    /// lua.setCallbacks(MyCallbacks{});
+    ///
+    /// // Instance methods
+    /// const MyCallbacks = struct {
+    ///     counter: u32 = 0,
+    ///     fn interrupt(self: *@This(), state: *State, gc: i32) void {
+    ///         self.counter += 1;
+    ///         std.debug.print("VM interrupt #{}: gc={}\n", .{self.counter, gc});
+    ///     }
+    /// };
+    /// var callbacks = MyCallbacks{};
+    /// lua.setCallbacks(&callbacks);
+    /// ```
+    pub fn setCallbacks(self: Self, callbacks: anytype) void {
+        const cb = self.state.callbacks();
+
+        const type_info = @typeInfo(@TypeOf(callbacks));
+
+        // Handle both struct instances and pointers to struct instances
+        const is_instance = type_info == .pointer;
+        const CallbackType = if (is_instance) type_info.pointer.child else @TypeOf(callbacks);
+        const callback_type_info = @typeInfo(CallbackType);
+
+        if (callback_type_info != .@"struct") return;
+
+        // Store instance pointer in userdata if it's a pointer
+        if (is_instance) {
+            cb.userdata = @ptrCast(@constCast(callbacks));
+        } else {
+            cb.userdata = null;
+        }
+
+        if (@hasDecl(CallbackType, "interrupt")) {
+            cb.interrupt = struct {
+                fn wrapper(L: ?State.LuaState, gc_flag: c_int) callconv(.C) void {
+                    var state = State{ .lua = L.? };
+
+                    if (comptime is_instance) {
+                        const callbacks_struct = state.callbacks();
+                        const instance: *CallbackType = @ptrCast(@alignCast(callbacks_struct.userdata.?));
+                        instance.interrupt(&state, @intCast(gc_flag));
+                    } else {
+                        CallbackType.interrupt(&state, @intCast(gc_flag));
+                    }
+                }
+            }.wrapper;
+        }
+
+        if (@hasDecl(CallbackType, "panic")) {
+            cb.panic = struct {
+                fn wrapper(L: ?State.LuaState, errcode: c_int) callconv(.C) void {
+                    var state = State{ .lua = L.? };
+
+                    if (comptime is_instance) {
+                        const callbacks_struct = state.callbacks();
+                        const instance: *CallbackType = @ptrCast(@alignCast(callbacks_struct.userdata.?));
+                        instance.panic(&state, @intCast(errcode));
+                    } else {
+                        CallbackType.panic(&state, @intCast(errcode));
+                    }
+                }
+            }.wrapper;
+        }
+
+        if (@hasDecl(CallbackType, "userthread")) {
+            cb.userthread = struct {
+                fn wrapper(LP: ?State.LuaState, L: ?State.LuaState) callconv(.C) void {
+                    var parent_state: ?State = if (LP) |p| State{ .lua = p } else null;
+                    var thread_state = State{ .lua = L.? }; // L is never null in practice
+
+                    if (comptime is_instance) {
+                        const callbacks_struct = thread_state.callbacks();
+                        const instance: *CallbackType = @ptrCast(@alignCast(callbacks_struct.userdata.?));
+                        instance.userthread(if (parent_state) |*ps| ps else null, &thread_state);
+                    } else {
+                        CallbackType.userthread(if (parent_state) |*ps| ps else null, &thread_state);
+                    }
+                }
+            }.wrapper;
+        }
+
+        if (@hasDecl(CallbackType, "useratom")) {
+            cb.useratom = struct {
+                fn wrapper(s: [*c]const u8, l: usize) callconv(.C) i16 {
+                    const slice = s[0..l];
+
+                    if (comptime is_instance) {
+                        // Note: useratom doesn't receive a Lua state, so we can't access userdata directly.
+                        // This callback must remain static for now due to C API limitations.
+                        @compileError("useratom callback cannot be used with instance methods as it doesn't receive a Lua state parameter");
+                    } else {
+                        return CallbackType.useratom(slice);
+                    }
+                }
+            }.wrapper;
+        }
+
+        if (@hasDecl(CallbackType, "debugbreak")) {
+            cb.debugbreak = struct {
+                fn wrapper(L: ?State.LuaState, ar: ?*State.Debug) callconv(.C) void {
+                    var state = State{ .lua = L.? };
+
+                    if (comptime is_instance) {
+                        const callbacks_struct = state.callbacks();
+                        const instance: *CallbackType = @ptrCast(@alignCast(callbacks_struct.userdata.?));
+                        instance.debugbreak(&state, ar.?);
+                    } else {
+                        CallbackType.debugbreak(&state, ar.?);
+                    }
+                }
+            }.wrapper;
+        }
+
+        if (@hasDecl(CallbackType, "debugstep")) {
+            cb.debugstep = struct {
+                fn wrapper(L: ?State.LuaState, ar: ?*State.Debug) callconv(.C) void {
+                    var state = State{ .lua = L.? };
+
+                    if (comptime is_instance) {
+                        const callbacks_struct = state.callbacks();
+                        const instance: *CallbackType = @ptrCast(@alignCast(callbacks_struct.userdata.?));
+                        instance.debugstep(&state, ar.?);
+                    } else {
+                        CallbackType.debugstep(&state, ar.?);
+                    }
+                }
+            }.wrapper;
+        }
+
+        if (@hasDecl(CallbackType, "debuginterrupt")) {
+            cb.debuginterrupt = struct {
+                fn wrapper(L: ?State.LuaState, ar: ?*State.Debug) callconv(.C) void {
+                    var state = State{ .lua = L.? };
+
+                    if (comptime is_instance) {
+                        const callbacks_struct = state.callbacks();
+                        const instance: *CallbackType = @ptrCast(@alignCast(callbacks_struct.userdata.?));
+                        instance.debuginterrupt(&state, ar.?);
+                    } else {
+                        CallbackType.debuginterrupt(&state, ar.?);
+                    }
+                }
+            }.wrapper;
+        }
+
+        if (@hasDecl(CallbackType, "debugprotectederror")) {
+            cb.debugprotectederror = struct {
+                fn wrapper(L: ?State.LuaState) callconv(.C) void {
+                    var state = State{ .lua = L.? };
+
+                    if (comptime is_instance) {
+                        const callbacks_struct = state.callbacks();
+                        const instance: *CallbackType = @ptrCast(@alignCast(callbacks_struct.userdata.?));
+                        instance.debugprotectederror(&state);
+                    } else {
+                        CallbackType.debugprotectederror(&state);
+                    }
+                }
+            }.wrapper;
+        }
+
+        if (@hasDecl(CallbackType, "onallocate")) {
+            cb.onallocate = struct {
+                fn wrapper(L: ?State.LuaState, osize: usize, nsize: usize) callconv(.C) void {
+                    if (L) |lua| {
+                        var state = State{ .lua = lua };
+
+                        if (comptime is_instance) {
+                            const callbacks_struct = state.callbacks();
+                            const instance: *CallbackType = @ptrCast(@alignCast(callbacks_struct.userdata.?));
+                            instance.onallocate(&state, osize, nsize);
+                        } else {
+                            CallbackType.onallocate(&state, osize, nsize);
+                        }
+                    }
+                }
+            }.wrapper;
+        }
+    }
+
     /// A reference to a Lua value.
     ///
     /// Holds a reference ID that can be used to retrieve the value later.
