@@ -103,8 +103,8 @@ The library supports custom memory allocators through `Lua.init()`:
 ### Closure Upvalues (`setClosure`)
 The `setClosure` method creates Lua C closures using the `Upvalues(T)` wrapper type:
 - Functions must use `Upvalues(T)` as their first parameter
-- **Single upvalue**: `setClosure("func", value, fn)` where fn takes `Upvalues(T)`
-- **Multiple upvalues**: Use tuple `setClosure("func", .{val1, val2}, fn)` where fn takes `Upvalues(struct{T1, T2})`
+- Single upvalue: `setClosure("func", value, fn)` where fn takes `Upvalues(T)`
+- Multiple upvalues: Use tuple `setClosure("func", .{val1, val2}, fn)` where fn takes `Upvalues(struct{T1, T2})`
 
 Examples:
 ```zig
@@ -127,6 +127,9 @@ try table.setClosure("transform", .{ 2.0, 10.0 }, transform);
 ```
 
 ## Development Patterns
+
+### Versioning and Compatibility
+The library is currently in pre-1.0 development. Breaking changes are acceptable and encouraged to improve the API design. Backward compatibility is not a concern until version 1.0 is released.
 
 ### Code Style
 Write idiomatic Zig code following the established patterns in the codebase:
@@ -195,7 +198,10 @@ Keep commit messages brief and to the point:
 - Keep commits focused and atomic - one logical change per commit
 - Ensure unit tests pass
 - Before committing: verify all documentation examples match the current API signatures and behavior
-- **IMPORTANT**: Always verify that the guided tour in README.md compiles and works correctly before pushing any commit or creating a pull request
+- IMPORTANT: Always verify that the guided tour in README.md compiles and works correctly before pushing any commit or creating a pull request
+- Before committing or creating a PR: always make sure the changelog is up to date
+- Update changelog whenever there is a new API, breaking change, performance improvement, or anything else that changes behavior
+- Prefer one-liner changelog updates describing changes from user perspective without implementation details
 
 ### Pull Request Guidelines
 Keep PR descriptions concise and focused:
@@ -204,4 +210,4 @@ Keep PR descriptions concise and focused:
 - Focus on what the change does and why, not exhaustive implementation details
 - Include code examples only when they help demonstrate usage or key functionality
 - Before creating PR: ensure all documentation examples are tested and work with the current API
-- **IMPORTANT**: Always verify that the guided tour in README.md compiles and is up to date before creating a pull request
+- IMPORTANT: Always verify that the guided tour in README.md compiles and is up to date before creating a pull request
