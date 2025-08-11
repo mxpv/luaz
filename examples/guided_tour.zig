@@ -192,20 +192,21 @@ pub fn main() !void {
 
         // Simple arithmetic
         const result1 = try lua.eval("return 2 + 3", .{}, i32);
-        print("2 + 3 = {}\n", .{result1});
+        print("2 + 3 = {}\n", .{result1.ok.?});
 
         // Boolean expressions
         const result2 = try lua.eval("return false == false", .{}, bool);
-        print("false == false = {}\n", .{result2});
+        print("false == false = {}\n", .{result2.ok.?});
 
         // String operations
-        try lua.eval("global = 'foo' .. 'bar'", .{}, void);
+        _ = try lua.eval("global = 'foo' .. 'bar'", .{}, void);
         const globals = lua.globals();
         const concat = try globals.get("global", []const u8);
         print("'foo' .. 'bar' = {s}\n", .{concat.?});
 
         // Multiple return values as tuples
-        const tuple = try lua.eval("return 10, 2.5, false", .{}, struct { i32, f64, bool });
+        const tuple_result = try lua.eval("return 10, 2.5, false", .{}, struct { i32, f64, bool });
+        const tuple = tuple_result.ok.?;
         print("Multiple returns: {}, {d:.1}, {}\n", .{ tuple[0], tuple[1], tuple[2] });
     }
 
@@ -229,11 +230,11 @@ pub fn main() !void {
         print("Compiled {} bytes of source into {} bytes of bytecode\n", .{ source_code.len, bytecode.len });
 
         // Execute the same bytecode multiple times
-        const result1 = try lua.exec(bytecode, i32);
-        print("First execution: {}\n", .{result1});
+        const exec_result1 = try lua.exec(bytecode, i32);
+        print("First execution: {}\n", .{exec_result1.ok.?});
 
-        const result2 = try lua.exec(bytecode, i32);
-        print("Second execution: {}\n", .{result2});
+        const exec_result2 = try lua.exec(bytecode, i32);
+        print("Second execution: {}\n", .{exec_result2.ok.?});
 
         print("Note: In production, use 'zig build luau-compile' to precompile Lua scripts offline\n", .{});
     }
@@ -269,7 +270,7 @@ pub fn main() !void {
         try globals.set("map_table", map_table);
 
         // Iterate over tables in Lua
-        try lua.eval(
+        _ = try lua.eval(
             \\print("Array table:")
             \\for k, v in pairs(array_table) do
             \\    print("  " .. k .. " = " .. v)
@@ -292,16 +293,17 @@ pub fn main() !void {
         try globals.set("safeDivide", safeDivide);
 
         // Call from Lua
-        const sum = try lua.eval("return add(10, 20)", .{}, i32);
-        print("add(10, 20) = {}\n", .{sum});
+        const sum_result = try lua.eval("return add(10, 20)", .{}, i32);
+        print("add(10, 20) = {}\n", .{sum_result.ok.?});
 
-        try lua.eval("greet('Zig')", .{}, void);
+        _ = try lua.eval("greet('Zig')", .{}, void);
 
-        const dm = try lua.eval("return divmod(17, 5)", .{}, struct { i32, i32 });
+        const dm_result = try lua.eval("return divmod(17, 5)", .{}, struct { i32, i32 });
+        const dm = dm_result.ok.?;
         print("divmod(17, 5) = {}, {}\n", .{ dm[0], dm[1] });
 
         // Optional returns become nil in Lua
-        try lua.eval(
+        _ = try lua.eval(
             \\local result = safeDivide(10, 0)
             \\if result == nil then
             \\    print("Division by zero!")
@@ -319,7 +321,7 @@ pub fn main() !void {
         try lua.registerUserData(Counter);
 
         // Use from Lua
-        try lua.eval(
+        _ = try lua.eval(
             \\-- Create new counter (init becomes 'new' in Lua)
             \\local c = Counter.new(10, "my_counter")
             \\print("Initial value: " .. c:getValue())
@@ -387,8 +389,8 @@ pub fn main() !void {
             try globals.compile("fibonacci");
 
             // Now the function runs with native code
-            const fib10 = try lua.eval("return fibonacci(10)", .{}, i32);
-            print("fibonacci(10) = {} (compiled with codegen)\n", .{fib10});
+            const fib10_result = try lua.eval("return fibonacci(10)", .{}, i32);
+            print("fibonacci(10) = {} (compiled with codegen)\n", .{fib10_result.ok.?});
         } else {
             print("Code generation not supported on this platform\n", .{});
         }
@@ -403,7 +405,7 @@ pub fn main() !void {
         const globals = lua.globals();
         try globals.set("myVector", vec3);
 
-        try lua.eval(
+        _ = try lua.eval(
             \\print("Vector: " .. tostring(myVector))
             \\-- Vectors support component access
             \\print("X component: " .. myVector.X)
@@ -427,7 +429,7 @@ pub fn main() !void {
         try globals.set("fruits", string_array);
         try globals.set("flags", bool_array);
 
-        try lua.eval(
+        _ = try lua.eval(
             \\print("Integer array:")
             \\for i, v in ipairs(numbers) do
             \\    print("  " .. i .. ": " .. v)
@@ -445,7 +447,8 @@ pub fn main() !void {
         , .{}, void);
 
         // Multiple values can be retrieved as tuples using multiple return values
-        const retrieved_numbers = try lua.eval("return 100, 200, 300", .{}, struct { i32, i32, i32 });
+        const retrieved_numbers_result = try lua.eval("return 100, 200, 300", .{}, struct { i32, i32, i32 });
+        const retrieved_numbers = retrieved_numbers_result.ok.?;
         print("Retrieved multiple values from Lua: {}, {}, {}\n", .{ retrieved_numbers[0], retrieved_numbers[1], retrieved_numbers[2] });
     }
 
@@ -456,7 +459,8 @@ pub fn main() !void {
         const globals = lua.globals();
 
         // Tuples (anonymous structs) are supported using multiple return values
-        const retrieved_tuple = try lua.eval("return 99, 'world', false", .{}, struct { i32, []const u8, bool });
+        const retrieved_tuple_result = try lua.eval("return 99, 'world', false", .{}, struct { i32, []const u8, bool });
+        const retrieved_tuple = retrieved_tuple_result.ok.?;
         print("Retrieved tuple: {}, {s}, {}\n", .{ retrieved_tuple[0], retrieved_tuple[1], retrieved_tuple[2] });
 
         // For named fields, create tables manually
@@ -467,7 +471,7 @@ pub fn main() !void {
         try point_table.set("y", 20.7);
         try globals.set("point", point_table);
 
-        try lua.eval("print('Point: x=' .. point.x .. ', y=' .. point.y)", .{}, void);
+        _ = try lua.eval("print('Point: x=' .. point.x .. ', y=' .. point.y)", .{}, void);
 
         // Retrieve individual fields from table structures
         const x_coord = try point_table.get("x", f32);
@@ -488,7 +492,7 @@ pub fn main() !void {
         print("Initial memory usage: {} bytes ({} KB + {} bytes)\n", .{ initial_total, initial_memory_kb, initial_memory_bytes });
 
         // Create some objects to increase memory usage
-        try lua.eval(
+        _ = try lua.eval(
             \\local large_table = {}
             \\for i = 1, 1000 do
             \\    large_table[i] = "String number " .. i .. " with some extra data to use more memory"
@@ -518,8 +522,8 @@ pub fn main() !void {
         print("GC running: {}\n", .{gc.isRunning()});
 
         // Create more garbage while GC is stopped
-        try lua.eval("global_table = nil", .{}, void); // Release reference
-        try lua.eval(
+        _ = try lua.eval("global_table = nil", .{}, void); // Release reference
+        _ = try lua.eval(
             \\for i = 1, 100 do
             \\    local temp = {}
             \\    for j = 1, 50 do
@@ -565,7 +569,7 @@ pub fn main() !void {
 
         // Runtime errors are handled by Lua's error system
         // You can use pcall in Lua for protected calls
-        try lua.eval(
+        _ = try lua.eval(
             \\local success, result = pcall(function()
             \\    error("This is a runtime error")
             \\end)
@@ -598,18 +602,18 @@ pub fn main() !void {
 
         // Start the coroutine - yields initial sum (0)
         const result1 = try func.?.call(.{}, i32);
-        print("Start: sum={}\n", .{result1});
+        print("Start: sum={}\n", .{result1.yield.?});
 
         // Continue with values to accumulate
         const result2 = try func.?.call(.{10}, i32);
-        print("Add 10: sum={}\n", .{result2});
+        print("Add 10: sum={}\n", .{result2.yield.?});
 
         const result3 = try func.?.call(.{25}, i32);
-        print("Add 25: sum={}\n", .{result3});
+        print("Add 25: sum={}\n", .{result3.yield.?});
 
         // Send nil to finish
         const final_result = try func.?.call(.{@as(?i32, null)}, i32);
-        print("Final: sum={}\n", .{final_result});
+        print("Final: sum={}\n", .{final_result.ok.?});
     }
 
     // String Buffer (StrBuf) for efficient string building
@@ -645,7 +649,7 @@ pub fn main() !void {
 
         try globals.setClosure("formatMessage", &lua, formatMessage);
         const result = try lua.eval("return formatMessage('Alice', 25)", .{}, []const u8);
-        print("From function: {s}\n", .{result});
+        print("From function: {s}\n", .{result.ok.?});
     }
 
     print("\n=== Tour Complete! ===\n", .{});

@@ -73,8 +73,6 @@ pub const Lua = struct {
         Runtime,
         /// Breakpoint could not be set at the specified line.
         InvalidBreakpoint,
-        /// Debug break occurred during execution.
-        Break,
     };
 
     /// Assert handler function type for Luau VM assertions.
@@ -870,7 +868,7 @@ pub const Lua = struct {
         /// ```
         ///
         /// Errors: `Error.OutOfMemory` if stack allocation fails, `Error.Runtime` if function execution fails
-        pub fn call(self: Table, key: anytype, args: anytype, comptime R: type) !R {
+        pub fn call(self: Table, key: anytype, args: anytype, comptime R: type) !Result(R) {
             try self.ref.lua.checkStack(3);
 
             stack.push(self.ref.lua, self.ref); // Push table ref
@@ -879,13 +877,7 @@ pub const Lua = struct {
 
             defer self.state().pop(-1); // Pop table in the end.
 
-            const result = self.ref.lua.call(args, R, false);
-            return switch (result.status) {
-                .ok, .yield => result.result.?,
-                .break_debug => error.Break,
-                .errmem => error.OutOfMemory,
-                else => error.Runtime,
-            };
+            return self.ref.lua.call(args, R, false);
         }
 
         /// Compile a function stored in this table using Luau's JIT code generator for improved performance.
@@ -1702,20 +1694,13 @@ pub const Lua = struct {
         /// ```
         ///
         /// Errors: `Error.OutOfMemory` if stack allocation fails, `Error.Runtime` if function execution fails
-        pub fn call(self: @This(), args: anytype, comptime R: type) !R {
+        pub fn call(self: @This(), args: anytype, comptime R: type) !Result(R) {
             try self.ref.lua.checkStack(2);
 
             stack.push(self.ref.lua, self.ref); // Push function ref
 
             // Use resume semantics if in a thread, call semantics if in main state
-            const result = self.ref.lua.call(args, R, self.ref.lua.isThread());
-
-            return switch (result.status) {
-                .ok, .yield => result.result.?,
-                .break_debug => error.Break,
-                .errmem => error.OutOfMemory,
-                else => error.Runtime,
-            };
+            return self.ref.lua.call(args, R, self.ref.lua.isThread());
         }
 
         /// Compile this function using Luau's JIT code generator for improved performance.
@@ -1999,20 +1984,24 @@ pub const Lua = struct {
     /// ```zig
     /// // Execute bytecode that returns a number
     /// const result = try lua.exec(bytecode, i32);
+    /// try expectEq(result.ok, 42);
     ///
     /// // Execute bytecode that returns nothing
-    /// try lua.exec(bytecode, void);
+    /// const void_result = try lua.exec(bytecode, void);
+    /// try expectEq(void_result, .{ .ok = {} });
     ///
     /// // Execute bytecode with optional return type
     /// const maybe_result = try lua.exec(bytecode, ?f64);
+    /// try expectEq(maybe_result.ok, 3.14);
     ///
     /// // Execute bytecode that returns multiple values as a tuple
     /// const tuple = try lua.exec(bytecode, struct { i32, f64, bool });
+    /// try expectEq(tuple.ok, .{ 10, 3.14, true });
     /// ```
     ///
-    /// Returns: The result of executing the bytecode, converted to type `T`
+    /// Returns: The result of executing the bytecode as a Result union
     /// Errors: `Error.OutOfMemory` if the VM runs out of memory, `Error.Runtime` if execution fails
-    pub fn exec(self: Self, blob: []const u8, comptime T: type) !T {
+    pub fn exec(self: Self, blob: []const u8, comptime T: type) !Result(T) {
         // Push byte code onto stack
         {
             const load_status = self.state.load("", blob, 0);
@@ -2028,12 +2017,7 @@ pub const Lua = struct {
             std.debug.assert(self.state.isFunction(-1));
         }
 
-        const result = self.call(.{}, T, false);
-        return switch (result.status) {
-            .ok, .yield => result.result.?,
-            .errmem => error.OutOfMemory,
-            else => error.Runtime,
-        };
+        return self.call(.{}, T, false);
     }
 
     /// Get the current status of this coroutine thread.
@@ -2165,13 +2149,31 @@ pub const Lua = struct {
         return self.state.lua != main_thread.lua;
     }
 
-    /// Lua function call result type (status + return).
-    inline fn CallResult(comptime R: type) type {
-        return struct { status: State.Status, result: ?R };
+    /// Result of a Lua function call containing status and return value.
+    pub fn Result(comptime R: type) type {
+        return union(enum) {
+            /// Function completed successfully.
+            ok: ?R,
+            /// Function yielded (suspended execution).
+            yield: ?R,
+            /// Debug break occurred during execution.
+            debugBreak,
+        };
+    }
+
+    /// Convert status and result to Result union or error.
+    fn makeResult(comptime R: type, exec_status: State.Status, result: ?R) !Result(R) {
+        return switch (exec_status) {
+            .ok => Result(R){ .ok = result },
+            .yield => Result(R){ .yield = result },
+            .break_debug => Result(R).debugBreak,
+            .errmem => error.OutOfMemory,
+            else => error.Runtime,
+        };
     }
 
     /// Calls (or resumes) a Lua function with the provided arguments and returns the result.
-    fn call(self: Self, args: anytype, comptime R: type, is_resume: bool) CallResult(R) {
+    fn call(self: Self, args: anytype, comptime R: type, is_resume: bool) !Result(R) {
         // Count and push args - unified logic for both call types
         const arg_count = blk: {
             const args_type_info = @typeInfo(@TypeOf(args));
@@ -2228,7 +2230,7 @@ pub const Lua = struct {
                     result = stack.pop(self, R).?;
                 }
 
-                return .{ .status = exec_status, .result = result };
+                return makeResult(R, exec_status, result);
             },
             else => {
                 // Error occurred - return status with null result
@@ -2239,7 +2241,7 @@ pub const Lua = struct {
                 }
                 self.state.pop(1);
 
-                return .{ .status = exec_status, .result = null };
+                return makeResult(R, exec_status, null);
             },
         }
     }
@@ -2283,7 +2285,7 @@ pub const Lua = struct {
     /// Errors:
     /// - `Error.Compile` if the source code contains syntax errors
     /// - `Error.OutOfMemory` if compilation or execution runs out of memory
-    pub fn eval(self: Self, source: []const u8, opts: Compiler.Opts, comptime T: type) !T {
+    pub fn eval(self: Self, source: []const u8, opts: Compiler.Opts, comptime T: type) !Result(T) {
         const result = try Compiler.compile(source, opts);
         defer result.deinit();
 
@@ -2888,21 +2890,21 @@ test "struct and array integration" {
 
     // Test accessing struct fields from Lua
     const first_point_x = try lua.eval("return config.points[1].x", .{}, f64);
-    try expectEq(first_point_x, 1.0);
+    try expectEq(first_point_x.ok, 1.0);
 
     const first_point_name = try lua.eval("return config.points[1].name", .{}, Lua.Value);
-    try expect(std.mem.eql(u8, first_point_name.asString().?, "start"));
-    first_point_name.deinit();
+    try expect(std.mem.eql(u8, first_point_name.ok.?.asString().?, "start"));
+    first_point_name.ok.?.deinit();
 
     const second_point_y = try lua.eval("return config.points[2].y", .{}, f64);
-    try expectEq(second_point_y, 4.0);
+    try expectEq(second_point_y.ok, 4.0);
 
     const enabled = try lua.eval("return config.enabled", .{}, bool);
-    try expect(enabled);
+    try expect(enabled.ok.?);
 
     // Test array length
     const points_length = try lua.eval("return #config.points", .{}, i32);
-    try expectEq(points_length, 2);
+    try expectEq(points_length.ok, 2);
 }
 
 test "garbage collector operations" {

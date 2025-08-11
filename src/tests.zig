@@ -39,8 +39,10 @@ test "globals access" {
     // Set more values and verify through Lua eval
     try globals.set("newValue", 123);
     try globals.set("newFlag", false);
-    try expectEq(try lua.eval("return newValue", .{}, i32), 123);
-    try expectEq(try lua.eval("return newFlag", .{}, bool), false);
+    const new_value_result = try lua.eval("return newValue", .{}, i32);
+    try expectEq(new_value_result.ok, 123);
+    const new_flag_result = try lua.eval("return newFlag", .{}, bool);
+    try expectEq(new_flag_result.ok, false);
 
     try expectEq(lua.top(), 0);
 }
@@ -61,12 +63,16 @@ test "tuple as indexed table accessibility from Lua" {
     try lua.globals().set("tupleTable", table);
 
     // Access elements from Lua using 1-based indexing
-    try expectEq(try lua.eval("return tupleTable[1]", .{}, i32), 42);
-    try expectEq(try lua.eval("return tupleTable[2]", .{}, f32), 3.14);
-    try expect(try lua.eval("return tupleTable[4]", .{}, bool));
+    const elem1 = try lua.eval("return tupleTable[1]", .{}, i32);
+    try expectEq(elem1.ok, 42);
+    const elem2 = try lua.eval("return tupleTable[2]", .{}, f32);
+    try expectEq(elem2.ok, 3.14);
+    const elem4 = try lua.eval("return tupleTable[4]", .{}, bool);
+    try expect(elem4.ok.?);
 
     // Verify tuple table length
-    try expectEq(try lua.eval("return #tupleTable", .{}, i32), 4);
+    const length = try lua.eval("return #tupleTable", .{}, i32);
+    try expectEq(length.ok, 4);
 }
 
 test "eval function" {
@@ -75,18 +81,20 @@ test "eval function" {
 
     // Test basic eval
     const result = try lua.eval("return 2 + 3", .{}, i32);
-    try expectEq(result, 5);
+    try expectEq(result.ok, 5);
 
     // Test eval with void return
-    try lua.eval("x = 42", .{}, void);
+    const void_result = try lua.eval("x = 42", .{}, void);
+    try expectEq(void_result, Lua.Result(void){ .ok = {} });
     const globals = lua.globals();
     try expectEq(try globals.get("x", i32), 42);
 
     // Test eval with tuple return
-    const tuple = try lua.eval("return 10, 2.5, false", .{}, struct { i32, f64, bool });
-    try expectEq(tuple[0], 10);
-    try expectEq(tuple[1], 2.5);
-    try expect(!tuple[2]);
+    const tuple_result = try lua.eval("return 10, 2.5, false", .{}, struct { i32, f64, bool });
+    const tuple = tuple_result.ok;
+    try expectEq(tuple.?[0], 10);
+    try expectEq(tuple.?[1], 2.5);
+    try expect(!tuple.?[2]);
 
     try expectEq(lua.top(), 0);
 }
@@ -141,71 +149,71 @@ test "Zig function integration" {
 
     // Test 1: Simple function with two arguments
     try globals.set("add", testAdd);
-    const sum = try lua.eval("return add(10, 20)", .{}, i32);
-    try expectEq(sum, 30);
+    const sum_result = try lua.eval("return add(10, 20)", .{}, i32);
+    try expectEq(sum_result.ok, 30);
 
     // Test 2: Function with no arguments
     try globals.set("noArgs", testNoArgs);
     const result = try lua.eval("return noArgs()", .{}, i32);
-    try expectEq(result, 42);
+    try expectEq(result.ok, 42);
 
     // Test 3: Function with void return
     try globals.set("voidFunc", testVoidReturn);
-    try lua.eval("voidFunc(123)", .{}, void);
+    _ = try lua.eval("voidFunc(123)", .{}, void);
 
     // Test 4: Function with multiple different argument types
     try globals.set("multiArgs", testMultipleArgs);
     const multi_result = try lua.eval("return multiArgs(5, 2.5, true)", .{}, f32);
-    try expectEq(multi_result, 8.5); // 5 + 2.5 + 1.0
+    try expectEq(multi_result.ok, 8.5); // 5 + 2.5 + 1.0
 
     // Test 5: Function with string arguments
     try globals.set("strlen", testStringArg);
     const len = try lua.eval("return strlen('hello')", .{}, i32);
-    try expectEq(len, 5);
+    try expectEq(len.ok, 5);
 
     // Test 6: Function returning optional (some value)
     try globals.set("optionalFunc", testOptionalReturn);
     const opt_some = try lua.eval("return optionalFunc(10)", .{}, ?i32);
-    try expectEq(opt_some, 20);
+    try expectEq(opt_some.ok, 20);
 
     // Test 7: Function returning optional (null value)
     // Note: When Zig function returns null, it becomes nil in Lua,
     // and we need to handle it appropriately when calling from Lua
-    try lua.eval("result = optionalFunc(-5)", .{}, void);
-    const is_nil = try lua.eval("return result == nil", .{}, bool);
-    try expect(is_nil);
+    _ = try lua.eval("result = optionalFunc(-5)", .{}, void);
+    const is_nil_result = try lua.eval("return result == nil", .{}, bool);
+    try expect(is_nil_result.ok.?);
 
     // Test 8: Function returning tuple (multiple separate values)
     try globals.set("tupleFunc", testTupleReturn);
     const tuple_result = try lua.eval("return tupleFunc(15, 3.5)", .{}, struct { i32, f32, bool });
-    try expectEq(tuple_result[0], 30); // 15 * 2
-    try expectEq(tuple_result[1], 7.0); // 3.5 * 2.0
-    try expect(tuple_result[2]); // 15 > 10 = true
+    try expectEq(tuple_result.ok.?[0], 30); // 15 * 2
+    try expectEq(tuple_result.ok.?[1], 7.0); // 3.5 * 2.0
+    try expect(tuple_result.ok.?[2]); // 15 > 10 = true
 
     // Test 9: Function with mixed types returning tuple
     try globals.set("mixedFunc", testMixedTypes);
     const mixed_result = try lua.eval("return mixedFunc(10, 'test', false)", .{}, struct { i32, []const u8, bool });
-    try expectEq(mixed_result[0], 11); // 10 + 1
-    try expect(std.mem.eql(u8, mixed_result[1], "test"));
-    try expect(mixed_result[2]); // !false = true
+    try expectEq(mixed_result.ok.?[0], 11); // 10 + 1
+    try expect(std.mem.eql(u8, mixed_result.ok.?[1], "test"));
+    try expect(mixed_result.ok.?[2]); // !false = true
 
     // Test 10: Function returning struct (should create Lua table)
     try globals.set("structFunc", testStructReturn);
     const struct_x = try lua.eval("return structFunc(5, 7).x", .{}, i32);
-    try expectEq(struct_x, 5);
+    try expectEq(struct_x.ok, 5);
     const struct_y = try lua.eval("return structFunc(5, 7).y", .{}, i32);
-    try expectEq(struct_y, 7);
+    try expectEq(struct_y.ok, 7);
     const struct_sum = try lua.eval("return structFunc(5, 7).sum", .{}, i32);
-    try expectEq(struct_sum, 12);
+    try expectEq(struct_sum.ok, 12);
 
     // Test 11: Function returning array (should create Lua table with integer indices)
     try globals.set("arrayFunc", testArrayReturn);
     const array_1 = try lua.eval("return arrayFunc(10)[1]", .{}, i32); // Lua is 1-indexed
-    try expectEq(array_1, 10);
+    try expectEq(array_1.ok, 10);
     const array_2 = try lua.eval("return arrayFunc(10)[2]", .{}, i32);
-    try expectEq(array_2, 20);
+    try expectEq(array_2.ok, 20);
     const array_3 = try lua.eval("return arrayFunc(10)[3]", .{}, i32);
-    try expectEq(array_3, 30);
+    try expectEq(array_3.ok, 30);
 
     try expectEq(lua.top(), 0);
 }
@@ -235,7 +243,7 @@ test "table call function" {
 
     // Test successful function call
     const result = try globals.call("add", .{ 10, 20 }, i32);
-    try expectEq(result, 30);
+    try expectEq(result.ok, 30);
 
     // Test error handling - should print debug message and return Error.Runtime
     const error_result = globals.call("error_func", .{}, void);
@@ -263,7 +271,7 @@ test "function call from global namespace" {
     defer func.?.deinit();
 
     const result = try func.?.call(.{ 15, 25 }, i32);
-    try expectEq(result, 40);
+    try expectEq(result.ok, 40);
 
     // Test error handling with Function.call
     const error_func = try globals.get("divide_error", Lua.Function);
@@ -294,7 +302,7 @@ test "func ref compile" {
 
         // Function calls now use compiled native code
         const result = try func.?.call(.{ 6, 7 }, i32);
-        try expectEq(result, 42);
+        try expectEq(result.ok, 42);
         try expectEq(lua.top(), 0);
     }
 }
@@ -308,8 +316,10 @@ test "table func compile" {
 
         try lua.globals().compile("square");
 
-        try expectEq(try lua.eval("return square(5)", .{}, i32), 25);
-        try expectEq(try lua.eval("return square(10)", .{}, i32), 100);
+        const result1 = try lua.eval("return square(5)", .{}, i32);
+        try expectEq(result1.ok, 25);
+        const result2 = try lua.eval("return square(10)", .{}, i32);
+        try expectEq(result2.ok, 100);
     }
 }
 
@@ -393,7 +403,7 @@ test "userdata registration and basic functionality" {
     ;
 
     // Execute the comprehensive test script
-    try lua.eval(test_script, .{}, void);
+    _ = try lua.eval(test_script, .{}, void);
 
     try expectEq(lua.top(), 0);
 }
@@ -427,8 +437,8 @@ test "userdata with destructor support" {
         try lua.registerUserData(TestUserDataWithDeinit);
 
         // Create objects that should trigger destructors when Lua state is destroyed
-        try lua.eval("local obj1 = TestUserDataWithDeinit.new()", .{}, void);
-        try lua.eval("local obj2 = TestUserDataWithDeinit.new()", .{}, void);
+        _ = try lua.eval("local obj1 = TestUserDataWithDeinit.new()", .{}, void);
+        _ = try lua.eval("local obj2 = TestUserDataWithDeinit.new()", .{}, void);
 
         try expectEq(lua.top(), 0);
     } // Lua state destroyed here, destructors should be called
@@ -458,7 +468,7 @@ test "checkArg with Table parameter" {
         \\return processTable(tbl)
     , .{}, i32);
 
-    try expectEq(result, 42);
+    try expectEq(result.ok, 42);
     try expectEq(lua.top(), 0);
 }
 
@@ -506,7 +516,7 @@ test "light userdata function arguments" {
 
     // Call the function with light userdata argument through Lua eval
     const result = try lua.eval("return testFunc(testPtr)", .{}, i32);
-    try expectEq(result, 42);
+    try expectEq(result.ok, 42);
 
     try expectEq(lua.top(), 0);
 }
@@ -577,7 +587,7 @@ test "checkArg userdata support" {
         \\return processPtr(counter)
     , .{}, i32);
 
-    try expectEq(ptr_result, 84); // 42 * 2
+    try expectEq(ptr_result.ok, 84); // 42 * 2
 
     // Test value userdata parameter (TestUserData)
     const val_result = try lua.eval(
@@ -585,7 +595,7 @@ test "checkArg userdata support" {
         \\return processVal(counter)
     , .{}, i32);
 
-    try expectEq(val_result, 142); // 42 + 100
+    try expectEq(val_result.ok, 142); // 42 + 100
 
     try expectEq(lua.top(), 0);
 }
@@ -790,7 +800,7 @@ test "userdata with metamethods" {
         \\assert(tostring(obj) == "test_object") -- first unchanged
     ;
 
-    try lua.eval(test_script, .{}, void);
+    _ = try lua.eval(test_script, .{}, void);
 
     try expectEq(lua.top(), 0);
 }
@@ -854,13 +864,14 @@ test "Value enum all cases" {
     const func_back = try globals.get("fn", Lua.Value);
     try expect(func_back.? == .function);
     defer func_back.?.deinit();
-    try expectEq(try func_back.?.function.call(.{5}, i32), 10);
+    const call_result = try func_back.?.function.call(.{5}, i32);
+    try expectEq(call_result.ok, 10);
 
     // Test deinit and Lua eval
     var test_val = Lua.Value{ .number = 1.0 };
     test_val.deinit();
     const from_lua = try lua.eval("return type({})", .{}, Lua.Value);
-    try expect(from_lua == .string);
+    try expect(from_lua.ok.? == .string);
 
     try expectEq(lua.top(), 0);
 }
@@ -924,7 +935,7 @@ test "userdata with __index and __newindex metamethods" {
         \\assert(obj[1] == 55)
     ;
 
-    try lua.eval(test_script, .{}, void);
+    _ = try lua.eval(test_script, .{}, void);
 
     // Validate expected number of calls:
     // __index: 3 gets + 1 final assertion = 4 total
@@ -1035,10 +1046,11 @@ test "error handling in wrapped functions" {
     try globals.set("findUser", findUser);
 
     // Test success cases
-    try expectEq(try lua.eval("return divide(10, 2)", .{}, f64), 5.0);
+    const divide_result = try lua.eval("return divide(10, 2)", .{}, f64);
+    try expectEq(divide_result.ok, 5.0);
     const user = try lua.eval("return findUser(1)", .{}, struct { []const u8, i32 });
-    try expect(std.mem.eql(u8, user.@"0", "Alice"));
-    try expectEq(user.@"1", 30);
+    try expect(std.mem.eql(u8, user.ok.?.@"0", "Alice"));
+    try expectEq(user.ok.?.@"1", 30);
 
     // Test error cases
     try expect(lua.eval("return divide(10, 0)", .{}, f64) == error.Runtime);
@@ -1046,10 +1058,10 @@ test "error handling in wrapped functions" {
 
     // Test error messages via pcall
     const err1 = try lua.eval("local ok, err = pcall(divide, 10, 0); return err", .{}, []const u8);
-    try expect(std.mem.eql(u8, err1, "InvalidInput"));
+    try expect(std.mem.eql(u8, err1.ok.?, "InvalidInput"));
 
     const err2 = try lua.eval("local ok, err = pcall(findUser, 999); return err", .{}, []const u8);
-    try expect(std.mem.eql(u8, err2, "NotFound"));
+    try expect(std.mem.eql(u8, err2.ok.?, "NotFound"));
 
     // Test userdata method with error
     const Counter = struct {
@@ -1079,7 +1091,7 @@ test "error handling in wrapped functions" {
 
     // Test error message from userdata method
     const err3 = try lua.eval("local c = Counter.new(); local ok, err = pcall(c.increment, c, -1); return err", .{}, []const u8);
-    try expect(std.mem.eql(u8, err3, "InvalidInput"));
+    try expect(std.mem.eql(u8, err3.ok.?, "InvalidInput"));
 }
 
 const stack = @import("stack.zig");
@@ -1095,12 +1107,12 @@ test "thread creation and basic operations" {
 
     // Basic test: thread can execute simple Lua code
     const result = try thread_lua.eval("return 42", .{}, i32);
-    try expectEq(result, 42);
+    try expectEq(result.ok, 42);
 
     // Thread shares global environment with parent
-    try lua.eval("test_value = 123", .{}, void);
+    _ = try lua.eval("test_value = 123", .{}, void);
     const shared = try thread_lua.eval("return test_value", .{}, i32);
-    try expectEq(shared, 123);
+    try expectEq(shared.ok, 123);
 
     // Test thread API methods are available
     try expect(thread_lua.isYieldable()); // Threads are yieldable when created
@@ -1131,15 +1143,15 @@ test "coroutine yield and resume" {
 
     // First resume - should yield 1
     const result1 = try func.?.call(.{}, i32);
-    try expectEq(result1, 1);
+    try expectEq(result1.yield, 1);
 
     // Second resume - should yield 2
     const result2 = try func.?.call(.{}, i32);
-    try expectEq(result2, 2);
+    try expectEq(result2.yield, 2);
 
     // Third resume - should return 3 and finish
     const result3 = try func.?.call(.{}, i32);
-    try expectEq(result3, 3);
+    try expectEq(result3.ok, 3);
 }
 
 test "coroutine with arguments on yield" {
@@ -1169,19 +1181,19 @@ test "coroutine with arguments on yield" {
 
     // Start the coroutine - yields 0
     const result1_value = try func.?.call(.{}, i32);
-    try expectEq(result1_value, 0);
+    try expectEq(result1_value.yield, 0);
 
     // Continue the coroutine with value 5
     const result2_value = try func.?.call(.{5}, i32);
-    try expectEq(result2_value, 5);
+    try expectEq(result2_value.yield, 5);
 
     // Continue the coroutine with value 10
     const result3_value = try func.?.call(.{10}, i32);
-    try expectEq(result3_value, 15);
+    try expectEq(result3_value.yield, 15);
 
     // Finish the coroutine with nil
     const result4_value = try func.?.call(.{@as(?i32, null)}, i32);
-    try expectEq(result4_value, 15);
+    try expectEq(result4_value.ok, 15);
 }
 
 test "thread data via globals" {
@@ -1267,7 +1279,7 @@ test "simple thread function execution" {
     defer func.?.deinit();
 
     const result = try func.?.call(.{}, i32);
-    try expectEq(result, 42);
+    try expectEq(result.ok, 42);
 }
 
 test "coroutine error handling" {
@@ -1314,7 +1326,7 @@ test "resume from main thread should return error" {
 
     // This will use pcall since we're in main thread
     const result = try func.?.call(.{}, i32);
-    try expectEq(result, 42);
+    try expectEq(result.ok, 42);
 }
 
 // Sandbox-related tests
@@ -1327,8 +1339,8 @@ test "sandbox" {
     // Before sandbox: can modify built-in library
     _ = try lua.eval("math.huge = 'hacked'", .{}, void);
     const hacked_value = try lua.eval("return math.huge", .{}, Lua.Value);
-    defer hacked_value.deinit();
-    try expect(std.mem.eql(u8, hacked_value.asString().?, "hacked"));
+    defer hacked_value.ok.?.deinit();
+    try expect(std.mem.eql(u8, hacked_value.ok.?.asString().?, "hacked"));
 
     // Apply sandbox
     lua.sandbox();
@@ -1339,8 +1351,8 @@ test "sandbox" {
 
     // Verify the original value is still there
     const protected_value = try lua.eval("return math.huge", .{}, Lua.Value);
-    defer protected_value.deinit();
-    try expect(std.mem.eql(u8, protected_value.asString().?, "hacked")); // Still the old value
+    defer protected_value.ok.?.deinit();
+    try expect(std.mem.eql(u8, protected_value.ok.?.asString().?, "hacked")); // Still the old value
 }
 
 test "table readonly" {
@@ -1413,8 +1425,8 @@ test "function clone" {
     // Both functions work the same
     const result1 = try func.?.call(.{ 10, 20 }, i32);
     const result2 = try cloned.call(.{ 10, 20 }, i32);
-    try expect(result1 == 30);
-    try expect(result2 == 30);
+    try expect(result1.ok.? == 30);
+    try expect(result2.ok.? == 30);
 }
 
 fn closureAdd5(upv: Lua.Upvalues(i32), x: i32) i32 {
@@ -1496,20 +1508,31 @@ test "table setClosure" {
     try lua.globals().set("config", config);
 
     // Test all closure types
-    try expect(try lua.eval("return f.add5(10)", .{}, i32) == 15);
-    try expect(@abs(try lua.eval("return f.transform(5)", .{}, f32) - 20.0) < 0.001);
-    try expect(try lua.eval("return f.optAdd(15, 5)", .{}, i32) == 20);
-    try expect(try lua.eval("return f.optAdd(15)", .{}, i32) == 15);
-    try expect(try lua.eval("return f.optAdd(5, 10)", .{}, i32) == 5);
-    try expect(try lua.eval("return f.multiply(5)", .{}, i32) == 15);
-    try expect(try lua.eval("return f.const()", .{}, i32) == 42);
-    try expect(try lua.eval("return f.sum()", .{}, i32) == 100);
-    try expect(try lua.eval("return f.sum(1, 2)", .{}, i32) == 103);
-    try expect(try lua.eval("return f.single(8)", .{}, i32) == 50);
+    const add5_result = try lua.eval("return f.add5(10)", .{}, i32);
+    try expect(add5_result.ok == 15);
+    const transform_result = try lua.eval("return f.transform(5)", .{}, f32);
+    try expect(@abs(transform_result.ok.? - 20.0) < 0.001);
+    const optAdd1_result = try lua.eval("return f.optAdd(15, 5)", .{}, i32);
+    try expect(optAdd1_result.ok == 20);
+    const optAdd2_result = try lua.eval("return f.optAdd(15)", .{}, i32);
+    try expect(optAdd2_result.ok == 15);
+    const optAdd3_result = try lua.eval("return f.optAdd(5, 10)", .{}, i32);
+    try expect(optAdd3_result.ok == 5);
+    const multiply1_result = try lua.eval("return f.multiply(5)", .{}, i32);
+    try expect(multiply1_result.ok == 15);
+    const const_result = try lua.eval("return f.const()", .{}, i32);
+    try expect(const_result.ok == 42);
+    const sum1_result = try lua.eval("return f.sum()", .{}, i32);
+    try expect(sum1_result.ok == 100);
+    const sum2_result = try lua.eval("return f.sum(1, 2)", .{}, i32);
+    try expect(sum2_result.ok == 103);
+    const single_result = try lua.eval("return f.single(8)", .{}, i32);
+    try expect(single_result.ok == 50);
 
     // Test config modification
     _ = try lua.eval("config.mult = 7", .{}, void);
-    try expect(try lua.eval("return f.multiply(5)", .{}, i32) == 35);
+    const multiply2_result = try lua.eval("return f.multiply(5)", .{}, i32);
+    try expect(multiply2_result.ok == 35);
 }
 
 test "setClosure with pointer receiver" {
@@ -1530,16 +1553,22 @@ test "setClosure with pointer receiver" {
     try lua.globals().set("counter", table);
 
     // Test initial value
-    try expect(try lua.eval("return counter.getValue()", .{}, i32) == 10);
+    const getValue1_result = try lua.eval("return counter.getValue()", .{}, i32);
+    try expect(getValue1_result.ok == 10);
 
     // Test increment with mutable *Self
-    try expect(try lua.eval("return counter.increment(5)", .{}, i32) == 15);
-    try expect(try lua.eval("return counter.getValue()", .{}, i32) == 15);
+    const increment1_result = try lua.eval("return counter.increment(5)", .{}, i32);
+    try expect(increment1_result.ok == 15);
+    const getValue2_result = try lua.eval("return counter.getValue()", .{}, i32);
+    try expect(getValue2_result.ok == 15);
 
     // Test multiple increments
-    try expect(try lua.eval("return counter.increment(3)", .{}, i32) == 18);
-    try expect(try lua.eval("return counter.increment(2)", .{}, i32) == 20);
-    try expect(try lua.eval("return counter.getValue()", .{}, i32) == 20);
+    const increment2_result = try lua.eval("return counter.increment(3)", .{}, i32);
+    try expect(increment2_result.ok == 18);
+    const increment3_result = try lua.eval("return counter.increment(2)", .{}, i32);
+    try expect(increment3_result.ok == 20);
+    const getValue3_result = try lua.eval("return counter.getValue()", .{}, i32);
+    try expect(getValue3_result.ok == 20);
 }
 
 test "metatable with closure function and table attachment" {
@@ -1579,7 +1608,7 @@ test "metatable with closure function and table attachment" {
     const result = try lua.eval("return myTable.compute(6)", .{}, i32);
 
     // Step 7: Verify returned result = 10 (4 + 6)
-    try expectEq(result, 10);
+    try expectEq(result.ok, 10);
 
     try expectEq(lua.top(), 0);
 }
@@ -1599,7 +1628,7 @@ test "varargs basic functionality" {
 
     // Test count
     const count_result = try lua.eval("return countArgs(1, 2, 3, 4)", .{}, i32);
-    try expectEq(count_result, 4);
+    try expectEq(count_result.ok, 4);
 
     try expectEq(lua.top(), 0);
 }
@@ -1619,7 +1648,7 @@ test "varargs at method only" {
 
     // Test at() method only
     const at_result = try lua.eval("return getAt(1, 42.5, 3)", .{}, f64);
-    try expectEq(at_result, 42.5);
+    try expectEq(at_result.ok, 42.5);
 
     try expectEq(lua.top(), 0);
 }
@@ -1640,7 +1669,7 @@ test "varargs next method only" {
 
     // Test next() method only
     const result = try lua.eval("return getFirst(42.5, 2, 3)", .{}, f64);
-    try expectEq(result, 42.5);
+    try expectEq(result.ok, 42.5);
 
     try expectEq(lua.top(), 0);
 }
@@ -1675,7 +1704,7 @@ test "varargs iterator reset" {
 
     // Test reset functionality - should sum twice
     const result = try lua.eval("return doubleIterate(5, 10, 15)", .{}, i32);
-    try expectEq(result, 60); // (5+10+15) * 2 = 60
+    try expectEq(result.ok, 60); // (5+10+15) * 2 = 60
     try expectEq(lua.top(), 0);
 }
 
@@ -1851,12 +1880,12 @@ test "StrBuf returned from Zig functions" {
 
     // Check if the function exists
     const funcExists = try lua.eval("return makeMsg ~= nil", .{}, bool);
-    try expectEq(funcExists, true);
+    try expectEq(funcExists.ok, true);
 
     // Simple call to see what happens
     const result = try lua.eval("return makeMsg('Alice', 42)", .{}, []const u8);
     const expected = "Hello Alice, value is 42";
-    try expectEq(std.mem.startsWith(u8, result, expected), true);
+    try expectEq(std.mem.startsWith(u8, result.ok.?, expected), true);
 }
 
 // Test function that returns StrBuf as part of a tuple
@@ -1881,14 +1910,14 @@ test "StrBuf returned in tuple from Zig functions" {
 
     // Check if the function exists
     const funcExists = try lua.eval("return makeTuple ~= nil", .{}, bool);
-    try expectEq(funcExists, true);
+    try expectEq(funcExists.ok, true);
 
     // Call function that returns tuple (StrBuf, i32)
     const result = try lua.eval("return makeTuple('test', 21)", .{}, struct { []const u8, i32 });
 
     const expected_str = "Tuple: test = 21";
-    try expectEq(std.mem.startsWith(u8, result[0], expected_str), true);
-    try expectEq(result[1], 42);
+    try expectEq(std.mem.startsWith(u8, result.ok.?[0], expected_str), true);
+    try expectEq(result.ok.?[1], 42);
 }
 
 // Test function that builds a large StrBuf to force dynamic allocation
@@ -1923,12 +1952,12 @@ test "StrBuf with dynamic allocation returned from Zig functions" {
     const result = try lua.eval("return makeLarge(15)", .{}, []const u8);
 
     // Verify the result starts correctly and is reasonably long
-    try expectEq(std.mem.startsWith(u8, result, "Large message: This is a repeated string"), true);
-    try expectEq(result.len > 512, true); // Should be longer than buffer size
+    try expectEq(std.mem.startsWith(u8, result.ok.?, "Large message: This is a repeated string"), true);
+    try expectEq(result.ok.?.len > 512, true); // Should be longer than buffer size
 
     // Verify it contains content from both early and late iterations
-    try expectEq(std.mem.indexOf(u8, result, "0 ") != null, true); // First iteration
-    try expectEq(std.mem.indexOf(u8, result, "14 ") != null, true); // Last iteration
+    try expectEq(std.mem.indexOf(u8, result.ok.?, "0 ") != null, true); // First iteration
+    try expectEq(std.mem.indexOf(u8, result.ok.?, "14 ") != null, true); // Last iteration
 }
 
 test "setCallbacks onallocate" {
@@ -2105,7 +2134,7 @@ test "breakpoint and single step debugging with callbacks" {
 
     const result = try func.?.call(.{}, i32);
 
-    try expectEq(result, 60);
+    try expectEq(result.ok, 60);
     try expectEq(callbacks.break_hits, 1);
     try expectEq(callbacks.step_hits, 1);
 }
@@ -2143,15 +2172,14 @@ test "coroutine debug break" {
 
     _ = try func.?.setBreakpoint(2, true);
 
-    _ = func.?.call(.{}, i32) catch |err| {
-        try expectEq(err, error.Break);
-    };
+    const first_result = try func.?.call(.{}, i32);
+    try expectEq(first_result, .debugBreak);
 
     try expectEq(thread.status(), .normal);
 
     // Call function again - should complete and return result
-    const result = try func.?.call(.{}, i32);
-    try expectEq(result, 42);
+    const second_result = try func.?.call(.{}, i32);
+    try expectEq(second_result.ok, 42);
 
     // Assert debugbreak callback was called exactly twice
     try expectEq(callbacks.call_count, 2);

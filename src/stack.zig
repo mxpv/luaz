@@ -1004,11 +1004,11 @@ test "StrBuf pointer fixup on value copy" {
     const result = try lua.eval("return buildMessage('Alice', 25)", .{}, []const u8);
 
     // Verify the result is clean (no garbage characters)
-    try expect(std.mem.eql(u8, result, "Alice is 25 years old"));
+    try expect(std.mem.eql(u8, result.ok.?, "Alice is 25 years old"));
 
     // Test with different inputs to ensure the fix works consistently
     const result2 = try lua.eval("return buildMessage('Bob', 30)", .{}, []const u8);
-    try expect(std.mem.eql(u8, result2, "Bob is 30 years old"));
+    try expect(std.mem.eql(u8, result2.ok.?, "Bob is 30 years old"));
 
     try expectEq(lua.state.getTop(), 0);
 }

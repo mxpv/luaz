@@ -74,7 +74,7 @@ pub fn main() !void {
 
     // Evaluate Lua code and get result
     const result = try lua.eval("return 2 + 3 * 4", .{}, i32);
-    assert(result == 14);
+    assert(result.ok.? == 14);
 }
 ```
 
@@ -104,9 +104,12 @@ pub fn main() !void {
     try lua.globals().set("numbers", numbers);
 
     // Access from Lua
-    const x = try lua.eval("return point.x", .{}, f64);          // 10.5
-    const first = try lua.eval("return numbers[1]", .{}, i32);   // 1
-    const length = try lua.eval("return #numbers", .{}, i32);    // 5
+    const x_result = try lua.eval("return point.x", .{}, f64);
+    const x = x_result.ok.?;          // 10.5
+    const first_result = try lua.eval("return numbers[1]", .{}, i32);
+    const first = first_result.ok.?;   // 1
+    const length_result = try lua.eval("return #numbers", .{}, i32);
+    const length = length_result.ok.?;    // 5
 }
 ```
 
@@ -133,14 +136,14 @@ pub fn main() !void {
 
     // Call Zig function from Lua
     const result1 = try lua.eval("return sum(10, 20)", .{}, i32);
-    assert(result1 == 30);
+    assert(result1.ok.? == 30);
 
     // Define Lua function
     _ = try lua.eval("function multiply(x, y) return x * y end", .{}, void);
 
     // Call Lua function from Zig
     const result2 = try lua.globals().call("multiply", .{6, 7}, i32);
-    assert(result2 == 42);
+    assert(result2.ok.? == 42);
 
     // Closures with captured values
     const table = lua.createTable(.{});
@@ -155,7 +158,7 @@ pub fn main() !void {
     try lua.globals().set("myValue", @as(i32, 123));
     
     const result3 = try lua.eval("return funcs.getGlobal('myValue')", .{}, i32);
-    assert(result3 == 123);
+    assert(result3.ok.? == 123);
 }
 ```
 
@@ -250,6 +253,7 @@ fn buildGreeting(upv: Lua.Upvalues(*Lua), name: []const u8, age: i32) !Lua.StrBu
 // Register and call from Lua
 try lua.globals().setClosure("buildGreeting", &lua, buildGreeting);
 const result = try lua.eval("return buildGreeting('Alice', 25)", .{}, []const u8);
+const greeting = result.ok.?;
 ```
 
 > [!WARNING]
