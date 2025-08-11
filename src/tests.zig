@@ -1208,7 +1208,7 @@ test "thread API methods" {
     const thread = lua.createThread();
 
     // Test thread status and state methods
-    try expectEq(thread.status(), .fin); // Empty threads are finished
+    try expectEq(thread.status(), .done); // Empty threads are done
     try expect(thread.isReset()); // Threads start reset
     try expect(thread.isYieldable()); // Threads are yieldable
 
@@ -2147,7 +2147,7 @@ test "coroutine debug break" {
         try expectEq(err, error.Break);
     };
 
-    try expectEq(thread.status(), .nor);
+    try expectEq(thread.status(), .normal);
 
     // Call function again - should complete and return result
     const result = try func.?.call(.{}, i32);

@@ -51,10 +51,10 @@ pub const Status = enum(c_int) {
 };
 
 pub const CoStatus = enum(c_int) {
-    run = c.LUA_CORUN,
-    sus = c.LUA_COSUS,
-    nor = c.LUA_CONOR,
-    fin = c.LUA_COFIN,
+    running = c.LUA_CORUN,
+    suspended = c.LUA_COSUS,
+    normal = c.LUA_CONOR,
+    done = c.LUA_COFIN,
     err = c.LUA_COERR,
 };
 
