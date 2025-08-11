@@ -13,12 +13,6 @@
 Unlike other libraries, it focuses specifically on `Luau`, providing idiomatic `Zig` bindings that leverage Luau's [unique features](https://luau.org/why)
 and [performance](https://luau.org/performance) characteristics.
 
-The build system provides prebuilt Luau tools out of the box:
-- [`luau-compiler`](#compiler): Compile Luau source to bytecode
-- [`luau-analyzer`](#analyzer): Typecheck and lint Luau code
-
-These tools make it easy to compile, analyze, and embed `Luau` scripts directly into your Zig applications.
-
 ## ✨ Features
 
 - Minimal yet flexible zero-cost [API](#basic-usage)
@@ -32,7 +26,9 @@ These tools make it easy to compile, analyze, and embed `Luau` scripts directly 
 - Garbage collection APIs
 - `Luau` Sandboxing APIs for secure execution environments
 - Supports `Luau` code generation for improved performance on supported platforms
-- Built-in [Luau tools](#-using-luau-tools) (`luau-compile` and `luau-analyze`) provided by the build system
+- Built-in `Luau` tools provided by the build system out of the box:
+  - [`luau-compiler`](#compiler) to compile Luau source to bytecode
+  - [`luau-analyzer`](#analyzer) to typecheck and lint Luau code
 - Excellent [test coverage](https://app.codecov.io/gh/mxpv/luaz) and API [documentation](https://mxpv.github.io/luaz/#luaz.lua)
 
 ## 📚 Documentation
