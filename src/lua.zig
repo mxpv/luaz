@@ -73,6 +73,8 @@ pub const Lua = struct {
         Runtime,
         /// Breakpoint could not be set at the specified line.
         InvalidBreakpoint,
+        /// Debug break occurred during execution.
+        Break,
     };
 
     /// Assert handler function type for Luau VM assertions.
@@ -213,10 +215,13 @@ pub const Lua = struct {
     /// - `panic(state: *State, errcode: i32) void` - Called on unprotected errors (if longjmp is used)
     /// - `userthread(parent: ?*State, thread: *State) void` - Called when thread is created/destroyed
     /// - `useratom(s: []const u8) i16` - Called when string is created; returns atom ID
-    /// - `debugbreak(state: *State, ar: Debug) void` - Called on BREAK instruction
-    /// - `debugstep(state: *State, ar: Debug) void` - Called after each instruction in single step
-    /// - `debuginterrupt(state: *State, ar: Debug) void` - Called on thread execution interrupt
-    /// - `debugprotectederror(state: *State) void` - Called when protected call results in error
+    /// - `debugbreak(lua: *Lua, ar: Debug) void` - Called when breakpoint is hit. Note that breakpoints
+    ///   set with `breakpoint(line)` in Lua code only trigger this callback - they don't automatically
+    ///   interrupt execution. Call `lua.debugBreak()` within this callback to actually interrupt
+    ///   execution and return `error.Break` to the caller.
+    /// - `debugstep(lua: *Lua, ar: Debug) void` - Called after each instruction in single step
+    /// - `debuginterrupt(lua: *Lua, ar: Debug) void` - Called on thread execution interrupt
+    /// - `debugprotectederror(lua: *Lua) void` - Called when protected call results in error
     /// - `onallocate(state: *State, osize: usize, nsize: usize) void` - Called when a memory operation occurs
     ///   (allocation when osize=0, deallocation when nsize=0, reallocation otherwise).
     ///   Note: This callback is only triggered for Luau's internal allocations, not for all memory operations
@@ -348,15 +353,15 @@ pub const Lua = struct {
         if (@hasDecl(CallbackType, "debugbreak")) {
             cb.debugbreak = struct {
                 fn wrapper(L: ?State.LuaState, ar: ?*State.Debug) callconv(.C) void {
-                    var state = State{ .lua = L.? };
+                    var lua = Lua.fromState(L.?);
                     const debug_info = debug.Debug.fromC(ar.?);
 
                     if (comptime is_instance) {
-                        const callbacks_struct = state.callbacks();
+                        const callbacks_struct = lua.state.callbacks();
                         const instance: *CallbackType = @ptrCast(@alignCast(callbacks_struct.userdata.?));
-                        instance.debugbreak(&state, debug_info);
+                        instance.debugbreak(&lua, debug_info);
                     } else {
-                        CallbackType.debugbreak(&state, debug_info);
+                        CallbackType.debugbreak(&lua, debug_info);
                     }
                 }
             }.wrapper;
@@ -365,15 +370,15 @@ pub const Lua = struct {
         if (@hasDecl(CallbackType, "debugstep")) {
             cb.debugstep = struct {
                 fn wrapper(L: ?State.LuaState, ar: ?*State.Debug) callconv(.C) void {
-                    var state = State{ .lua = L.? };
+                    var lua = Lua.fromState(L.?);
                     const debug_info = debug.Debug.fromC(ar.?);
 
                     if (comptime is_instance) {
-                        const callbacks_struct = state.callbacks();
+                        const callbacks_struct = lua.state.callbacks();
                         const instance: *CallbackType = @ptrCast(@alignCast(callbacks_struct.userdata.?));
-                        instance.debugstep(&state, debug_info);
+                        instance.debugstep(&lua, debug_info);
                     } else {
-                        CallbackType.debugstep(&state, debug_info);
+                        CallbackType.debugstep(&lua, debug_info);
                     }
                 }
             }.wrapper;
@@ -382,15 +387,15 @@ pub const Lua = struct {
         if (@hasDecl(CallbackType, "debuginterrupt")) {
             cb.debuginterrupt = struct {
                 fn wrapper(L: ?State.LuaState, ar: ?*State.Debug) callconv(.C) void {
-                    var state = State{ .lua = L.? };
+                    var lua = Lua.fromState(L.?);
                     const debug_info = debug.Debug.fromC(ar.?);
 
                     if (comptime is_instance) {
-                        const callbacks_struct = state.callbacks();
+                        const callbacks_struct = lua.state.callbacks();
                         const instance: *CallbackType = @ptrCast(@alignCast(callbacks_struct.userdata.?));
-                        instance.debuginterrupt(&state, debug_info);
+                        instance.debuginterrupt(&lua, debug_info);
                     } else {
-                        CallbackType.debuginterrupt(&state, debug_info);
+                        CallbackType.debuginterrupt(&lua, debug_info);
                     }
                 }
             }.wrapper;
@@ -399,14 +404,14 @@ pub const Lua = struct {
         if (@hasDecl(CallbackType, "debugprotectederror")) {
             cb.debugprotectederror = struct {
                 fn wrapper(L: ?State.LuaState) callconv(.C) void {
-                    var state = State{ .lua = L.? };
+                    var lua = Lua.fromState(L.?);
 
                     if (comptime is_instance) {
-                        const callbacks_struct = state.callbacks();
+                        const callbacks_struct = lua.state.callbacks();
                         const instance: *CallbackType = @ptrCast(@alignCast(callbacks_struct.userdata.?));
-                        instance.debugprotectederror(&state);
+                        instance.debugprotectederror(&lua);
                     } else {
-                        CallbackType.debugprotectederror(&state);
+                        CallbackType.debugprotectederror(&lua);
                     }
                 }
             }.wrapper;
@@ -415,8 +420,8 @@ pub const Lua = struct {
         if (@hasDecl(CallbackType, "onallocate")) {
             cb.onallocate = struct {
                 fn wrapper(L: ?State.LuaState, osize: usize, nsize: usize) callconv(.C) void {
-                    if (L) |lua| {
-                        var state = State{ .lua = lua };
+                    if (L) |lua_state| {
+                        var state = State{ .lua = lua_state };
 
                         if (comptime is_instance) {
                             const callbacks_struct = state.callbacks();
@@ -469,6 +474,50 @@ pub const Lua = struct {
     /// ```
     pub fn setSingleStep(self: Self, enabled: bool) void {
         self.state.singleStep(enabled);
+    }
+
+    /// Interrupt thread execution during debug callbacks.
+    ///
+    /// This method should be called from within debug callbacks (debugbreak, debugstep, debuginterrupt)
+    /// to interrupt the current execution and return control to the caller. When called, it sets the
+    /// VM's status to LUA_BREAK, causing the current function to return with `error.Break`.
+    ///
+    /// Note: Breakpoints set with `breakpoint(line)` in Lua code only trigger debug callbacks - they
+    /// don't automatically interrupt execution. You must call `debugBreak()` within your callback
+    /// to actually interrupt and return control to your application.
+    ///
+    /// Flow:
+    /// 1. Breakpoint hits → VM calls your debugbreak callback
+    /// 2. In callback → call `debugBreak()` to interrupt execution
+    /// 3. VM sets status → L.status = LUA_BREAK
+    /// 4. Function returns → `error.Break` to caller
+    /// 5. Can resume → call function again to continue from where it left off
+    ///
+    /// Example:
+    /// ```zig
+    /// const DebugCallbacks = struct {
+    ///     pub fn debugbreak(self: *@This(), lua: *Lua, ar: Debug) void {
+    ///         std.log.info("Hit breakpoint at line {}", .{ar.current_line});
+    ///         // This actually interrupts execution and returns error.Break
+    ///         lua.debugBreak();
+    ///     }
+    /// };
+    ///
+    /// var callbacks = DebugCallbacks{};
+    /// lua.setCallbacks(&callbacks);
+    ///
+    /// // When breakpoint hits, function returns error.Break instead of continuing
+    /// const result = func.call(.{}, i32) catch |err| switch (err) {
+    ///     error.Break => {
+    ///         // Execution was interrupted, can examine state or resume later
+    ///         return func.call(.{}, i32); // Resume execution
+    ///     },
+    ///     else => return err,
+    /// };
+    /// ```
+    ///
+    pub fn debugBreak(self: Self) void {
+        self.state.break_();
     }
 
     /// A reference to a Lua value.
@@ -833,6 +882,7 @@ pub const Lua = struct {
             const result = self.ref.lua.call(args, R, false);
             return switch (result.status) {
                 .ok, .yield => result.result.?,
+                .break_debug => error.Break,
                 .errmem => error.OutOfMemory,
                 else => error.Runtime,
             };
@@ -1662,6 +1712,7 @@ pub const Lua = struct {
 
             return switch (result.status) {
                 .ok, .yield => result.result.?,
+                .break_debug => error.Break,
                 .errmem => error.OutOfMemory,
                 else => error.Runtime,
             };

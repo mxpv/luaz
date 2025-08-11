@@ -126,6 +126,20 @@ fn transform(upv: Upvalues(struct { f32, f32 }), x: f32) f32 {
 try table.setClosure("transform", .{ 2.0, 10.0 }, transform);
 ```
 
+## Luau Submodule
+
+This repository includes the full Luau source code as a Git submodule located at `/Users/mpavlenko/Github/luaz/luau`. When investigating Luau implementation details, behavior, or test patterns, use this submodule instead of searching external repositories. The submodule contains:
+
+- VM source code in `luau/VM/src/`
+- Test files in `luau/tests/` (C++ unit tests) and `luau/tests/conformance/` (Luau test scripts)
+- Debug API implementation files like `ldebug.cpp`, `ldo.cpp`, and the main header `lua.h`
+- Conformance tests that demonstrate proper usage patterns for debug functionality
+
+Key test files for understanding debug features:
+- `luau/tests/Conformance.test.cpp` - Contains C++ test code showing how to use `lua_break`, `debuginterrupt`, and breakpoint functionality
+- `luau/tests/conformance/interrupt.luau` - Luau script for testing interrupt functionality
+- `luau/tests/conformance/debugger.luau` - Luau script demonstrating breakpoint usage
+
 ## Development Patterns
 
 ### Versioning and Compatibility
@@ -147,13 +161,20 @@ corresponding unit tests. Tests use `&std.testing.allocator` for memory leak det
 
 Keep unit tests minimal and focused. Tests must demonstrate that functionality works.
 Write clear, concise tests that verify the feature without unnecessary complexity.
+Keep unit tests short and understandable.
 
 Important testing guidelines:
 - `tests.zig` should include unit tests that test only public APIs
 - Avoid using functions from `stack.zig` and `State.zig` in `tests.zig`
+- Never use `stack.*` functions when testing public APIs - use only the high-level API methods
 - Focus on testing the high-level API provided by `lua.zig`
 - Don't create excessive and too verbose unit tests
 - Each test must be minimal and aim to test a specific function
+- Keep tests short, focused, and easy to understand
+- Write meaningful tests that actually test the APIs and their intended behavior
+- Tests must verify that specific API methods work correctly, not just that code runs without crashing
+- Use specific assertions that validate expected outcomes rather than always-true conditions
+- Each test should exercise actual API functionality and verify the correct behavior of the methods being tested
 
 ### Documentation
 Keep documentation for public interfaces current but reasonably sized. The codebase uses Zig's built-in doc comments

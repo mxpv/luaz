@@ -761,8 +761,10 @@ pub inline fn yield(self: Self, nresults: u32) Status {
 }
 
 /// Break execution
-pub inline fn break_(self: Self) Status {
-    return @enumFromInt(c.lua_break(self.lua));
+pub inline fn break_(self: Self) void {
+    _ = c.lua_break(self.lua);
+    // lua_break always returns -1, which is not meaningful
+    // The function sets L->status = LUA_BREAK internally
 }
 
 /// Resume coroutine

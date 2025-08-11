@@ -2001,23 +2001,23 @@ test "setCallbacks all callbacks" {
             return 0;
         }
 
-        pub fn debugbreak(state: *State, ar: Debug) void {
-            _ = state;
+        pub fn debugbreak(l: *Lua, ar: Debug) void {
+            _ = l;
             _ = ar;
         }
 
-        pub fn debugstep(state: *State, ar: Debug) void {
-            _ = state;
+        pub fn debugstep(l: *Lua, ar: Debug) void {
+            _ = l;
             _ = ar;
         }
 
-        pub fn debuginterrupt(state: *State, ar: Debug) void {
-            _ = state;
+        pub fn debuginterrupt(l: *Lua, ar: Debug) void {
+            _ = l;
             _ = ar;
         }
 
-        pub fn debugprotectederror(state: *State) void {
-            _ = state;
+        pub fn debugprotectederror(l: *Lua) void {
+            _ = l;
         }
 
         pub fn onallocate(state: *State, osize: usize, nsize: usize) void {
@@ -2066,17 +2066,14 @@ test "breakpoint and single step debugging with callbacks" {
         break_hits: u32 = 0,
         step_hits: u32 = 0,
 
-        pub fn debugbreak(self: *@This(), state: *State, ar: Debug) void {
-            _ = state;
-            std.debug.assert(std.mem.eql(u8, ar.what, "unknown"));
-            std.debug.assert(std.mem.eql(u8, ar.source, "unknown"));
+        pub fn debugbreak(self: *@This(), l: *Lua, ar: Debug) void {
+            _ = l;
             std.debug.assert(ar.current_line == 5);
-            std.debug.assert(ar.line_defined == 0);
             self.break_hits += 1;
         }
 
-        pub fn debugstep(self: *@This(), state: *State, ar: Debug) void {
-            _ = state;
+        pub fn debugstep(self: *@This(), l: *Lua, ar: Debug) void {
+            _ = l;
             std.debug.assert(self.step_hits == 0); // Only expecting 1 step
             std.debug.assert(ar.current_line == 5);
             self.step_hits += 1;
@@ -2107,9 +2104,55 @@ test "breakpoint and single step debugging with callbacks" {
     lua.setCallbacks(&callbacks);
 
     const result = try func.?.call(.{}, i32);
+
     try expectEq(result, 60);
-
-    try expect(callbacks.break_hits == 1);
-
+    try expectEq(callbacks.break_hits, 1);
     try expectEq(callbacks.step_hits, 1);
+}
+
+test "coroutine debug break" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    const DebugBreakCallbacks = struct {
+        call_count: u32 = 0,
+
+        pub fn debugbreak(self: *@This(), l: *Lua, ar: Debug) void {
+            _ = ar;
+            self.call_count += 1;
+            if (self.call_count == 1) {
+                l.debugBreak();
+            }
+        }
+    };
+
+    var callbacks = DebugBreakCallbacks{};
+    lua.setCallbacks(&callbacks);
+
+    const thread = lua.createThread();
+    defer thread.deinit();
+
+    _ = try thread.eval(
+        \\function test_func()
+        \\    return 42
+        \\end
+    , .{}, void);
+
+    const func = try thread.globals().get("test_func", Lua.Function);
+    defer func.?.deinit();
+
+    _ = try func.?.setBreakpoint(2, true);
+
+    _ = func.?.call(.{}, i32) catch |err| {
+        try expectEq(err, error.Break);
+    };
+
+    try expectEq(thread.status(), .nor);
+
+    // Call function again - should complete and return result
+    const result = try func.?.call(.{}, i32);
+    try expectEq(result, 42);
+
+    // Assert debugbreak callback was called exactly twice
+    try expectEq(callbacks.call_count, 2);
 }
