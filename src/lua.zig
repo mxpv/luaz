@@ -228,7 +228,12 @@ pub const Lua = struct {
     /// any combination of the following methods, which will be automatically registered
     /// if present:
     ///
-    /// - `interrupt(state: *State, gc: i32) void` - Called at safepoints (loop back edges, call/ret, gc)
+    /// Thread Safety:
+    /// - The `interrupt` callback can be set from any thread safely
+    /// - All other callbacks can only be changed when the VM is not running code
+    /// - This is enforced by the underlying Luau VM for thread safety
+    ///
+    /// - `interrupt(state: *State, gc: i32) void` - Called at safepoints (loop back edges, call/ret, gc). Thread-safe to set.
     /// - `panic(state: *State, errcode: i32) void` - Called on unprotected errors (if longjmp is used)
     /// - `userthread(parent: ?*State, thread: *State) void` - Called when thread is created/destroyed
     /// - `useratom(s: []const u8) i16` - Called when string is created; returns atom ID
