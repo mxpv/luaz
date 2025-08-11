@@ -2057,3 +2057,59 @@ test "setCallbacks instance methods" {
 
     try expect(callbacks.counter > 0);
 }
+
+test "breakpoint and single step debugging with callbacks" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    const DebugCallbacks = struct {
+        break_hits: u32 = 0,
+        step_hits: u32 = 0,
+
+        pub fn debugbreak(self: *@This(), state: *State, ar: Debug) void {
+            _ = state;
+            std.debug.assert(std.mem.eql(u8, ar.what, "unknown"));
+            std.debug.assert(std.mem.eql(u8, ar.source, "unknown"));
+            std.debug.assert(ar.current_line == 5);
+            std.debug.assert(ar.line_defined == 0);
+            self.break_hits += 1;
+        }
+
+        pub fn debugstep(self: *@This(), state: *State, ar: Debug) void {
+            _ = state;
+            std.debug.assert(self.step_hits == 0); // Only expecting 1 step
+            std.debug.assert(ar.current_line == 5);
+            self.step_hits += 1;
+        }
+    };
+
+    var callbacks = DebugCallbacks{};
+
+    // Create a multi-step function
+    _ = try lua.eval(
+        \\function test_func()
+        \\    local x = 10     -- line 2
+        \\    local y = 20     -- line 3
+        \\    local z = x + y  -- line 4
+        \\    return z * 2     -- line 5
+        \\end
+    , .{}, void);
+
+    // Get function reference
+    const func = try lua.globals().get("test_func", Lua.Function);
+    try expect(func != null);
+    defer func.?.deinit();
+
+    const breakpoint_line = try func.?.setBreakpoint(4, true);
+    try expectEq(breakpoint_line, 5);
+
+    lua.setSingleStep(true);
+    lua.setCallbacks(&callbacks);
+
+    const result = try func.?.call(.{}, i32);
+    try expectEq(result, 60);
+
+    try expect(callbacks.break_hits == 1);
+
+    try expectEq(callbacks.step_hits, 1);
+}

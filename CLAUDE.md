@@ -138,6 +138,7 @@ Write idiomatic Zig code following the established patterns in the codebase:
 - Follow Zig naming conventions (camelCase for functions, PascalCase for types)
 - Prefer explicit memory management over implicit allocation
 - Do not write implementation comments that explain why code was written a certain way or reference previous implementations
+- Don't solve problems by removing code - fix issues through proper implementation rather than deletion
 - Always run `zig fmt .` after making code changes to ensure consistent formatting
 
 ### Testing
@@ -167,7 +168,8 @@ Keep documentation concise and focused. Don't write extensive documentation - ai
 
 Documentation Formatting:
 - Avoid empty lines in doc comments (lines with only `///`) as they will be skipped during documentation generation.
-- Never use bold formatting (** **) for titles or headers in documentation files
+- NEVER use bold formatting (** **) anywhere in the repository - not in comments, not in markdown files, nowhere
+- This includes **Important**, **Note**, **Warning**, or any other bold text
 
 ### Memory Management
 - Lua states must be explicitly deinitialized with `deinit()`

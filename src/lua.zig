@@ -71,6 +71,8 @@ pub const Lua = struct {
         InvalidType,
         /// Lua runtime error occurred during function execution.
         Runtime,
+        /// Breakpoint could not be set at the specified line.
+        InvalidBreakpoint,
     };
 
     /// Assert handler function type for Luau VM assertions.
@@ -427,6 +429,46 @@ pub const Lua = struct {
                 }
             }.wrapper;
         }
+    }
+
+    /// Enables or disables single-step debugging mode.
+    ///
+    /// When single-step mode is enabled, the `debugstep` callback will be called
+    /// after each instruction during Lua code execution. This allows for detailed
+    /// step-by-step debugging of Lua code.
+    ///
+    /// Prerequisites:
+    /// - `debugstep` callback should be set using `setCallbacks()` to handle step events
+    ///
+    /// Arguments:
+    /// - `enabled`: Whether to enable (true) or disable (false) single-step mode
+    ///
+    /// Performance Note:
+    /// Single-step mode significantly impacts performance as it triggers a callback
+    /// after every instruction. Use only when debugging is needed.
+    ///
+    /// Example:
+    /// ```zig
+    /// const DebugCallbacks = struct {
+    ///     step_count: u32 = 0,
+    ///
+    ///     pub fn debugstep(self: *@This(), state: *State, ar: Debug) void {
+    ///         self.step_count += 1;
+    ///         std.log.info("Step {}: Line {}", .{self.step_count, ar.current_line});
+    ///     }
+    /// };
+    ///
+    /// var callbacks = DebugCallbacks{};
+    /// lua.setCallbacks(&callbacks);
+    /// lua.setSingleStep(true);
+    ///
+    /// _ = try lua.eval("local x = 1; local y = 2; return x + y", .{}, i32);
+    /// // debugstep callback will be called for each instruction
+    ///
+    /// lua.setSingleStep(false); // Disable when done debugging
+    /// ```
+    pub fn setSingleStep(self: Self, enabled: bool) void {
+        self.state.singleStep(enabled);
     }
 
     /// A reference to a Lua value.
@@ -1692,6 +1734,49 @@ pub const Lua = struct {
             self.state().pop(2); // Pop both original and cloned functions
 
             return Function{ .ref = cloned_ref };
+        }
+
+        /// Sets a breakpoint on the specified line of this function.
+        ///
+        /// Sets or unsets a breakpoint at the given line number in the function.
+        /// When a breakpoint is hit during execution, the `debugbreak` callback will be triggered.
+        /// The breakpoint will be set on the closest valid line at or after the specified line.
+        ///
+        /// Prerequisites:
+        /// - Function must be a Lua function (not a C function)
+        /// - `debugbreak` callback should be set using `setCallbacks()` to handle breakpoint events
+        ///
+        /// Arguments:
+        /// - `line`: Line number to set the breakpoint on (1-based)
+        /// - `enabled`: Whether to enable (true) or disable (false) the breakpoint
+        ///
+        /// Returns: The actual line number where the breakpoint was set
+        /// Errors: `Error.InvalidBreakpoint` if the line is invalid or breakpoint cannot be set
+        ///
+        /// Example:
+        /// ```zig
+        /// // Load a multi-line function
+        /// _ = try lua.eval(
+        ///     \\function test()
+        ///     \\    local x = 1  -- line 2
+        ///     \\    local y = 2  -- line 3
+        ///     \\    return x + y -- line 4
+        ///     \\end
+        /// , .{}, void);
+        ///
+        /// const func = try lua.globals().get("test", Lua.Function);
+        /// defer func.?.deinit();
+        ///
+        /// // Set breakpoint on line 3
+        /// const actual_line = try func.?.setBreakpoint(3, true);
+        /// // actual_line will be 3 if line 3 has executable code
+        /// ```
+        pub fn setBreakpoint(self: Function, line: i32, enabled: bool) !i32 {
+            stack.push(self.ref.lua, self.ref); // Push function ref
+            defer self.state().pop(1); // Remove from stack
+
+            const result = self.state().breakpoint(-1, line, enabled);
+            return if (result == -1) error.InvalidBreakpoint else result;
         }
 
         /// Returns the registry reference ID if valid, otherwise null.
