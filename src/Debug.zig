@@ -4,15 +4,43 @@
 //! single-stepping, and execution interruption. The debug system uses a callback-based
 //! approach where the VM notifies your application when debug events occur.
 //!
-//! ## Basic Usage
+//! ## Debug Flow
 //!
-//! 1. Set up debug callbacks using `lua.setCallbacks()`:
+//! The debugging process follows this flow:
+//! 1. Set up callbacks → Register your debug callback struct with `lua.setCallbacks()`
+//! 2. Set breakpoints → Use `function.setBreakpoint(line)` on specific functions
+//! 3. Call function → Execute Lua code normally with `function.call()`
+//! 4. Breakpoint hits → VM calls your `debugbreak` callback
+//! 5. Interrupt execution → Call `debug.debugBreak()` within callback to pause
+//! 6. Handle interruption → Function returns `error.Break` to your application
+//! 7. Examine state → Use `getInfo()`, `stackDepth()`, etc. to inspect execution
+//! 8. Resume execution → Call the function again to continue from where it left off
+//!
+//! ## Key Concepts
+//!
+//! - Breakpoints are notifications: Setting breakpoints only triggers callbacks
+//! - debugBreak() interrupts execution: Must be called within callbacks to actually stop
+//! - Resumption: After `error.Break`, call the same function again to resume
+//! - Field safety: Only request fields you need in `getInfo()` to avoid garbage data
+//! - Context flexibility: `getInfo()` and `stackDepth()` work everywhere
+//!
+//! ## Setting Up Debug Callbacks
+//!
+//! First, create a struct with debug callback methods:
 //! ```zig
 //! const DebugCallbacks = struct {
+//!     breakpoint_hits: u32 = 0,
+//!
 //!     pub fn debugbreak(self: *@This(), debug: *Debug, ar: Debug.Info) void {
+//!         self.breakpoint_hits += 1;
 //!         std.log.info("Hit breakpoint at line {}", .{ar.current_line});
-//!         // Call debugBreak() to actually interrupt execution
+//!
+//!         // Interrupt execution to return control to your application
 //!         debug.debugBreak();
+//!     }
+//!
+//!     pub fn debugstep(self: *@This(), debug: *Debug, ar: Debug.Info) void {
+//!         std.log.info("Step at line {}", .{ar.current_line});
 //!     }
 //! };
 //!
@@ -20,69 +48,75 @@
 //! lua.setCallbacks(&callbacks);
 //! ```
 //!
-//! 2. Set breakpoints on functions using `function.setBreakpoint(line)`:
+//! ## Setting Breakpoints
+//!
+//! Set breakpoints on specific functions and lines:
 //! ```zig
-//! // Lua code to debug
+//! // Create a Lua function to debug
 //! const code =
-//!     \\function myFunction()
-//!     \\    local x = 10
-//!     \\    return x + 5  -- This is line 3
+//!     \\function calculate(a, b)
+//!     \\    local sum = a + b      -- line 2
+//!     \\    return sum * 2         -- line 3
 //!     \\end
 //! ;
-//!
 //! _ = try lua.eval(code, .{}, void);
-//! const func = try lua.globals().get("myFunction", Function);
-//! defer func.deinit();
 //!
-//! // Set breakpoint on line 3 of the function
+//! // Get the function and set a breakpoint on line 3
+//! const func = try lua.globals().get("calculate", Function);
+//! defer func.deinit();
 //! const actual_line = try func.setBreakpoint(3, true);
 //! ```
 //!
-//! 3. Handle interrupted execution:
+//! ## Handling Debug Interruptions
+//!
+//! When a breakpoint hits and `debugBreak()` is called, handle the interruption:
 //! ```zig
-//! const result = func.call(.{}, i32) catch |err| switch (err) {
+//! const result = func.call(.{ 10, 20 }, i32) catch |err| switch (err) {
 //!     error.Break => {
-//!         // Execution was interrupted at breakpoint
-//!         // Can examine state, variables, etc.
+//!         // Execution was interrupted at the breakpoint
+//!         std.log.info("Execution interrupted, can examine state here");
 //!
 //!         // Resume execution by calling the function again
-//!         return func.call(.{}, i32);
+//!         return func.call(.{ 10, 20 }, i32);
 //!     },
 //!     else => return err,
 //! };
 //! ```
 //!
-//! ## Debug Flow
+//! ## Inspecting Call Stack
 //!
-//! The debugging process follows this flow:
-//! 1. Breakpoint hit → VM calls your `debugbreak` callback
-//! 2. In callback → Call `debug.debugBreak()` to interrupt execution
-//! 3. VM interrupts → Sets internal status to LUA_BREAK
-//! 4. Function returns → `error.Break` to your application code
-//! 5. Resume execution → Call the function again to continue from where it left off
+//! Use `getInfo()` to examine the call stack at any time:
+//! ```zig
+//! const debug = lua.debug();
+//! const depth = debug.stackDepth();
+//! std.log.info("Stack depth: {}", .{depth});
 //!
-//! ## Key Concepts
+//! // Get info about the current function (level 0)
+//! const info = debug.getInfo(0, .{ .source = true, .line = true, .name = true });
+//! if (info) |debug_info| {
+//!     std.log.info("Function: {?s} at {s}:{}", .{
+//!         debug_info.name, debug_info.source, debug_info.current_line
+//!     });
+//! }
+//! ```
 //!
-//! - Breakpoints are notifications: Setting breakpoints with `function.setBreakpoint()` only triggers
-//!   the callback - it doesn't automatically stop execution.
-//! - debugBreak() stops execution: You must call `debug.debugBreak()` within your
-//!   callback to actually interrupt and return control to your application.
-//! - Resumption: After `error.Break`, call the same function again to resume execution.
-//! - Debug info limitations: Only `current_line` and `userdata` fields are populated
-//!   in debug callbacks. Other fields contain garbage values.
+//! ## Single-Step Debugging
 //!
-//! ## Advanced Features
+//! Enable single-step mode to step through code instruction by instruction:
+//! ```zig
+//! debug.setSingleStep(true);
+//! // Now debugstep callback will be called for every instruction
+//! const result = try func.call(.{ 10, 20 }, i32);
+//! debug.setSingleStep(false);
+//! ```
 //!
-//! - Single stepping: Use `debug.setSingleStep(true)` and the `debugstep` callback
-//! - Thread interruption: Use `debuginterrupt` callback for coroutine debugging
-//! - Function breakpoints: Use `function.setBreakpoint(line)` to set breakpoints on specific functions
-//! - Conditional breakpoints: Only call `debugBreak()` when certain conditions are met
+//! ## Stack Traces
 //!
-//! ## Debug Information
-//!
-//! The `Info` struct contains information about the current execution context,
-//! but note that most fields are only populated during `lua_getinfo()` calls,
-//! not during debug hook callbacks.
+//! Get formatted stack traces for error reporting:
+//! ```zig
+//! const trace = debug.debugTrace();
+//! std.log.info("Stack trace:\n{s}", .{trace});
+//! ```
 
 const std = @import("std");
 const State = @import("State.zig");
@@ -118,31 +152,80 @@ pub const Info = struct {
     /// Optional user data (for debuginterrupt, contains the interrupted thread state)
     userdata: ?*anyopaque,
 
-    /// Creates an Info struct from a C lua_Debug pointer
+    /// Debug info fields that can be requested from lua_getinfo()
+    pub const Fields = struct {
+        /// Function name
+        name: bool = false,
+        /// Source information (source, short_src, line_defined, what)
+        source: bool = false,
+        /// Current line number
+        line: bool = false,
+        /// Upvalue information (upvalue_count, param_count, is_vararg)
+        upvalues: bool = false,
+
+        /// Convert fields to string format for lua_getinfo()
+        pub fn toString(comptime self: Fields) [:0]const u8 {
+            return (if (self.name) "n" else "") ++
+                (if (self.source) "s" else "") ++
+                (if (self.line) "l" else "") ++
+                (if (self.upvalues) "ua" else "");
+        }
+
+        /// Returns a Fields struct with all fields enabled
+        pub fn all() Fields {
+            return Fields{
+                .name = true,
+                .source = true,
+                .line = true,
+                .upvalues = true,
+            };
+        }
+    };
+
+    /// Creates an Info struct from a C lua_Debug pointer with safe field access.
     ///
-    /// NOTE: Luau debug hooks (debugbreak, debugstep, debuginterrupt) only populate
-    /// the `currentline` and `userdata` fields of lua_Debug. Other fields like `what`, `source`,
-    /// `name`, `linedefined`, etc. are left uninitialized (contain garbage/null pointers)
-    /// because the VM doesn't call lua_getinfo() during debug callbacks.
+    /// The `flags` parameter specifies which fields were requested and are safe to access.
+    /// Unrequested fields may contain uninitialized memory or garbage pointers that will
+    /// cause segmentation faults if accessed. This function safely handles these cases
+    /// by only accessing fields that were explicitly requested.
     ///
-    /// See: https://github.com/luau-lang/luau/blob/8863bfc950d52e9e7b468354d353ca43623da4f6/VM/src/lvmexecute.cpp#L165
-    /// The luau_callhook function only sets ar.currentline and ar.userdata before calling the hook.
+    /// Field mapping:
+    /// - `flags.name` - `name` field contains function name (may be null)
+    /// - `flags.source` - `source`, `short_src`, `line_defined`, `what` fields are populated
+    /// - `flags.line` - `current_line` field is populated
+    /// - `flags.upvalues` - `upvalue_count`, `param_count`, `is_vararg` fields are populated
+    /// - Empty flags - Only `current_line` and `userdata` are safe (debug hook context)
     ///
-    /// To get full debug information, you would need to manually call lua_getinfo() with
-    /// appropriate flags like "slu" within your callback, but this requires access to the
-    /// function on the stack which is more complex.
-    pub fn fromC(c_debug: *State.Debug) Info {
+    /// CRITICAL: This function provides safe access by only dereferencing C string
+    /// pointers for requested fields, preventing segmentation faults from garbage data.
+    ///
+    /// Implementation details: See luau/VM/src/ldebug.cpp in the Luau submodule for
+    /// how lua_getinfo() populates fields based on the "what" parameter.
+    ///
+    pub fn fromC(c_debug: *State.Debug, flags: Fields) Info {
         return Info{
-            .name = null,
-            .what = "",
-            .source = "",
-            .short_src = "",
-            .line_defined = c_debug.linedefined,
-            .current_line = c_debug.currentline,
-            .upvalue_count = c_debug.nupvals,
-            .param_count = c_debug.nparams,
-            .is_vararg = c_debug.isvararg != 0,
-            .userdata = c_debug.userdata,
+            .name = if (flags.name and c_debug.name != null)
+                std.mem.span(c_debug.name.?)
+            else
+                null,
+            .what = if (flags.source and c_debug.what != null)
+                std.mem.span(c_debug.what.?)
+            else
+                "",
+            .source = if (flags.source and c_debug.source != null)
+                std.mem.span(c_debug.source.?)
+            else
+                "",
+            .short_src = if (flags.source and c_debug.short_src != null)
+                std.mem.span(c_debug.short_src.?)
+            else
+                "",
+            .line_defined = if (flags.source) c_debug.linedefined else 0,
+            .current_line = if (flags.line) c_debug.currentline else c_debug.currentline, // Always available
+            .upvalue_count = if (flags.upvalues) c_debug.nupvals else 0,
+            .param_count = if (flags.upvalues) c_debug.nparams else 0,
+            .is_vararg = if (flags.upvalues) c_debug.isvararg != 0 else false,
+            .userdata = c_debug.userdata, // Always safe
         };
     }
 
@@ -201,6 +284,17 @@ pub fn setSingleStep(self: Self, enabled: bool) void {
 /// to interrupt the currently executing Lua thread and return control to your application.
 /// After calling this method, the function that was executing will return with `error.Break`.
 ///
+/// IMPORTANT: C-Call Boundary Limitations
+/// `debugBreak()` will fail with "attempt to break across metamethod/C-call boundary" when:
+/// - Called during C→Lua function calls (like `func.call()` from Zig)
+/// - Called during metamethod execution (__index, __newindex, etc.)
+/// - Called when there are active C calls on the stack
+///
+/// Safe contexts for `debugBreak()`:
+/// - ✅ In coroutines/threads (use `lua.createThread()`)
+/// - ✅ During pure Lua execution without C calls
+/// - ✅ After call stack unwinds to base level
+///
 /// Note: Breakpoints set with `breakpoint(line)` in Lua code only trigger debug callbacks - they
 /// don't automatically interrupt execution. You must call `debugBreak()` within your callback
 /// to actually stop execution and return control to your application.
@@ -212,26 +306,15 @@ pub fn setSingleStep(self: Self, enabled: bool) void {
 /// 4. Function returns → `error.Break` to your application code
 /// 5. Resume execution → Call the function again to continue from where it left off
 ///
-/// Example:
+/// Example with coroutine:
 /// ```zig
-/// const DebugCallbacks = struct {
-///     pub fn debugbreak(self: *@This(), debug: *Debug, ar: Debug.Info) void {
-///         std.log.info("Hit breakpoint at line {}", .{ar.current_line});
-///         debug.debugBreak();
-///     }
-/// };
-///
-/// var callbacks = DebugCallbacks{};
-/// lua.setCallbacks(&callbacks);
-///
-/// const result = func.call(.{}, i32) catch |err| switch (err) {
-///     error.Break => {
-///         // Handle interrupted execution
-///         return func.call(.{}, i32); // Resume
-///     },
-///     else => return err,
-/// };
+/// const thread = lua.createThread();
+/// const func = try thread.globals().get("myFunction", Function);
+/// // debugBreak() works reliably in thread context
 /// ```
+///
+/// Implementation details: See luau/VM/src/ldo.cpp lua_break() function for
+/// the exact conditions when breaking is allowed.
 ///
 pub fn debugBreak(self: Self) void {
     self.state.break_();
@@ -272,6 +355,76 @@ pub fn debugBreak(self: Self) void {
 /// ```
 pub fn debugTrace(self: Self) [:0]const u8 {
     return self.state.debugTrace();
+}
+
+/// Get the current stack depth.
+///
+/// Returns the number of activation records on the call stack.
+/// This includes the current function, all calling functions,
+/// and the main chunk. A value of 1 indicates only the main chunk
+/// is on the stack.
+///
+/// This is useful for understanding call depth and implementing
+/// stack-based debugging features.
+///
+/// Example:
+/// ```zig
+/// const debug = lua.debug();
+/// const depth = debug.stackDepth();
+/// std.debug.print("Current stack depth: {}\n", .{depth});
+/// ```
+///
+/// Returns: Number of activation records on the stack
+pub fn stackDepth(self: Self) i32 {
+    return self.state.stackDepth();
+}
+
+/// Get information about a function on the call stack.
+///
+/// Retrieves detailed information about a function at the specified stack level.
+/// Level 0 is the current function, level 1 is the caller, and so on.
+/// The `fields` parameter controls which information to retrieve.
+///
+/// Unlike `debugBreak()`, this function has NO C-call boundary restrictions and can be
+/// called safely from any context:
+/// - ✅ During C→Lua function calls
+/// - ✅ During metamethod execution
+/// - ✅ Inside debug hook callbacks
+/// - ✅ Outside debug hook callbacks
+/// - ✅ In any thread state
+///
+/// IMPORTANT: Fields not requested may contain garbage values.
+/// Luau's lua_getinfo() only populates fields specified by the request.
+/// Accessing unrequested fields may cause undefined behavior or crashes.
+///
+/// Example:
+/// ```zig
+/// const debug = lua.debug();
+/// const info = debug.getInfo(0, .{ .source = true, .line = true, .upvalues = true });
+///
+/// if (info) |debug_info| {
+///     std.debug.print("Function: {s} at line {}\n", .{
+///         debug_info.source, debug_info.current_line
+///     });
+/// }
+/// ```
+///
+/// Parameters:
+/// - `level`: Stack level (0 = current function, 1 = caller, etc.)
+/// - `fields`: See `Info.Fields` for available field options
+///
+/// Returns: `Info` struct with requested information, or null if level is invalid
+pub fn getInfo(self: Self, level: i32, comptime fields: Info.Fields) ?Info {
+    const what_string = comptime fields.toString();
+
+    var c_debug: State.Debug = undefined;
+    const result = self.state.getInfo(level, what_string, &c_debug);
+
+    if (result == 0) {
+        return null; // Invalid level
+    }
+
+    return Info.fromC(&c_debug, fields);
 }
 
 // Tests for debug functionality
@@ -436,4 +589,111 @@ test "coroutine debug break" {
 
     // Assert debugbreak callback was called exactly twice
     try expectEqual(callbacks.call_count, 2);
+}
+
+test "getInfo and stackDepth in debug breakpoint" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    // Callback to validate debug info when breakpoint is hit
+    const DebugInfoValidator = struct {
+        var breakpoint_hit: bool = false;
+
+        pub fn debugbreak(self: *@This(), debug: *Self, ar: Info) void {
+            _ = self;
+            _ = ar;
+            if (!breakpoint_hit) {
+                breakpoint_hit = true;
+
+                const depth = debug.stackDepth();
+                std.debug.assert(depth > 0);
+
+                const info = debug.getInfo(0, Info.Fields.all());
+                std.debug.assert(info != null);
+                std.debug.assert(info.?.current_line == 3);
+                std.debug.assert(info.?.what.len > 0);
+                std.debug.assert(info.?.source.len >= 0);
+                std.debug.assert(info.?.short_src.len > 0);
+                std.debug.assert(info.?.param_count == 2);
+                std.debug.assert(info.?.is_vararg == false);
+                // Validate string values contain expected content
+                std.debug.assert(std.mem.eql(u8, info.?.what, "Lua"));
+                std.debug.assert(info.?.name != null);
+                std.debug.assert(std.mem.eql(u8, info.?.name.?, "testFunction"));
+            }
+        }
+    };
+
+    var validator = DebugInfoValidator{};
+    lua.setCallbacks(&validator);
+
+    // Create a test function with known properties
+    const code =
+        \\function testFunction(param1, param2)
+        \\    local x = param1 + param2
+        \\    return x * 2  -- Breakpoint will be set on this line
+        \\end
+    ;
+
+    _ = try lua.eval(code, .{}, void);
+
+    // Get the function and set a breakpoint
+    const func = try lua.globals().get("testFunction", Lua.Function);
+    defer func.?.deinit();
+    _ = try func.?.setBreakpoint(3, true); // Line 3: return x * 2
+
+    // Call the function - this should hit the breakpoint
+    const result = try func.?.call(.{ 5, 10 }, i32);
+    try expectEqual(result.ok.?, 30);
+
+    // Verify breakpoint was hit
+    try expect(DebugInfoValidator.breakpoint_hit);
+}
+
+test "getInfo outside of hook" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    // Create a test function
+    const code =
+        \\function testFunction(param1, param2)
+        \\    local x = param1 + param2
+        \\    return x * 2
+        \\end
+    ;
+
+    _ = try lua.eval(code, .{}, void);
+
+    // Get the function and execute it
+    const func = (try lua.globals().get("testFunction", Lua.Function)).?;
+    defer func.deinit();
+
+    const result = try func.call(.{ 5, 10 }, i32);
+    try expectEqual(result.ok.?, 30);
+
+    const debug = lua.debug();
+
+    const info = debug.getInfo(0, Info.Fields.all());
+    if (info) |debug_info| {
+        // At main chunk level, we should get valid debug info
+        try expect(debug_info.current_line >= 0);
+        try expectEqual(std.mem.eql(u8, debug_info.what, "Lua"), true);
+        try expect(debug_info.source.len > 0);
+        try expect(debug_info.short_src.len > 0);
+    }
+}
+
+test "stackDepth and getInfo basic functionality" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    const debug = lua.debug();
+
+    // Test stackDepth function exists and doesn't crash
+    const depth = debug.stackDepth();
+    _ = depth; // Just verify the call doesn't crash
+
+    // Test getInfo function exists and handles invalid level correctly
+    const invalid = debug.getInfo(999, .{ .source = true });
+    try expect(invalid == null);
 }

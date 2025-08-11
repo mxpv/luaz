@@ -152,7 +152,10 @@ Write idiomatic Zig code following the established patterns in the codebase:
 - Follow Zig naming conventions (camelCase for functions, PascalCase for types)
 - Prefer explicit memory management over implicit allocation
 - Do not write implementation comments that explain why code was written a certain way or reference previous implementations
-- Don't solve problems by removing code - fix issues through proper implementation rather than deletion
+- NEVER solve problems by removing code - fix issues through proper implementation rather than deletion
+- When encountering errors or unexpected behavior, investigate the underlying C++ implementation in the Luau submodule to understand root causes
+- Always examine relevant files in `luau/VM/src/`, `luau/Compiler/src/`, and `luau/tests/` to understand proper behavior and constraints
+- Fix issues by understanding and working within the constraints of the underlying Luau implementation
 - Always run `zig fmt .` after making code changes to ensure consistent formatting
 
 ### Testing
@@ -168,8 +171,10 @@ Important testing guidelines:
 - Avoid using functions from `stack.zig` and `State.zig` in `tests.zig`
 - Never use `stack.*` functions when testing public APIs - use only the high-level API methods
 - Focus on testing the high-level API provided by `lua.zig`
-- Don't create excessive and too verbose unit tests
-- Each test must be minimal and aim to test a specific function
+- NEVER write verbose, excessive tests with multiple redundant assertions
+- Each test must be minimal - call the function once with meaningful inputs and assert the essential results
+- Avoid testing multiple variations of the same thing in one test
+- Don't write obvious assertions or duplicate validations already covered elsewhere
 - Keep tests short, focused, and easy to understand
 
 CRITICAL: Tests MUST prove functionality works:

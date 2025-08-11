@@ -372,7 +372,7 @@ pub const Lua = struct {
                 fn wrapper(L: ?State.LuaState, ar: ?*State.Debug) callconv(.C) void {
                     var lua = Lua.fromState(L.?);
                     var debug_instance = lua.debug();
-                    const debug_info = Lua.Debug.Info.fromC(ar.?);
+                    const debug_info = Lua.Debug.Info.fromC(ar.?, .{});
 
                     if (comptime is_instance) {
                         const callbacks_struct = lua.state.callbacks();
@@ -390,7 +390,7 @@ pub const Lua = struct {
                 fn wrapper(L: ?State.LuaState, ar: ?*State.Debug) callconv(.C) void {
                     var lua = Lua.fromState(L.?);
                     var debug_instance = lua.debug();
-                    const debug_info = Lua.Debug.Info.fromC(ar.?);
+                    const debug_info = Lua.Debug.Info.fromC(ar.?, .{});
 
                     if (comptime is_instance) {
                         const callbacks_struct = lua.state.callbacks();
@@ -408,7 +408,7 @@ pub const Lua = struct {
                 fn wrapper(L: ?State.LuaState, ar: ?*State.Debug) callconv(.C) void {
                     var lua = Lua.fromState(L.?);
                     var debug_instance = lua.debug();
-                    const debug_info = Lua.Debug.Info.fromC(ar.?);
+                    const debug_info = Lua.Debug.Info.fromC(ar.?, .{});
 
                     if (comptime is_instance) {
                         const callbacks_struct = lua.state.callbacks();
