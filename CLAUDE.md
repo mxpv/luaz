@@ -171,10 +171,17 @@ Important testing guidelines:
 - Don't create excessive and too verbose unit tests
 - Each test must be minimal and aim to test a specific function
 - Keep tests short, focused, and easy to understand
-- Write meaningful tests that actually test the APIs and their intended behavior
-- Tests must verify that specific API methods work correctly, not just that code runs without crashing
-- Use specific assertions that validate expected outcomes rather than always-true conditions
-- Each test should exercise actual API functionality and verify the correct behavior of the methods being tested
+
+CRITICAL: Tests MUST prove functionality works:
+- NEVER write tests that just call a function and ignore the result
+- NEVER write tests with `try expect(true)` or other always-passing assertions
+- NEVER write tests that just check "it doesn't crash" - that proves nothing
+- Tests MUST verify actual behavior: if a function returns data, check that data is correct
+- Tests MUST have assertions that can actually fail if the implementation is broken
+- Example of BAD test: calling debugTrace() and ignoring result or just checking it's not null
+- Example of GOOD test: calling debugTrace() during actual execution and verifying the trace contains expected function names, line numbers, or stack frames
+- If you can comment out the entire function body and the test still passes, the test is useless
+- Each test must validate the actual purpose of the function being tested
 
 ### Documentation
 Keep documentation for public interfaces current but reasonably sized. The codebase uses Zig's built-in doc comments

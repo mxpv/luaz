@@ -518,6 +518,46 @@ pub const Lua = struct {
         self.state.break_();
     }
 
+    /// Get a stack trace for debugging purposes.
+    ///
+    /// Returns a formatted string containing the current call stack with file names,
+    /// line numbers, and function names where available. Useful for error reporting
+    /// or debugging runtime issues.
+    ///
+    /// The trace shows:
+    /// - Source file and line number
+    /// - Function name (if available)
+    /// - Up to 10 frames from the top and 10 from the bottom (if stack exceeds 20 frames)
+    ///
+    /// Example output:
+    /// ```
+    /// script.lua:10 function myFunction
+    /// script.lua:5 function caller
+    /// [main]:1
+    /// ```
+    ///
+    /// IMPORTANT CAVEATS:
+    /// - NOT thread-safe: Uses a global static buffer internally. Do not call from
+    ///   multiple threads simultaneously or the results will be corrupted.
+    /// - For debugging only: This function is intended for development and debugging,
+    ///   not for production error handling.
+    /// - Limited buffer: The internal buffer is 4096 bytes. Very deep stacks or long
+    ///   file paths may be truncated.
+    /// - Performance: Gathering stack trace information has overhead. Avoid calling
+    ///   frequently in performance-critical code.
+    ///
+    /// Example:
+    /// ```zig
+    /// const result = lua.eval("error('something went wrong')", .{}, void) catch |err| {
+    ///     std.debug.print("Error: {}\n", .{err});
+    ///     std.debug.print("Stack trace:\n{s}\n", .{lua.debugTrace()});
+    ///     return err;
+    /// };
+    /// ```
+    pub fn debugTrace(self: Self) [:0]const u8 {
+        return self.state.debugTrace();
+    }
+
     /// A reference to a Lua value.
     ///
     /// Holds a reference ID that can be used to retrieve the value later.

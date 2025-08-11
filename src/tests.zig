@@ -1259,6 +1259,66 @@ test "isThread method" {
     try expect(!lua.isThread());
 }
 
+test "debugTrace shows function names in call stack" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    // Set up breakpoint callback to capture trace when breakpoint is hit
+    const BreakpointCapture = struct {
+        var captured_trace: [:0]const u8 = "";
+        var breakpoint_hit: bool = false;
+
+        pub fn debugbreak(self: *@This(), l: *Lua, ar: Debug) void {
+            _ = self;
+            _ = ar;
+            if (!breakpoint_hit) {
+                breakpoint_hit = true;
+                captured_trace = l.debugTrace();
+            }
+            // Don't actually break - just capture the trace
+        }
+    };
+
+    var capture = BreakpointCapture{};
+    lua.setCallbacks(&capture);
+
+    // Create nested functions
+    const code =
+        \\function innerFunc()
+        \\    return 42  -- Breakpoint will be set on this line
+        \\end
+        \\
+        \\function middleFunc()
+        \\    return innerFunc()
+        \\end
+        \\
+        \\function outerFunc()
+        \\    return middleFunc()
+        \\end
+    ;
+
+    _ = try lua.eval(code, .{}, void);
+
+    // Get the innerFunc and set a breakpoint
+    const func = try lua.globals().get("innerFunc", Lua.Function);
+    defer func.?.deinit();
+    _ = try func.?.setBreakpoint(2, true); // Line 2: return 42
+
+    // Call the nested functions - this should hit the breakpoint
+    const result = try lua.eval("return outerFunc()", .{}, i32);
+    try expectEq(result.ok.?, 42);
+
+    // Verify we captured a trace and it contains our function names
+    try expect(BreakpointCapture.breakpoint_hit);
+    const trace = BreakpointCapture.captured_trace;
+    try expect(trace.len > 0);
+
+    // The trace should contain all three function names in the call stack
+    try expect(std.mem.indexOf(u8, trace, "function outerFunc") != null);
+    try expect(std.mem.indexOf(u8, trace, "function middleFunc") != null);
+    try expect(std.mem.indexOf(u8, trace, "function innerFunc") != null);
+}
+
 test "simple thread function execution" {
     const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
