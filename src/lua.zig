@@ -45,13 +45,12 @@ const Allocator = std.mem.Allocator;
 
 pub const State = @import("State.zig");
 pub const Compiler = @import("Compiler.zig");
-pub const Debug = @import("debug.zig").Debug;
+const Debug = @import("Debug.zig");
 
 const userdata = @import("userdata.zig");
 const stack = @import("stack.zig");
 const alloc = @import("alloc.zig").alloc;
 const assert = @import("assert.zig");
-const debug = @import("debug.zig");
 
 /// High-level Lua wrapper and main library entry point.
 /// Provides an idiomatic Zig interface with automatic type conversions for the Luau scripting language.
@@ -78,6 +77,9 @@ pub const Lua = struct {
     /// Assert handler function type for Luau VM assertions.
     pub const AssertHandler = assert.AssertHandler;
 
+    /// Debug functionality for Lua state
+    pub const Debug = @import("Debug.zig");
+
     /// Initialize a new Lua state with optional custom allocator.
     ///
     /// Creates a new Luau virtual machine instance. Pass `null` to use Luau's built-in
@@ -103,12 +105,20 @@ pub const Lua = struct {
 
         const state = result orelse return Error.OutOfMemory;
 
-        return Lua{ .state = state };
+        return Lua{
+            .state = state,
+        };
     }
 
     /// Open all standard Lua libraries.
     pub inline fn openLibs(self: Self) void {
         self.state.openLibs();
+    }
+
+    /// Get debug functionality for this Lua state.
+    /// Returns a Debug instance that provides debugging operations.
+    pub inline fn debug(self: Self) Lua.Debug {
+        return Lua.Debug.init(@constCast(&self.state));
     }
 
     pub inline fn fromState(state: State.LuaState) Self {
@@ -213,13 +223,13 @@ pub const Lua = struct {
     /// - `panic(state: *State, errcode: i32) void` - Called on unprotected errors (if longjmp is used)
     /// - `userthread(parent: ?*State, thread: *State) void` - Called when thread is created/destroyed
     /// - `useratom(s: []const u8) i16` - Called when string is created; returns atom ID
-    /// - `debugbreak(lua: *Lua, ar: Debug) void` - Called when breakpoint is hit. Note that breakpoints
+    /// - `debugbreak(debug: *Lua.Debug, ar: Lua.Debug.Info) void` - Called when breakpoint is hit. Note that breakpoints
     ///   set with `breakpoint(line)` in Lua code only trigger this callback - they don't automatically
-    ///   interrupt execution. Call `lua.debugBreak()` within this callback to actually interrupt
+    ///   interrupt execution. Call `debug.debugBreak()` within this callback to actually interrupt
     ///   execution and return `error.Break` to the caller.
-    /// - `debugstep(lua: *Lua, ar: Debug) void` - Called after each instruction in single step
-    /// - `debuginterrupt(lua: *Lua, ar: Debug) void` - Called on thread execution interrupt
-    /// - `debugprotectederror(lua: *Lua) void` - Called when protected call results in error
+    /// - `debugstep(debug: *Lua.Debug, ar: Lua.Debug.Info) void` - Called after each instruction in single step
+    /// - `debuginterrupt(debug: *Lua.Debug, ar: Lua.Debug.Info) void` - Called on thread execution interrupt
+    /// - `debugprotectederror(debug: *Lua.Debug) void` - Called when protected call results in error
     /// - `onallocate(state: *State, osize: usize, nsize: usize) void` - Called when a memory operation occurs
     ///   (allocation when osize=0, deallocation when nsize=0, reallocation otherwise).
     ///   Note: This callback is only triggered for Luau's internal allocations, not for all memory operations
@@ -352,14 +362,15 @@ pub const Lua = struct {
             cb.debugbreak = struct {
                 fn wrapper(L: ?State.LuaState, ar: ?*State.Debug) callconv(.C) void {
                     var lua = Lua.fromState(L.?);
-                    const debug_info = debug.Debug.fromC(ar.?);
+                    var debug_instance = lua.debug();
+                    const debug_info = Lua.Debug.Info.fromC(ar.?);
 
                     if (comptime is_instance) {
                         const callbacks_struct = lua.state.callbacks();
                         const instance: *CallbackType = @ptrCast(@alignCast(callbacks_struct.userdata.?));
-                        instance.debugbreak(&lua, debug_info);
+                        instance.debugbreak(&debug_instance, debug_info);
                     } else {
-                        CallbackType.debugbreak(&lua, debug_info);
+                        CallbackType.debugbreak(&debug_instance, debug_info);
                     }
                 }
             }.wrapper;
@@ -369,14 +380,15 @@ pub const Lua = struct {
             cb.debugstep = struct {
                 fn wrapper(L: ?State.LuaState, ar: ?*State.Debug) callconv(.C) void {
                     var lua = Lua.fromState(L.?);
-                    const debug_info = debug.Debug.fromC(ar.?);
+                    var debug_instance = lua.debug();
+                    const debug_info = Lua.Debug.Info.fromC(ar.?);
 
                     if (comptime is_instance) {
                         const callbacks_struct = lua.state.callbacks();
                         const instance: *CallbackType = @ptrCast(@alignCast(callbacks_struct.userdata.?));
-                        instance.debugstep(&lua, debug_info);
+                        instance.debugstep(&debug_instance, debug_info);
                     } else {
-                        CallbackType.debugstep(&lua, debug_info);
+                        CallbackType.debugstep(&debug_instance, debug_info);
                     }
                 }
             }.wrapper;
@@ -386,14 +398,15 @@ pub const Lua = struct {
             cb.debuginterrupt = struct {
                 fn wrapper(L: ?State.LuaState, ar: ?*State.Debug) callconv(.C) void {
                     var lua = Lua.fromState(L.?);
-                    const debug_info = debug.Debug.fromC(ar.?);
+                    var debug_instance = lua.debug();
+                    const debug_info = Lua.Debug.Info.fromC(ar.?);
 
                     if (comptime is_instance) {
                         const callbacks_struct = lua.state.callbacks();
                         const instance: *CallbackType = @ptrCast(@alignCast(callbacks_struct.userdata.?));
-                        instance.debuginterrupt(&lua, debug_info);
+                        instance.debuginterrupt(&debug_instance, debug_info);
                     } else {
-                        CallbackType.debuginterrupt(&lua, debug_info);
+                        CallbackType.debuginterrupt(&debug_instance, debug_info);
                     }
                 }
             }.wrapper;
@@ -403,13 +416,14 @@ pub const Lua = struct {
             cb.debugprotectederror = struct {
                 fn wrapper(L: ?State.LuaState) callconv(.C) void {
                     var lua = Lua.fromState(L.?);
+                    var debug_instance = lua.debug();
 
                     if (comptime is_instance) {
                         const callbacks_struct = lua.state.callbacks();
                         const instance: *CallbackType = @ptrCast(@alignCast(callbacks_struct.userdata.?));
-                        instance.debugprotectederror(&lua);
+                        instance.debugprotectederror(&debug_instance);
                     } else {
-                        CallbackType.debugprotectederror(&lua);
+                        CallbackType.debugprotectederror(&debug_instance);
                     }
                 }
             }.wrapper;
@@ -432,130 +446,6 @@ pub const Lua = struct {
                 }
             }.wrapper;
         }
-    }
-
-    /// Enables or disables single-step debugging mode.
-    ///
-    /// When single-step mode is enabled, the `debugstep` callback will be called
-    /// after each instruction during Lua code execution. This allows for detailed
-    /// step-by-step debugging of Lua code.
-    ///
-    /// Prerequisites:
-    /// - `debugstep` callback should be set using `setCallbacks()` to handle step events
-    ///
-    /// Arguments:
-    /// - `enabled`: Whether to enable (true) or disable (false) single-step mode
-    ///
-    /// Performance Note:
-    /// Single-step mode significantly impacts performance as it triggers a callback
-    /// after every instruction. Use only when debugging is needed.
-    ///
-    /// Example:
-    /// ```zig
-    /// const DebugCallbacks = struct {
-    ///     step_count: u32 = 0,
-    ///
-    ///     pub fn debugstep(self: *@This(), state: *State, ar: Debug) void {
-    ///         self.step_count += 1;
-    ///         std.log.info("Step {}: Line {}", .{self.step_count, ar.current_line});
-    ///     }
-    /// };
-    ///
-    /// var callbacks = DebugCallbacks{};
-    /// lua.setCallbacks(&callbacks);
-    /// lua.setSingleStep(true);
-    ///
-    /// _ = try lua.eval("local x = 1; local y = 2; return x + y", .{}, i32);
-    /// // debugstep callback will be called for each instruction
-    ///
-    /// lua.setSingleStep(false); // Disable when done debugging
-    /// ```
-    pub fn setSingleStep(self: Self, enabled: bool) void {
-        self.state.singleStep(enabled);
-    }
-
-    /// Interrupt thread execution during debug callbacks.
-    ///
-    /// This method should be called from within debug callbacks (debugbreak, debugstep, debuginterrupt)
-    /// to interrupt the current execution and return control to the caller. When called, it sets the
-    /// VM's status to LUA_BREAK, causing the current function to return with `error.Break`.
-    ///
-    /// Note: Breakpoints set with `breakpoint(line)` in Lua code only trigger debug callbacks - they
-    /// don't automatically interrupt execution. You must call `debugBreak()` within your callback
-    /// to actually interrupt and return control to your application.
-    ///
-    /// Flow:
-    /// 1. Breakpoint hits → VM calls your debugbreak callback
-    /// 2. In callback → call `debugBreak()` to interrupt execution
-    /// 3. VM sets status → L.status = LUA_BREAK
-    /// 4. Function returns → `error.Break` to caller
-    /// 5. Can resume → call function again to continue from where it left off
-    ///
-    /// Example:
-    /// ```zig
-    /// const DebugCallbacks = struct {
-    ///     pub fn debugbreak(self: *@This(), lua: *Lua, ar: Debug) void {
-    ///         std.log.info("Hit breakpoint at line {}", .{ar.current_line});
-    ///         // This actually interrupts execution and returns error.Break
-    ///         lua.debugBreak();
-    ///     }
-    /// };
-    ///
-    /// var callbacks = DebugCallbacks{};
-    /// lua.setCallbacks(&callbacks);
-    ///
-    /// // When breakpoint hits, function returns error.Break instead of continuing
-    /// const result = func.call(.{}, i32) catch |err| switch (err) {
-    ///     error.Break => {
-    ///         // Execution was interrupted, can examine state or resume later
-    ///         return func.call(.{}, i32); // Resume execution
-    ///     },
-    ///     else => return err,
-    /// };
-    /// ```
-    ///
-    pub fn debugBreak(self: Self) void {
-        self.state.break_();
-    }
-
-    /// Get a stack trace for debugging purposes.
-    ///
-    /// Returns a formatted string containing the current call stack with file names,
-    /// line numbers, and function names where available. Useful for error reporting
-    /// or debugging runtime issues.
-    ///
-    /// The trace shows:
-    /// - Source file and line number
-    /// - Function name (if available)
-    /// - Up to 10 frames from the top and 10 from the bottom (if stack exceeds 20 frames)
-    ///
-    /// Example output:
-    /// ```
-    /// script.lua:10 function myFunction
-    /// script.lua:5 function caller
-    /// [main]:1
-    /// ```
-    ///
-    /// IMPORTANT CAVEATS:
-    /// - NOT thread-safe: Uses a global static buffer internally. Do not call from
-    ///   multiple threads simultaneously or the results will be corrupted.
-    /// - For debugging only: This function is intended for development and debugging,
-    ///   not for production error handling.
-    /// - Limited buffer: The internal buffer is 4096 bytes. Very deep stacks or long
-    ///   file paths may be truncated.
-    /// - Performance: Gathering stack trace information has overhead. Avoid calling
-    ///   frequently in performance-critical code.
-    ///
-    /// Example:
-    /// ```zig
-    /// const result = lua.eval("error('something went wrong')", .{}, void) catch |err| {
-    ///     std.debug.print("Error: {}\n", .{err});
-    ///     std.debug.print("Stack trace:\n{s}\n", .{lua.debugTrace()});
-    ///     return err;
-    /// };
-    /// ```
-    pub fn debugTrace(self: Self) [:0]const u8 {
-        return self.state.debugTrace();
     }
 
     /// A reference to a Lua value.

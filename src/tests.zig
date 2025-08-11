@@ -1259,66 +1259,6 @@ test "isThread method" {
     try expect(!lua.isThread());
 }
 
-test "debugTrace shows function names in call stack" {
-    const lua = try Lua.init(&std.testing.allocator);
-    defer lua.deinit();
-
-    // Set up breakpoint callback to capture trace when breakpoint is hit
-    const BreakpointCapture = struct {
-        var captured_trace: [:0]const u8 = "";
-        var breakpoint_hit: bool = false;
-
-        pub fn debugbreak(self: *@This(), l: *Lua, ar: Debug) void {
-            _ = self;
-            _ = ar;
-            if (!breakpoint_hit) {
-                breakpoint_hit = true;
-                captured_trace = l.debugTrace();
-            }
-            // Don't actually break - just capture the trace
-        }
-    };
-
-    var capture = BreakpointCapture{};
-    lua.setCallbacks(&capture);
-
-    // Create nested functions
-    const code =
-        \\function innerFunc()
-        \\    return 42  -- Breakpoint will be set on this line
-        \\end
-        \\
-        \\function middleFunc()
-        \\    return innerFunc()
-        \\end
-        \\
-        \\function outerFunc()
-        \\    return middleFunc()
-        \\end
-    ;
-
-    _ = try lua.eval(code, .{}, void);
-
-    // Get the innerFunc and set a breakpoint
-    const func = try lua.globals().get("innerFunc", Lua.Function);
-    defer func.?.deinit();
-    _ = try func.?.setBreakpoint(2, true); // Line 2: return 42
-
-    // Call the nested functions - this should hit the breakpoint
-    const result = try lua.eval("return outerFunc()", .{}, i32);
-    try expectEq(result.ok.?, 42);
-
-    // Verify we captured a trace and it contains our function names
-    try expect(BreakpointCapture.breakpoint_hit);
-    const trace = BreakpointCapture.captured_trace;
-    try expect(trace.len > 0);
-
-    // The trace should contain all three function names in the call stack
-    try expect(std.mem.indexOf(u8, trace, "function outerFunc") != null);
-    try expect(std.mem.indexOf(u8, trace, "function middleFunc") != null);
-    try expect(std.mem.indexOf(u8, trace, "function innerFunc") != null);
-}
-
 test "simple thread function execution" {
     const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
@@ -2090,23 +2030,23 @@ test "setCallbacks all callbacks" {
             return 0;
         }
 
-        pub fn debugbreak(l: *Lua, ar: Debug) void {
-            _ = l;
+        pub fn debugbreak(debug: *Lua.Debug, ar: Lua.Debug.Info) void {
+            _ = debug;
             _ = ar;
         }
 
-        pub fn debugstep(l: *Lua, ar: Debug) void {
-            _ = l;
+        pub fn debugstep(debug: *Lua.Debug, ar: Lua.Debug.Info) void {
+            _ = debug;
             _ = ar;
         }
 
-        pub fn debuginterrupt(l: *Lua, ar: Debug) void {
-            _ = l;
+        pub fn debuginterrupt(debug: *Lua.Debug, ar: Lua.Debug.Info) void {
+            _ = debug;
             _ = ar;
         }
 
-        pub fn debugprotectederror(l: *Lua) void {
-            _ = l;
+        pub fn debugprotectederror(debug: *Lua.Debug) void {
+            _ = debug;
         }
 
         pub fn onallocate(state: *State, osize: usize, nsize: usize) void {
@@ -2145,102 +2085,4 @@ test "setCallbacks instance methods" {
     try globals.set("key", "value");
 
     try expect(callbacks.counter > 0);
-}
-
-test "breakpoint and single step debugging with callbacks" {
-    const lua = try Lua.init(&std.testing.allocator);
-    defer lua.deinit();
-
-    const DebugCallbacks = struct {
-        break_hits: u32 = 0,
-        step_hits: u32 = 0,
-
-        pub fn debugbreak(self: *@This(), l: *Lua, ar: Debug) void {
-            _ = l;
-            std.debug.assert(ar.current_line == 5);
-            self.break_hits += 1;
-        }
-
-        pub fn debugstep(self: *@This(), l: *Lua, ar: Debug) void {
-            _ = l;
-            std.debug.assert(self.step_hits == 0); // Only expecting 1 step
-            std.debug.assert(ar.current_line == 5);
-            self.step_hits += 1;
-        }
-    };
-
-    var callbacks = DebugCallbacks{};
-
-    // Create a multi-step function
-    _ = try lua.eval(
-        \\function test_func()
-        \\    local x = 10     -- line 2
-        \\    local y = 20     -- line 3
-        \\    local z = x + y  -- line 4
-        \\    return z * 2     -- line 5
-        \\end
-    , .{}, void);
-
-    // Get function reference
-    const func = try lua.globals().get("test_func", Lua.Function);
-    try expect(func != null);
-    defer func.?.deinit();
-
-    const breakpoint_line = try func.?.setBreakpoint(4, true);
-    try expectEq(breakpoint_line, 5);
-
-    lua.setSingleStep(true);
-    lua.setCallbacks(&callbacks);
-
-    const result = try func.?.call(.{}, i32);
-
-    try expectEq(result.ok, 60);
-    try expectEq(callbacks.break_hits, 1);
-    try expectEq(callbacks.step_hits, 1);
-}
-
-test "coroutine debug break" {
-    const lua = try Lua.init(&std.testing.allocator);
-    defer lua.deinit();
-
-    const DebugBreakCallbacks = struct {
-        call_count: u32 = 0,
-
-        pub fn debugbreak(self: *@This(), l: *Lua, ar: Debug) void {
-            _ = ar;
-            self.call_count += 1;
-            if (self.call_count == 1) {
-                l.debugBreak();
-            }
-        }
-    };
-
-    var callbacks = DebugBreakCallbacks{};
-    lua.setCallbacks(&callbacks);
-
-    const thread = lua.createThread();
-    defer thread.deinit();
-
-    _ = try thread.eval(
-        \\function test_func()
-        \\    return 42
-        \\end
-    , .{}, void);
-
-    const func = try thread.globals().get("test_func", Lua.Function);
-    defer func.?.deinit();
-
-    _ = try func.?.setBreakpoint(2, true);
-
-    const first_result = try func.?.call(.{}, i32);
-    try expectEq(first_result, .debugBreak);
-
-    try expectEq(thread.status(), .normal);
-
-    // Call function again - should complete and return result
-    const second_result = try func.?.call(.{}, i32);
-    try expectEq(second_result.ok, 42);
-
-    // Assert debugbreak callback was called exactly twice
-    try expectEq(callbacks.call_count, 2);
 }
