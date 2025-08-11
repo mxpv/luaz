@@ -20,6 +20,7 @@ All notable changes to this project will be documented in this file.
 - `Table.clear()` method to remove all entries from a table
 - `Table.clone()` method to create a shallow copy of a table
 - `Function.clone()` method to create a copy of a function with shared upvalue references
+- High-level debugger API with `setCallbacks()` for VM event handling supporting both static and instance methods
 
 ### Changed
 - **BREAKING**: Table iteration API now uses standard Zig iterator pattern (`iterator.next()`)
