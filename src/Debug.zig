@@ -1,14 +1,29 @@
 //! Debug functionality for Luau scripts.
 //!
-//! This module provides debugging support for Luau scripts, including breakpoints,
-//! single-stepping, and execution interruption. The debug system uses a callback-based
-//! approach where the VM notifies your application when debug events occur.
+//! This module provides comprehensive debugging support for Luau scripts with
+//! execution control, call stack inspection, and variable manipulation. Luau uses
+//! a callback-based approach where the VM notifies your application when debug
+//! events occur.
+//!
+//! ## Core APIs
+//!
+//! ### Execution Control
+//! - `setSingleStep()` - Enable/disable single-step debugging mode
+//! - `debugBreak()` - Interrupt thread execution during debug callbacks
+//! - `debugTrace()` - Get formatted stack traces for error reporting
+//! - `stackDepth()` - Get current call stack depth
+//!
+//! ### Stack Inspection
+//! - `getInfo()` - Get debug information about functions on the call stack
+//! - `getArg()` - Get function arguments at specific stack levels
+//! - `getLocal()`/`setLocal()` - Get/set local variables (requires debug level 2)
+//! - `getUpvalue()`/`setUpvalue()` - Get/set function upvalues (names require debug level 2)
 //!
 //! ## Debug Level Requirement
 //!
-//! For local variable inspection (`getLocal`/`setLocal`) to work, Lua code must be
-//! compiled with debug level 2. This provides full debug information including
-//! local and upvalue names:
+//! For local variable and upvalue name inspection (`getLocal`/`setLocal`/`getUpvalue`/`setUpvalue`)
+//! to work fully, Lua code must be compiled with debug level 2. This provides full debug
+//! information including local and upvalue names:
 //!
 //! ```zig
 //! const Compiler = @import("Compiler.zig");
@@ -33,7 +48,7 @@
 //! 4. Breakpoint hits → VM calls your `debugbreak` callback
 //! 5. Interrupt execution → Call `debug.debugBreak()` within callback to pause
 //! 6. Handle interruption → Function returns `error.Break` to your application
-//! 7. Examine state → Use `getInfo()`, `stackDepth()`, etc. to inspect execution
+//! 7. Examine state → Use `getInfo()`, `stackDepth()`, `getArg()`, `getLocal()`, etc. to inspect execution
 //! 8. Resume execution → Call the function again to continue from where it left off
 //!
 //! ## Key Concepts
@@ -42,7 +57,7 @@
 //! - debugBreak() interrupts execution: Must be called within callbacks to actually stop
 //! - Resumption: After `error.Break`, call the same function again to resume
 //! - Field safety: Only request fields you need in `getInfo()` to avoid garbage data
-//! - Context flexibility: `getInfo()` and `stackDepth()` work everywhere
+//! - Context flexibility: `getInfo()`, `stackDepth()`, `getArg()`, `getLocal()`, and `getUpvalue()` work everywhere
 //!
 //! ## Setting Up Debug Callbacks
 //!
@@ -105,7 +120,7 @@
 //!
 //! ## Inspecting Call Stack
 //!
-//! Use `getInfo()`, `getArg()`, `getLocal()`, and `getUpvalue()` to examine the call stack at any time:
+//! Use `getInfo()`, `getArg()`, `getLocal()`, `setLocal()`, `getUpvalue()`, and `setUpvalue()` to examine and modify the call stack at any time:
 //! ```zig
 //! const debug = lua.debug();
 //! const depth = debug.stackDepth();
