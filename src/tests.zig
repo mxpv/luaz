@@ -1,15 +1,15 @@
 comptime {
     _ = @import("Compiler.zig");
-    _ = @import("lua.zig");
+    _ = @import("Lua.zig");
     _ = @import("State.zig");
 }
 
 const std = @import("std");
-const lua_mod = @import("lua.zig");
-const Lua = lua_mod.Lua;
-const Debug = lua_mod.Debug;
+const luaz = @import("lib.zig");
+const Lua = luaz.Lua;
+const Debug = luaz.Debug;
 
-const Error = Lua.Error;
+const Error = luaz.Lua.Error;
 const State = @import("State.zig");
 
 const expect = std.testing.expect;

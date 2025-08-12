@@ -8,7 +8,7 @@ const c = @cImport({
 
 const Self = @This();
 
-const Error = @import("lua.zig").Lua.Error;
+const Error = @import("Lua.zig").Error;
 
 /// Result of compilation operation containing either bytecode or error message.
 pub const Result = union(enum) {

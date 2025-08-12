@@ -60,7 +60,7 @@ const std = @import("std");
 const State = @import("State.zig");
 
 // Forward declare Lua to avoid circular import
-const Lua = @import("lua.zig").Lua;
+const Lua = @import("Lua.zig");
 
 lua: Lua,
 

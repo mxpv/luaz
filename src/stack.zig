@@ -16,7 +16,7 @@
 
 const std = @import("std");
 const State = @import("State.zig");
-const Lua = @import("lua.zig").Lua;
+const Lua = @import("Lua.zig");
 
 /// Fixup internal pointers after moving StrBuf by value.
 ///

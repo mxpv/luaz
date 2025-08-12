@@ -4,7 +4,7 @@ const std = @import("std");
 const State = @import("State.zig");
 const ArgsTuple = std.meta.ArgsTuple;
 const stack = @import("stack.zig");
-const Lua = @import("lua.zig").Lua;
+const Lua = @import("Lua.zig");
 
 /// Supported metamethods
 pub const MetaMethod = enum {

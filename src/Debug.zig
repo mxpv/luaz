@@ -593,7 +593,7 @@ pub fn setLocal(self: Self, level: i32, n: i32, comptime T: type, value: T) ?[:0
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 
-const Lua = @import("lua.zig").Lua;
+const Lua = @import("Lua.zig");
 
 test "debugTrace shows function names in call stack" {
     const lua = try Lua.init(&std.testing.allocator);
