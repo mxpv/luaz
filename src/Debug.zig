@@ -1012,4 +1012,3 @@ test "getLocal and setLocal in debug breakpoint" {
 
     try expect(LocalVariableTester.breakpoint_hit);
 }
-
