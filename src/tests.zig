@@ -14,6 +14,7 @@ const State = @import("State.zig");
 
 const expect = std.testing.expect;
 const expectEq = std.testing.expectEqual;
+const expectError = std.testing.expectError;
 
 test "globals access" {
     const lua = try Lua.init(&std.testing.allocator);
@@ -26,9 +27,9 @@ test "globals access" {
     try expectEq(try globals.get("x", i32), 42);
 
     try globals.set("flag", true);
-    try expect((try globals.get("flag", bool)).?);
+    try expect(try globals.get("flag", bool));
 
-    try expectEq(try globals.get("nonexistent", i32), null);
+    try expectError(error.KeyNotFound, globals.get("nonexistent", i32));
 
     // Test different types
     try globals.set("testValue", 42);
@@ -267,18 +268,16 @@ test "function call from global namespace" {
 
     // Test successful function call
     const func = try globals.get("sum", Lua.Function);
-    try expect(func != null);
-    defer func.?.deinit();
+    defer func.deinit();
 
-    const result = try func.?.call(.{ 15, 25 }, i32);
+    const result = try func.call(.{ 15, 25 }, i32);
     try expectEq(result.ok, 40);
 
     // Test error handling with Function.call
     const error_func = try globals.get("divide_error", Lua.Function);
-    try expect(error_func != null);
-    defer error_func.?.deinit();
+    defer error_func.deinit();
 
-    const error_result = error_func.?.call(.{ 10, 0 }, f64);
+    const error_result = error_func.call(.{ 10, 0 }, f64);
     try std.testing.expectError(Lua.Error.Runtime, error_result);
 
     try expectEq(lua.top(), 0);
@@ -294,14 +293,13 @@ test "func ref compile" {
         _ = try lua.eval("function multiply(a, b) return a * b end", .{}, void);
         const globals = lua.globals();
         const func = try globals.get("multiply", Lua.Function);
-        try expect(func != null);
-        defer func.?.deinit();
+        defer func.deinit();
 
         // Compile for better performance
-        func.?.compile();
+        func.compile();
 
         // Function calls now use compiled native code
-        const result = try func.?.call(.{ 6, 7 }, i32);
+        const result = try func.call(.{ 6, 7 }, i32);
         try expectEq(result.ok, 42);
         try expectEq(lua.top(), 0);
     }
@@ -451,7 +449,7 @@ test "userdata with destructor support" {
 fn checkTable(table: Lua.Table) i32 {
     defer table.deinit(); // Properly clean up the table reference
     const value = table.get("key", i32) catch return -1;
-    return value orelse -1;
+    return value;
 }
 
 test "checkArg with Table parameter" {
@@ -487,11 +485,10 @@ test "light userdata through globals" {
 
     // Verify we can get the pointer back
     const retrieved_ptr = try globals.get("myPtr", *i32);
-    try expect(retrieved_ptr != null);
-    try expectEq(retrieved_ptr.?.*, 42);
+    try expectEq(retrieved_ptr.*, 42);
 
     // Modify the data through the retrieved pointer
-    retrieved_ptr.?.* = 100;
+    retrieved_ptr.* = 100;
     try expectEq(test_data, 100);
 
     try expectEq(lua.top(), 0);
@@ -539,21 +536,18 @@ test "light userdata with different pointer types" {
     // Test f64 pointer through globals
     try globals.set("floatPtr", float_ptr);
     const retrieved_float_ptr = try globals.get("floatPtr", *f64);
-    try expect(retrieved_float_ptr != null);
-    try expectEq(retrieved_float_ptr.?.*, 3.14159);
+    try expectEq(retrieved_float_ptr.*, 3.14159);
 
     // Test bool pointer through globals
     try globals.set("boolPtr", bool_ptr);
     const retrieved_bool_ptr = try globals.get("boolPtr", *bool);
-    try expect(retrieved_bool_ptr != null);
-    try expectEq(retrieved_bool_ptr.?.*, true);
+    try expectEq(retrieved_bool_ptr.*, true);
 
     // Test struct pointer through globals
     try globals.set("structPtr", struct_ptr);
     const retrieved_struct_ptr = try globals.get("structPtr", *@TypeOf(struct_data));
-    try expect(retrieved_struct_ptr != null);
-    try expectEq(retrieved_struct_ptr.?.x, 10);
-    try expectEq(retrieved_struct_ptr.?.y, 20);
+    try expectEq(retrieved_struct_ptr.x, 10);
+    try expectEq(retrieved_struct_ptr.y, 20);
 
     try expectEq(lua.top(), 0);
 }
@@ -825,14 +819,13 @@ test "Value enum all cases" {
     inline for (basic_cases) |case| {
         try globals.set(case.name, case.value);
         const back = try globals.get(case.name, Lua.Value);
-        try expect(back != null);
-        try expect(std.meta.activeTag(back.?) == std.meta.activeTag(case.value));
+        try expect(std.meta.activeTag(back) == std.meta.activeTag(case.value));
     }
 
     // Test lightuserdata
     try globals.set("light", Lua.Value{ .lightuserdata = ptr });
     const light_back = try globals.get("light", Lua.Value);
-    try expect(light_back.? == .lightuserdata);
+    try expect(light_back == .lightuserdata);
 
     // Test userdata (create proper userdata with reference)
     _ = lua.state.newUserdata(@sizeOf(i32));
@@ -842,17 +835,17 @@ test "Value enum all cases" {
 
     try globals.set("user", Lua.Value{ .userdata = userdata_ref });
     const user_back = try globals.get("user", Lua.Value);
-    try expect(user_back.? == .userdata);
-    defer user_back.?.deinit();
+    try expect(user_back == .userdata);
+    defer user_back.deinit();
 
     // Test table
     const table = lua.createTable(.{});
     try table.set("key", 999);
     try globals.set("table", Lua.Value{ .table = table });
     const table_back = try globals.get("table", Lua.Value);
-    try expect(table_back.? == .table);
-    defer table_back.?.deinit();
-    try expectEq(try table_back.?.table.get("key", i32), 999);
+    try expect(table_back == .table);
+    defer table_back.deinit();
+    try expectEq(try table_back.table.get("key", i32), 999);
 
     // Test function
     const testFn = struct {
@@ -862,9 +855,9 @@ test "Value enum all cases" {
     }.f;
     try globals.set("fn", testFn);
     const func_back = try globals.get("fn", Lua.Value);
-    try expect(func_back.? == .function);
-    defer func_back.?.deinit();
-    const call_result = try func_back.?.function.call(.{5}, i32);
+    try expect(func_back == .function);
+    defer func_back.deinit();
+    const call_result = try func_back.function.call(.{5}, i32);
     try expectEq(call_result.ok, 10);
 
     // Test deinit and Lua eval
@@ -1139,18 +1132,18 @@ test "coroutine yield and resume" {
 
     // Load function onto thread stack and start coroutine
     const func = try thread.globals().get("yielder", Lua.Function);
-    defer func.?.deinit();
+    defer func.deinit();
 
     // First resume - should yield 1
-    const result1 = try func.?.call(.{}, i32);
+    const result1 = try func.call(.{}, i32);
     try expectEq(result1.yield, 1);
 
     // Second resume - should yield 2
-    const result2 = try func.?.call(.{}, i32);
+    const result2 = try func.call(.{}, i32);
     try expectEq(result2.yield, 2);
 
     // Third resume - should return 3 and finish
-    const result3 = try func.?.call(.{}, i32);
+    const result3 = try func.call(.{}, i32);
     try expectEq(result3.ok, 3);
 }
 
@@ -1177,22 +1170,22 @@ test "coroutine with arguments on yield" {
     const thread = lua.createThread();
 
     const func = try thread.globals().get("accumulator", Lua.Function);
-    defer func.?.deinit();
+    defer func.deinit();
 
     // Start the coroutine - yields 0
-    const result1_value = try func.?.call(.{}, i32);
+    const result1_value = try func.call(.{}, i32);
     try expectEq(result1_value.yield, 0);
 
     // Continue the coroutine with value 5
-    const result2_value = try func.?.call(.{5}, i32);
+    const result2_value = try func.call(.{5}, i32);
     try expectEq(result2_value.yield, 5);
 
     // Continue the coroutine with value 10
-    const result3_value = try func.?.call(.{10}, i32);
+    const result3_value = try func.call(.{10}, i32);
     try expectEq(result3_value.yield, 15);
 
     // Finish the coroutine with nil
-    const result4_value = try func.?.call(.{@as(?i32, null)}, i32);
+    const result4_value = try func.call(.{@as(?i32, null)}, i32);
     try expectEq(result4_value.ok, 15);
 }
 
@@ -1276,9 +1269,9 @@ test "simple thread function execution" {
 
     // Load and run function in thread
     const func = try thread_lua.globals().get("simple", Lua.Function);
-    defer func.?.deinit();
+    defer func.deinit();
 
-    const result = try func.?.call(.{}, i32);
+    const result = try func.call(.{}, i32);
     try expectEq(result.ok, 42);
 }
 
@@ -1298,10 +1291,10 @@ test "coroutine error handling" {
     const thread_lua = lua.createThread();
 
     const func = try thread_lua.globals().get("error_coro", Lua.Function);
-    defer func.?.deinit();
+    defer func.deinit();
 
     // Resume should return error
-    const error_result = func.?.call(.{}, void);
+    const error_result = func.call(.{}, void);
     try std.testing.expectError(error.Runtime, error_result);
 }
 
@@ -1322,10 +1315,10 @@ test "resume from main thread should return error" {
     // In main thread, functions are called with pcall semantics, not resume
     // This is tested implicitly - Function.call() automatically detects thread context
     const func = try lua.globals().get("test_func", Lua.Function);
-    defer func.?.deinit();
+    defer func.deinit();
 
     // This will use pcall since we're in main thread
-    const result = try func.?.call(.{}, i32);
+    const result = try func.call(.{}, i32);
     try expectEq(result.ok, 42);
 }
 
@@ -1366,12 +1359,12 @@ test "table readonly" {
     try lua.globals().set("t", table);
 
     _ = try lua.eval("t.before = 'works'", .{}, void);
-    try expect(try table.get("before", []const u8) != null);
+    _ = try table.get("before", []const u8);
 
     try table.setReadonly(true);
 
     _ = lua.eval("t.after = 'blocked'", .{}, void) catch {};
-    try expect(try table.get("after", ?i32) == null);
+    try expectError(error.KeyNotFound, table.get("after", i32));
 }
 
 test "table clear" {
@@ -1390,8 +1383,7 @@ test "table clear" {
     try table.clear();
 
     // Table is now empty
-    const name = try table.get("name", []const u8);
-    try expect(name == null);
+    try expectError(error.KeyNotFound, table.get("name", []const u8));
 }
 
 test "table clone" {
@@ -1407,7 +1399,7 @@ test "table clone" {
 
     // Clone has same values
     const name = try cloned.get("name", []const u8);
-    try expect(std.mem.eql(u8, name.?, "Alice"));
+    try expect(std.mem.eql(u8, name, "Alice"));
 }
 
 test "function clone" {
@@ -1417,13 +1409,13 @@ test "function clone" {
     _ = try lua.eval("function add(a, b) return a + b end", .{}, void);
 
     const func = try lua.globals().get("add", Lua.Function);
-    defer func.?.deinit();
+    defer func.deinit();
 
-    const cloned = try func.?.clone();
+    const cloned = try func.clone();
     defer cloned.deinit();
 
     // Both functions work the same
-    const result1 = try func.?.call(.{ 10, 20 }, i32);
+    const result1 = try func.call(.{ 10, 20 }, i32);
     const result2 = try cloned.call(.{ 10, 20 }, i32);
     try expect(result1.ok.? == 30);
     try expect(result2.ok.? == 30);
@@ -1444,7 +1436,7 @@ fn closureOptAdd(upv: Lua.Upvalues(i32), x: i32, y: ?i32) i32 {
 
 fn closureMultiply(upv: Lua.Upvalues(Lua.Table), x: i32) !i32 {
     const cfg = upv.value;
-    const m = try cfg.get("mult", i32) orelse 1;
+    const m = cfg.get("mult", i32) catch 1;
     return x * m;
 }
 
@@ -1742,7 +1734,7 @@ test "StrBuf basic functionality" {
     const globals = lua.globals();
     try globals.set("message", &buf);
     const result = try globals.get("message", []const u8);
-    try expectEq(std.mem.eql(u8, result.?, "Hello World"), true);
+    try expectEq(std.mem.eql(u8, result, "Hello World"), true);
 
     try expectEq(lua.top(), 0);
 }
@@ -1762,7 +1754,7 @@ test "StrBuf initialization with size" {
     const globals = lua.globals();
     try globals.set("sized_message", &buf);
     const result = try globals.get("sized_message", []const u8);
-    try expectEq(std.mem.eql(u8, result.?, "Testing pre-allocated buffer"), true);
+    try expectEq(std.mem.eql(u8, result, "Testing pre-allocated buffer"), true);
 
     try expectEq(lua.top(), 0);
 }
@@ -1794,7 +1786,7 @@ test "StrBuf add method with various types" {
     const globals = lua.globals();
     try globals.set("values", &buf);
     const result = try globals.get("values", []const u8);
-    try expectEq(std.mem.eql(u8, result.?, "42,3.14,true,false,nil,123"), true);
+    try expectEq(std.mem.eql(u8, result, "42,3.14,true,false,nil,123"), true);
 
     try expectEq(lua.top(), 0);
 }
@@ -1813,7 +1805,7 @@ test "StrBuf with string values" {
     const globals = lua.globals();
     try globals.set("greeting", &buf);
     const result = try globals.get("greeting", []const u8);
-    try expectEq(std.mem.eql(u8, result.?, "Prefix: Hello from Zig!"), true);
+    try expectEq(std.mem.eql(u8, result, "Prefix: Hello from Zig!"), true);
 
     try expectEq(lua.top(), 0);
 }
@@ -1847,13 +1839,13 @@ test "StrBuf integration with Table operations" {
 
     // Verify values through table get
     const val1 = try table.get("first", []const u8);
-    try expectEq(std.mem.eql(u8, val1.?, "Item 1"), true);
+    try expectEq(std.mem.eql(u8, val1, "Item 1"), true);
 
     const val2 = try table.get("second", []const u8);
-    try expectEq(std.mem.eql(u8, val2.?, "Value: 42.5"), true);
+    try expectEq(std.mem.eql(u8, val2, "Value: 42.5"), true);
 
     const val3 = try table.get("third", []const u8);
-    try expectEq(std.mem.eql(u8, val3.?, "true is false"), true);
+    try expectEq(std.mem.eql(u8, val3, "true is false"), true);
 
     try expectEq(lua.top(), 0);
 }

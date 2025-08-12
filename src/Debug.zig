@@ -765,8 +765,8 @@ test "debugTrace shows function names in call stack" {
 
     // Get the innerFunc and set a breakpoint
     const func = try lua.globals().get("innerFunc", Lua.Function);
-    defer func.?.deinit();
-    _ = try func.?.setBreakpoint(2, true); // Line 2: return 42
+    defer func.deinit();
+    _ = try func.setBreakpoint(2, true); // Line 2: return 42
 
     // Call the nested functions - this should hit the breakpoint
     const result = try lua.eval("return outerFunc()", .{}, i32);
@@ -819,16 +819,15 @@ test "breakpoint and single step debugging with callbacks" {
 
     // Get function reference
     const func = try lua.globals().get("test_func", Lua.Function);
-    try expect(func != null);
-    defer func.?.deinit();
+    defer func.deinit();
 
-    const breakpoint_line = try func.?.setBreakpoint(4, true);
+    const breakpoint_line = try func.setBreakpoint(4, true);
     try expectEqual(breakpoint_line, 5);
 
     lua.debug().setSingleStep(true);
     lua.setCallbacks(&callbacks);
 
-    const result = try func.?.call(.{}, i32);
+    const result = try func.call(.{}, i32);
 
     try expectEqual(result.ok, 60);
     try expectEqual(callbacks.break_hits, 1);
@@ -864,17 +863,17 @@ test "coroutine debug break" {
     , .{}, void);
 
     const func = try thread.globals().get("test_func", Lua.Function);
-    defer func.?.deinit();
+    defer func.deinit();
 
-    _ = try func.?.setBreakpoint(2, true);
+    _ = try func.setBreakpoint(2, true);
 
-    const first_result = try func.?.call(.{}, i32);
+    const first_result = try func.call(.{}, i32);
     try expectEqual(first_result, .debugBreak);
 
     try expectEqual(thread.status(), .normal);
 
     // Call function again - should complete and return result
-    const second_result = try func.?.call(.{}, i32);
+    const second_result = try func.call(.{}, i32);
     try expectEqual(second_result.ok, 42);
 
     // Assert debugbreak callback was called exactly twice
@@ -929,11 +928,11 @@ test "getInfo and stackDepth in debug breakpoint" {
 
     // Get the function and set a breakpoint
     const func = try lua.globals().get("testFunction", Lua.Function);
-    defer func.?.deinit();
-    _ = try func.?.setBreakpoint(3, true); // Line 3: return x * 2
+    defer func.deinit();
+    _ = try func.setBreakpoint(3, true); // Line 3: return x * 2
 
     // Call the function - this should hit the breakpoint
-    const result = try func.?.call(.{ 5, 10 }, i32);
+    const result = try func.call(.{ 5, 10 }, i32);
     try expectEqual(result.ok.?, 30);
 
     // Verify breakpoint was hit
@@ -955,7 +954,7 @@ test "getInfo outside of hook" {
     _ = try lua.eval(code, .{}, void);
 
     // Get the function and execute it
-    const func = (try lua.globals().get("testFunction", Lua.Function)).?;
+    const func = try lua.globals().get("testFunction", Lua.Function);
     defer func.deinit();
 
     const result = try func.call(.{ 5, 10 }, i32);
@@ -1036,11 +1035,11 @@ test "getArg in debug breakpoint" {
 
     // Get the function and set a breakpoint
     const func = try lua.globals().get("testArguments", Lua.Function);
-    defer func.?.deinit();
-    _ = try func.?.setBreakpoint(3, true); // Line 3: return sum
+    defer func.deinit();
+    _ = try func.setBreakpoint(3, true); // Line 3: return sum
 
     // Call the function with known arguments - this should hit the breakpoint
-    const result = try func.?.call(.{ 100, 200 }, i32);
+    const result = try func.call(.{ 100, 200 }, i32);
     try expectEqual(result.ok.?, 300);
 
     // Verify breakpoint was hit and arguments were tested
@@ -1132,10 +1131,10 @@ test "getLocal and setLocal in debug breakpoint" {
     }
 
     const func = try lua.globals().get("testLocals", Lua.Function);
-    defer func.?.deinit();
-    _ = try func.?.setBreakpoint(5, true); // Line 5: return sum
+    defer func.deinit();
+    _ = try func.setBreakpoint(5, true); // Line 5: return sum
 
-    const call_result = try func.?.call(.{ 100, 200 }, i32);
+    const call_result = try func.call(.{ 100, 200 }, i32);
     try expectEqual(call_result.ok.?, 400);
 
     try expect(LocalVariableTester.breakpoint_hit);
@@ -1227,13 +1226,13 @@ test "getUpvalue and setUpvalue in debug breakpoint" {
     }
 
     const func = try lua.globals().get("innerFunction", Lua.Function);
-    defer func.?.deinit();
+    defer func.deinit();
 
     // Try line 3 (function start is line 2, line 3 is return)
-    const actual_line = try func.?.setBreakpoint(3, true);
+    const actual_line = try func.setBreakpoint(3, true);
     try expectEqual(actual_line, 3);
 
-    const call_result = try func.?.call(.{}, i32);
+    const call_result = try func.call(.{}, i32);
     try expectEqual(call_result.ok.?, 1998); // 999 * 2 (modified upvalue)
 
     try expect(UpvalueTester.breakpoint_hit);
@@ -1270,35 +1269,35 @@ test "high-level getUpvalue and setUpvalue API" {
     }
 
     const func = try lua.globals().get("closure", Lua.Function);
-    defer func.?.deinit();
+    defer func.deinit();
 
     const debug = lua.debug();
 
     // Test getting upvalue using high-level API
-    const upval1 = debug.getUpvalue(func.?, 1, i32);
+    const upval1 = debug.getUpvalue(func, 1, i32);
     try expect(upval1 != null);
     try expectEqual(upval1.?.value, 42);
     try expect(std.mem.eql(u8, upval1.?.name, "shared_value"));
 
     // Test setting upvalue using high-level API
-    const set_name = debug.setUpvalue(func.?, 1, i32, 100);
+    const set_name = debug.setUpvalue(func, 1, i32, 100);
     try expect(set_name != null);
     try expect(std.mem.eql(u8, set_name.?, "shared_value"));
 
     // Verify the upvalue was changed
-    const upval2 = debug.getUpvalue(func.?, 1, i32);
+    const upval2 = debug.getUpvalue(func, 1, i32);
     try expect(upval2 != null);
     try expectEqual(upval2.?.value, 100);
 
     // Test the function returns the modified upvalue
-    const call_result = try func.?.call(.{}, i32);
+    const call_result = try func.call(.{}, i32);
     try expectEqual(call_result.ok.?, 100);
 
     // Test getting non-existent upvalue
-    const upval_invalid = debug.getUpvalue(func.?, 10, i32);
+    const upval_invalid = debug.getUpvalue(func, 10, i32);
     try expect(upval_invalid == null);
 
     // Test setting non-existent upvalue
-    const set_invalid = debug.setUpvalue(func.?, 10, i32, 42);
+    const set_invalid = debug.setUpvalue(func, 10, i32, 42);
     try expect(set_invalid == null);
 }

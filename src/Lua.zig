@@ -60,6 +60,8 @@ pub const Error = error{
     Runtime,
     /// Breakpoint could not be set at the specified line.
     InvalidBreakpoint,
+    /// Key not found in table or value could not be converted to requested type.
+    KeyNotFound,
 };
 
 /// Assert handler function type for Luau VM assertions.
@@ -582,8 +584,6 @@ pub const Table = struct {
     /// Directly retrieves `table[index]` without invoking metamethods.
     /// This is faster than `get()` but doesn't respect custom table behavior.
     ///
-    /// Returns `null` if the index doesn't exist or the value cannot be converted to type `T`.
-    ///
     /// Examples:
     /// ```zig
     /// const value = try table.getRaw(1, i32);     // Get table[1] as i32
@@ -591,9 +591,9 @@ pub const Table = struct {
     /// const flag = try table.getRaw(-1, bool);    // Get table[-1] as bool
     /// ```
     ///
-    /// Returns: `?T` - The converted value, or `null` if not found or conversion failed
-    /// Errors: `Error.OutOfMemory` if stack allocation fails
-    pub fn getRaw(self: Table, index: i32, comptime T: type) !?T {
+    /// Returns: `T` - The converted value
+    /// Errors: `Error.OutOfMemory` if stack allocation fails, `Error.KeyNotFound` if index doesn't exist or conversion failed
+    pub fn getRaw(self: Table, index: i32, comptime T: type) !T {
         try self.ref.lua.checkStack(2);
 
         stack.push(self.state(), self.ref); // Push table ref
@@ -601,7 +601,8 @@ pub const Table = struct {
 
         defer self.state().pop(1); // Pop table
 
-        return stack.pop(self.ref.lua, T);
+        const value = stack.pop(self.ref.lua, T);
+        return value orelse error.KeyNotFound;
     }
 
     /// Sets a table element by key with full Lua semantics (invokes __newindex metamethod).
@@ -747,8 +748,6 @@ pub const Table = struct {
     /// - Lua nil → Optional types (`?T`) as `null`
     /// - Any valid value → Optional types (`?T`) as wrapped value
     ///
-    /// Returns `null` if the key doesn't exist or the value cannot be converted to type `T`.
-    ///
     /// Note: String conversion is not supported via `get` due to Lua's garbage collection.
     /// For safe string handling, use Lua code with `eval()` or the low-level State API.
     ///
@@ -761,7 +760,7 @@ pub const Table = struct {
     /// const pos = try table.get("pos", @Vector(3, f32)); // Get vector value
     ///
     /// // Optional types (handle missing values gracefully)
-    /// const maybe_value = try table.get("missing", ?i32);  // null if missing
+    /// const maybe_value = table.get("missing", ?i32) catch null;  // null if missing
     /// const nullable = try table.get("nil_field", ?i32);   // null if nil
     ///
     /// // Different key types
@@ -775,9 +774,9 @@ pub const Table = struct {
     /// // The tuple becomes a nested table accessible by index
     /// ```
     ///
-    /// Returns: `?T` - The converted value, or `null` if not found or conversion failed
-    /// Errors: `Error.OutOfMemory` if stack allocation fails
-    pub fn get(self: Table, key: anytype, comptime T: type) !?T {
+    /// Returns: `T` - The converted value
+    /// Errors: `Error.OutOfMemory` if stack allocation fails, `Error.KeyNotFound` if key doesn't exist or conversion failed
+    pub fn get(self: Table, key: anytype, comptime T: type) !T {
         try self.ref.lua.checkStack(2);
 
         stack.push(self.state(), self.ref); // Push table ref
@@ -786,7 +785,8 @@ pub const Table = struct {
         _ = self.state().getTable(-2); // Pop key and push "table[key]" onto stack
         defer self.state().pop(1); // Pop table
 
-        return stack.pop(self.ref.lua, T);
+        const value = stack.pop(self.ref.lua, T);
+        return value orelse error.KeyNotFound;
     }
 
     /// Calls a function stored in the table.
@@ -1624,7 +1624,7 @@ pub const Function = struct {
     ///
     /// // Coroutine example - function can yield
     /// const thread = lua.createThread();
-    /// const func = try thread.globals().get("coroutine_func", Function).?;
+    /// const func = try thread.globals().get("coroutine_func", Function);
     /// defer func.deinit();
     ///
     /// const result1 = try func.call(.{}, i32);     // Start coroutine, may yield
@@ -1665,13 +1665,13 @@ pub const Function = struct {
     ///     _ = try lua.eval("function fibonacci(n) return n < 2 and n or fibonacci(n-1) + fibonacci(n-2) end", .{}, void);
     ///     const globals = lua.globals();
     ///     const fib = try globals.get("fibonacci", Lua.Function);
-    ///     defer fib.?.deinit();
+    ///     defer fib.deinit();
     ///
     ///     // Compile for better performance
-    ///     fib.?.compile();
+    ///     fib.compile();
     ///
     ///     // Function calls now use compiled native code
-    ///     const result = try fib.?.call(.{10}, i32);
+    ///     const result = try fib.call(.{10}, i32);
     /// }
     /// ```
     pub fn compile(self: @This()) void {
@@ -1690,9 +1690,9 @@ pub const Function = struct {
     /// Example:
     /// ```zig
     /// const func = try lua.globals().get("myFunc", Lua.Function);
-    /// defer func.?.deinit();
+    /// defer func.deinit();
     ///
-    /// const cloned = try func.?.clone();
+    /// const cloned = try func.clone();
     /// defer cloned.deinit();
     /// ```
     ///
@@ -2521,8 +2521,8 @@ test "table ops" {
     try expectEq(try table.get("flag", bool), false);
 
     // Test non-existent keys
-    try expectEq(try table.getRaw(999, i32), null);
-    try expectEq(try table.get("missing", i32), null);
+    try expectError(Error.KeyNotFound, table.getRaw(999, i32));
+    try expectError(Error.KeyNotFound, table.get("missing", i32));
 
     // Test pushing table to stack
     try table.set("test", 42);
