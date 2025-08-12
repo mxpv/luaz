@@ -105,7 +105,7 @@
 //!
 //! ## Inspecting Call Stack
 //!
-//! Use `getInfo()`, `getArg()`, and `getLocal()` to examine the call stack at any time:
+//! Use `getInfo()`, `getArg()`, `getLocal()`, and `getUpvalue()` to examine the call stack at any time:
 //! ```zig
 //! const debug = lua.debug();
 //! const depth = debug.stackDepth();
@@ -129,6 +129,15 @@
 //!     std.log.info("Local '{}' = {}", .{ l.name, l.value });
 //! }
 //! const name = debug.setLocal(0, 1, i32, 42); // Set first local to 42
+//!
+//! // Get and modify function upvalues
+//! const func = try lua.globals().get("myFunction", Lua.Function);
+//! defer func.?.deinit();
+//! const upval1 = debug.getUpvalue(func.?, 1, i32); // Get first upvalue
+//! if (upval1) |uv| {
+//!     std.log.info("Upvalue '{s}' = {}", .{ uv.name, uv.value });
+//! }
+//! const upvalue_name = debug.setUpvalue(func.?, 1, i32, 99); // Set first upvalue to 99
 //! ```
 //!
 //! ## Single-Step Debugging
@@ -589,6 +598,110 @@ pub fn setLocal(self: Self, level: i32, n: i32, comptime T: type, value: T) ?[:0
     return name_ptr.?;
 }
 
+/// Get upvalue at a specific position from a function.
+///
+/// Retrieves the value of upvalue `n` from the specified function.
+/// Upvalues are numbered starting from 1 (first upvalue).
+///
+/// IMPORTANT: Requires debug level 2 for Lua code compilation to get upvalue names.
+/// With debug level 0-1, upvalue names will be empty strings but values are still accessible.
+/// Use `Compiler.Opts{ .dbg_level = 2 }` when compiling Lua source for full debug information.
+///
+/// Returns a struct containing both the upvalue name and value, or null if:
+/// - The function reference is invalid
+/// - The upvalue number is out of range
+/// - The function is a native/C function (C functions have unnamed upvalues)
+///
+/// Example:
+/// ```zig
+/// const func = try lua.globals().get("myFunction", Lua.Function);
+/// defer func.?.deinit();
+///
+/// const debug = lua.debug();
+/// const upval1 = debug.getUpvalue(func.?, 1, i32); // Get first upvalue as i32
+/// if (upval1) |uv| {
+///     std.log.info("Upvalue '{}' = {}", .{ uv.name, uv.value });
+/// }
+/// ```
+///
+/// Parameters:
+/// - `func`: Function reference to inspect
+/// - `n`: Upvalue number (1-based indexing)
+/// - `T`: Type to convert the upvalue to
+///
+/// Returns: Struct with name and converted value, or null if not available
+pub fn getUpvalue(self: Self, func: Lua.Function, n: i32, comptime T: type) ?struct { name: [:0]const u8, value: T } {
+    // Push function onto the stack to get its index
+    stack.push(func.ref.lua, func.ref);
+    defer self.state.pop(1);
+
+    const name_ptr = self.state.getUpvalue(-1, n);
+    if (name_ptr == null) {
+        return null; // Upvalue not available
+    }
+
+    // Get the value from the top of the stack and pop it
+    defer self.state.pop(1);
+
+    const value = stack.toValue(func.ref.lua, T, -1) orelse return null;
+    const name = name_ptr.?;
+
+    return .{ .name = name, .value = value };
+}
+
+/// Set upvalue at a specific position in a function.
+///
+/// Sets the value of upvalue `n` in the specified function.
+/// Upvalues are numbered starting from 1 (first upvalue).
+///
+/// IMPORTANT: Requires debug level 2 for Lua code compilation to get upvalue names.
+/// With debug level 0-1, upvalue names will be empty strings but values can still be set.
+/// Use `Compiler.Opts{ .dbg_level = 2 }` when compiling Lua source for full debug information.
+///
+/// Returns the name of the upvalue that was set, or null if:
+/// - The function reference is invalid
+/// - The upvalue number is out of range
+/// - The function is a native/C function (C functions have unnamed upvalues)
+///
+/// Example:
+/// ```zig
+/// const func = try lua.globals().get("myFunction", Lua.Function);
+/// defer func.?.deinit();
+///
+/// const debug = lua.debug();
+/// const name = debug.setUpvalue(func.?, 1, i32, 42); // Set first upvalue to 42
+/// if (name) |upvalue_name| {
+///     std.log.info("Set upvalue '{s}' = 42", .{upvalue_name});
+/// }
+/// ```
+///
+/// Parameters:
+/// - `func`: Function reference to modify
+/// - `n`: Upvalue number (1-based indexing)
+/// - `T`: Type of the value to set
+/// - `value`: The value to set the upvalue to
+///
+/// Returns: Name of the upvalue that was set, or null if not available
+pub fn setUpvalue(self: Self, func: Lua.Function, n: i32, comptime T: type, value: T) ?[:0]const u8 {
+    // Push function onto the stack first to get its index
+    stack.push(func.ref.lua, func.ref);
+
+    // Push the value onto the stack (lua_setupvalue expects value on top)
+    stack.push(func.ref.lua, value);
+
+    const name_ptr = self.state.setUpvalue(-2, n); // Function is now at -2, value at -1
+
+    // Pop the function from stack (setUpvalue pops the value automatically)
+    self.state.pop(1);
+
+    if (name_ptr == null) {
+        // setUpvalue pops the value even on failure, so we don't need to pop it
+        return null; // Upvalue not available
+    }
+
+    return name_ptr.?;
+}
+
 // Tests for debug functionality
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
@@ -1011,4 +1124,166 @@ test "getLocal and setLocal in debug breakpoint" {
     try expectEqual(call_result.ok.?, 400);
 
     try expect(LocalVariableTester.breakpoint_hit);
+}
+
+test "getUpvalue and setUpvalue in debug breakpoint" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    // Callback to test getUpvalue when breakpoint is hit
+    const UpvalueTester = struct {
+        var breakpoint_hit: bool = false;
+
+        pub fn debugbreak(self: *@This(), debug: *Self, ar: Info) void {
+            _ = self;
+            _ = ar;
+            if (!breakpoint_hit) {
+                breakpoint_hit = true;
+
+                // Get the current function and test its upvalues
+                const info = debug.getInfo(0, .{ .source = true, .name = true });
+                std.debug.assert(info != null);
+                std.debug.assert(std.mem.eql(u8, info.?.name.?, "innerFunction"));
+
+                // Get function on stack like in conformance test
+                var c_debug: State.Debug = undefined;
+                const get_result = debug.state.getInfo(0, "f", &c_debug);
+                std.debug.assert(get_result != 0);
+                // Function is now on top of stack at index -1
+
+                // Test getting first upvalue directly from stack function (like conformance test)
+                const upvalue_name = debug.state.getUpvalue(-1, 1);
+                std.debug.assert(upvalue_name != null);
+                std.debug.assert(std.mem.eql(u8, upvalue_name.?, "outer_var"));
+                // Value is now on top of stack
+                const upvalue_val = debug.state.toIntegerX(-1);
+                std.debug.assert(upvalue_val.? == 5);
+                debug.state.pop(1); // Pop upvalue
+
+                // Test setting the upvalue to a new value
+                debug.state.pushInteger(999);
+                const set_name = debug.state.setUpvalue(-2, 1); // -2 because we pushed a value, function is at -2
+                std.debug.assert(set_name != null);
+                std.debug.assert(std.mem.eql(u8, set_name.?, "outer_var"));
+
+                // Verify the upvalue was actually changed
+                const upvalue_name2 = debug.state.getUpvalue(-1, 1);
+                std.debug.assert(upvalue_name2 != null);
+                const upvalue_val2 = debug.state.toIntegerX(-1);
+                std.debug.assert(upvalue_val2.? == 999);
+                debug.state.pop(1); // Pop upvalue
+
+                // Test getting non-existent upvalue (should be null)
+                const upval_invalid = debug.state.getUpvalue(-1, 10);
+                std.debug.assert(upval_invalid == null);
+
+                debug.state.pop(1); // Pop function from stack
+            }
+        }
+    };
+
+    var tester = UpvalueTester{};
+    lua.setCallbacks(&tester);
+
+    // Create a function with upvalues like in the conformance test
+    const code =
+        \\local outer_var = 5
+        \\function innerFunction()
+        \\    return outer_var * 2  -- Breakpoint will be set on this line
+        \\end
+    ;
+
+    // Compile with debug level 2 for upvalue names and breakpoint support
+    const Compiler = @import("Compiler.zig");
+    var options = Compiler.Opts{};
+    options.dbg_level = 2;
+    options.opt_level = 0; // Don't optimize away upvalues
+
+    const result = try Compiler.compile(code, options);
+    defer result.deinit();
+    switch (result) {
+        .ok => |bytecode| {
+            _ = try lua.exec(bytecode, void);
+        },
+        .err => |message| {
+            std.debug.print("Compile error: {s}\n", .{message});
+            return error.CompileError;
+        },
+    }
+
+    const func = try lua.globals().get("innerFunction", Lua.Function);
+    defer func.?.deinit();
+
+    // Try line 3 (function start is line 2, line 3 is return)
+    const actual_line = try func.?.setBreakpoint(3, true);
+    try expectEqual(actual_line, 3);
+
+    const call_result = try func.?.call(.{}, i32);
+    try expectEqual(call_result.ok.?, 1998); // 999 * 2 (modified upvalue)
+
+    try expect(UpvalueTester.breakpoint_hit);
+}
+
+test "high-level getUpvalue and setUpvalue API" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    // Create a function with upvalues
+    const code =
+        \\local shared_value = 42
+        \\function closure()
+        \\    return shared_value
+        \\end
+    ;
+
+    // Compile with debug level 2 for upvalue names
+    const Compiler = @import("Compiler.zig");
+    var options = Compiler.Opts{};
+    options.dbg_level = 2;
+    options.opt_level = 0; // Don't optimize away upvalues
+
+    const result = try Compiler.compile(code, options);
+    defer result.deinit();
+    switch (result) {
+        .ok => |bytecode| {
+            _ = try lua.exec(bytecode, void);
+        },
+        .err => |message| {
+            std.debug.print("Compile error: {s}\n", .{message});
+            return error.CompileError;
+        },
+    }
+
+    const func = try lua.globals().get("closure", Lua.Function);
+    defer func.?.deinit();
+
+    const debug = lua.debug();
+
+    // Test getting upvalue using high-level API
+    const upval1 = debug.getUpvalue(func.?, 1, i32);
+    try expect(upval1 != null);
+    try expectEqual(upval1.?.value, 42);
+    try expect(std.mem.eql(u8, upval1.?.name, "shared_value"));
+
+    // Test setting upvalue using high-level API
+    const set_name = debug.setUpvalue(func.?, 1, i32, 100);
+    try expect(set_name != null);
+    try expect(std.mem.eql(u8, set_name.?, "shared_value"));
+
+    // Verify the upvalue was changed
+    const upval2 = debug.getUpvalue(func.?, 1, i32);
+    try expect(upval2 != null);
+    try expectEqual(upval2.?.value, 100);
+
+    // Test the function returns the modified upvalue
+    const call_result = try func.?.call(.{}, i32);
+    try expectEqual(call_result.ok.?, 100);
+
+    // Test getting non-existent upvalue
+    const upval_invalid = debug.getUpvalue(func.?, 10, i32);
+    try expect(upval_invalid == null);
+
+    // Test setting non-existent upvalue
+    const set_invalid = debug.setUpvalue(func.?, 10, i32, 42);
+    try expect(set_invalid == null);
 }
