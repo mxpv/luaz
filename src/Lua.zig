@@ -546,8 +546,8 @@ pub const Table = struct {
     ref: Ref,
 
     /// Returns the underlying Lua state for direct state operations.
-    inline fn state(self: Table) State {
-        return self.ref.lua.state;
+    pub inline fn state(self: Table) *const State {
+        return &self.ref.lua.state;
     }
 
     /// Releases the table reference, allowing the table to be garbage collected.
@@ -571,8 +571,8 @@ pub const Table = struct {
     pub fn setRaw(self: Table, index: i32, value: anytype) !void {
         try self.ref.lua.checkStack(2);
 
-        stack.push(self.ref.lua, self.ref); // Push table ref
-        stack.push(self.ref.lua, value); // Push value
+        stack.push(self.state(), self.ref); // Push table ref
+        stack.push(self.state(), value); // Push value
         self.state().rawSetI(-2, index); // Set table and pop value
         self.state().pop(1); // Pop table
     }
@@ -596,7 +596,7 @@ pub const Table = struct {
     pub fn getRaw(self: Table, index: i32, comptime T: type) !?T {
         try self.ref.lua.checkStack(2);
 
-        stack.push(self.ref.lua, self.ref); // Push table ref
+        stack.push(self.state(), self.ref); // Push table ref
         _ = self.state().rawGetI(-1, index); // Push value of t[i] onto stack.
 
         defer self.state().pop(1); // Pop table
@@ -643,9 +643,9 @@ pub const Table = struct {
     pub fn set(self: Table, key: anytype, value: anytype) !void {
         try self.ref.lua.checkStack(3);
 
-        stack.push(self.ref.lua, self.ref); // Push table ref
-        stack.push(self.ref.lua, key); // Push key
-        stack.push(self.ref.lua, value); // Push value
+        stack.push(self.state(), self.ref); // Push table ref
+        stack.push(self.state(), key); // Push key
+        stack.push(self.state(), value); // Push value
 
         self.state().setTable(-3); // Set table[key] = value and pop key and value
         self.state().pop(1); // Pop table
@@ -712,20 +712,20 @@ pub const Table = struct {
 
         try self.ref.lua.checkStack(@intCast(3 + upvalue_count));
 
-        stack.push(self.ref.lua, self.ref); // Push table ref
-        stack.push(self.ref.lua, key); // Push key
+        stack.push(self.state(), self.ref); // Push table ref
+        stack.push(self.state(), key); // Push key
 
         // Push upvalues onto the stack
         if (upvalues_info == .@"struct" and upvalues_info.@"struct".is_tuple) {
             inline for (0..upvalues_info.@"struct".fields.len) |i| {
-                stack.push(self.ref.lua, upvalues[i]);
+                stack.push(self.state(), upvalues[i]);
             }
         } else {
-            stack.push(self.ref.lua, upvalues);
+            stack.push(self.state(), upvalues);
         }
 
         // Create the closure with upvalues
-        const trampoline: State.CFunction = stack.createFunc(self.ref.lua, func);
+        const trampoline: State.CFunction = stack.createFunc(func);
         self.state().pushCClosureK(trampoline, @typeName(@TypeOf(func)), @intCast(upvalue_count), null);
 
         self.state().setTable(-3); // Set table[key] = closure and pop key and value
@@ -780,8 +780,8 @@ pub const Table = struct {
     pub fn get(self: Table, key: anytype, comptime T: type) !?T {
         try self.ref.lua.checkStack(2);
 
-        stack.push(self.ref.lua, self.ref); // Push table ref
-        stack.push(self.ref.lua, key); // Push key
+        stack.push(self.state(), self.ref); // Push table ref
+        stack.push(self.state(), key); // Push key
 
         _ = self.state().getTable(-2); // Pop key and push "table[key]" onto stack
         defer self.state().pop(1); // Pop table
@@ -810,8 +810,8 @@ pub const Table = struct {
     pub fn call(self: Table, key: anytype, args: anytype, comptime R: type) !Result(R) {
         try self.ref.lua.checkStack(3);
 
-        stack.push(self.ref.lua, self.ref); // Push table ref
-        stack.push(self.ref.lua, key); // Push key
+        stack.push(self.state(), self.ref); // Push table ref
+        stack.push(self.state(), key); // Push key
         _ = self.state().getTable(-2); // Get function from table, pop key
 
         defer self.state().pop(-1); // Pop table in the end.
@@ -850,8 +850,8 @@ pub const Table = struct {
     ///
     /// Errors: `Error.InvalidType` if the named field is not a function
     pub fn compile(self: Table, name: []const u8) !void {
-        stack.push(self.ref.lua, self.ref); // Push table ref
-        stack.push(self.ref.lua, name); // Push func name
+        stack.push(self.state(), self.ref); // Push table ref
+        stack.push(self.state(), name); // Push func name
         _ = self.state().getTable(-2); // Get function from table, pop key
 
         if (!self.state().isFunction(-1)) {
@@ -901,7 +901,7 @@ pub const Table = struct {
     pub fn len(self: Table) !i32 {
         try self.ref.lua.checkStack(1);
 
-        stack.push(self.ref.lua, self.ref); // Push table ref
+        stack.push(self.state(), self.ref); // Push table ref
         defer self.state().pop(1); // Pop table
 
         return self.state().objLen(-1);
@@ -957,7 +957,7 @@ pub const Table = struct {
     pub fn setReadonly(self: Table, readonly: bool) !void {
         try self.ref.lua.checkStack(1);
 
-        stack.push(self.ref.lua, self.ref); // Push table ref
+        stack.push(self.state(), self.ref); // Push table ref
         defer self.state().pop(1); // Pop table
 
         self.state().setReadonly(-1, readonly);
@@ -982,7 +982,7 @@ pub const Table = struct {
     pub fn isReadonly(self: Table) !bool {
         try self.ref.lua.checkStack(1);
 
-        stack.push(self.ref.lua, self.ref); // Push table ref
+        stack.push(self.state(), self.ref); // Push table ref
         defer self.state().pop(1); // Pop table
 
         return self.state().getReadonly(-1);
@@ -1011,7 +1011,7 @@ pub const Table = struct {
     pub fn setSafeEnv(self: Table, safe: bool) !void {
         try self.ref.lua.checkStack(1);
 
-        stack.push(self.ref.lua, self.ref); // Push table ref
+        stack.push(self.state(), self.ref); // Push table ref
         defer self.state().pop(1); // Pop table
 
         self.state().setSafeEnv(-1, safe);
@@ -1043,8 +1043,8 @@ pub const Table = struct {
     pub fn setMetaTable(self: Table, metatable: Table) !void {
         try self.ref.lua.checkStack(2);
 
-        stack.push(self.ref.lua, self.ref); // Push table ref
-        stack.push(self.ref.lua, metatable.ref); // Push metatable ref
+        stack.push(self.state(), self.ref); // Push table ref
+        stack.push(self.state(), metatable.ref); // Push metatable ref
 
         _ = self.state().setMetatable(-2); // Set metatable and pop it
         self.state().pop(1); // Pop table
@@ -1080,7 +1080,7 @@ pub const Table = struct {
     pub fn getMetaTable(self: Table) !?Table {
         try self.ref.lua.checkStack(1);
 
-        stack.push(self.ref.lua, self.ref); // Push table ref
+        stack.push(self.state(), self.ref); // Push table ref
         defer self.state().pop(1); // Pop table
 
         if (self.state().getMetatable(-1)) {
@@ -1128,7 +1128,7 @@ pub const Table = struct {
     pub fn clear(self: Table) !void {
         try self.ref.lua.checkStack(1);
 
-        stack.push(self.ref.lua, self.ref); // Push table ref
+        stack.push(self.state(), self.ref); // Push table ref
         self.state().clearTable(-1); // Clear table
         self.state().pop(1); // Pop table
     }
@@ -1162,7 +1162,7 @@ pub const Table = struct {
     pub fn clone(self: Table) !Table {
         try self.ref.lua.checkStack(2);
 
-        stack.push(self.ref.lua, self.ref); // Push table ref
+        stack.push(self.state(), self.ref); // Push table ref
         self.state().cloneTable(-1); // Clone table, pushes clone on stack
 
         // Create a reference to the cloned table on the stack
@@ -1218,12 +1218,12 @@ pub const Table = struct {
             try self.table.ref.lua.checkStack(3);
 
             // Push table onto stack
-            stack.push(self.table.ref.lua, self.table.ref);
+            stack.push(self.table.state(), self.table.ref);
             defer self.table.state().pop(1);
 
             // Push key for lua_next (nil if null)
             if (self.current_entry) |entry| {
-                stack.push(self.table.ref.lua, entry.key);
+                stack.push(self.table.state(), entry.key);
                 entry.deinit();
             } else {
                 self.table.state().pushNil();
@@ -1594,8 +1594,8 @@ pub const Function = struct {
     ref: Ref,
 
     /// Returns the underlying Lua state for direct state operations.
-    inline fn state(self: Function) State {
-        return self.ref.lua.state;
+    pub inline fn state(self: Function) *const State {
+        return &self.ref.lua.state;
     }
 
     pub fn deinit(self: Function) void {
@@ -1636,7 +1636,7 @@ pub const Function = struct {
     pub fn call(self: @This(), args: anytype, comptime R: type) !Result(R) {
         try self.ref.lua.checkStack(2);
 
-        stack.push(self.ref.lua, self.ref); // Push function ref
+        stack.push(self.state(), self.ref); // Push function ref
 
         // Use resume semantics if in a thread, call semantics if in main state
         return self.ref.lua.call(args, R, self.ref.lua.isThread());
@@ -1675,7 +1675,7 @@ pub const Function = struct {
     /// }
     /// ```
     pub fn compile(self: @This()) void {
-        stack.push(self.ref.lua, self.ref); // Push function ref
+        stack.push(self.state(), self.ref); // Push function ref
         defer self.state().pop(1); // Remove from stack
 
         self.state().codegenCompile(-1);
@@ -1701,7 +1701,7 @@ pub const Function = struct {
     pub fn clone(self: Function) !Function {
         try self.ref.lua.checkStack(2);
 
-        stack.push(self.ref.lua, self.ref); // Push function ref
+        stack.push(self.state(), self.ref); // Push function ref
         self.state().cloneFunction(-1); // Clone function, pushes clone on stack
 
         // Create a reference to the cloned function on the stack
@@ -1747,7 +1747,7 @@ pub const Function = struct {
     /// // actual_line will be 3 if line 3 has executable code
     /// ```
     pub fn setBreakpoint(self: Function, line: i32, enabled: bool) !i32 {
-        stack.push(self.ref.lua, self.ref); // Push function ref
+        stack.push(self.state(), self.ref); // Push function ref
         defer self.state().pop(1); // Remove from stack
 
         const result = self.state().breakpoint(-1, line, enabled);
@@ -1884,7 +1884,7 @@ pub const StrBuf = struct {
     /// ```
     pub fn add(self: *StrBuf, value: anytype) !void {
         try self.lua.checkStack(1);
-        stack.push(self.lua.*, value);
+        stack.push(&self.lua.state, value);
         State.addValueAny(&self.buf, -1);
         self.lua.state.pop(1);
     }
@@ -2122,16 +2122,16 @@ fn call(self: Self, args: anytype, comptime R: type, is_resume: bool) !Result(R)
                 if (info.is_tuple) {
                     // Push tuple elements in order
                     inline for (args) |arg| {
-                        stack.push(self, arg);
+                        stack.push(&self.state, arg);
                     }
                     break :blk @as(u32, @intCast(info.fields.len));
                 } else {
-                    stack.push(self, args);
+                    stack.push(&self.state, args);
                     break :blk 1;
                 }
             },
             else => {
-                stack.push(self, args);
+                stack.push(&self.state, args);
                 break :blk 1;
             },
         }
@@ -2450,7 +2450,7 @@ test "ref types" {
     const lua = try init(&std.testing.allocator);
     defer lua.deinit();
 
-    stack.push(lua, testAdd);
+    stack.push(&lua.state, testAdd);
     try expect(lua.state.isFunction(-1));
     try expect(lua.state.isCFunction(-1)); // Zig functions are wrapped as C functions
 
@@ -2477,10 +2477,10 @@ test "dump stack" {
     try expect(std.mem.indexOf(u8, empty_dump, "Lua stack is empty") != null);
 
     // Test stack with values
-    stack.push(lua, @as(f64, 42.5));
-    stack.push(lua, true);
-    stack.push(lua, "hello");
-    stack.push(lua, @as(?i32, null));
+    stack.push(&lua.state, @as(f64, 42.5));
+    stack.push(&lua.state, true);
+    stack.push(&lua.state, "hello");
+    stack.push(&lua.state, @as(?i32, null));
 
     const stack_size_before = lua.top();
 
@@ -2526,12 +2526,12 @@ test "table ops" {
 
     // Test pushing table to stack
     try table.set("test", 42);
-    stack.push(lua, table);
+    stack.push(&lua.state, table);
     try expectEq(lua.top(), 1);
     try expect(lua.state.isTable(-1));
 
     // Verify we can access the table value through the pushed table
-    stack.push(lua, "test");
+    stack.push(&lua.state, "test");
     _ = lua.state.getTable(-2);
     try expectEq(stack.pop(lua, i32), 42);
 

@@ -587,7 +587,7 @@ pub fn getLocal(self: Self, level: i32, n: i32, comptime T: type) ?struct { name
 /// Returns: Name of the variable that was set, or null if not available
 pub fn setLocal(self: Self, level: i32, n: i32, comptime T: type, value: T) ?[:0]const u8 {
     // Push the value onto the stack first
-    stack.push(Lua{ .state = self.state.* }, value);
+    stack.push(self.state, value);
 
     const name_ptr = self.state.setLocal(level, n);
     if (name_ptr == null) {
@@ -632,7 +632,7 @@ pub fn setLocal(self: Self, level: i32, n: i32, comptime T: type, value: T) ?[:0
 /// Returns: Struct with name and converted value, or null if not available
 pub fn getUpvalue(self: Self, func: Lua.Function, n: i32, comptime T: type) ?struct { name: [:0]const u8, value: T } {
     // Push function onto the stack to get its index
-    stack.push(func.ref.lua, func.ref);
+    stack.push(func.state(), func.ref);
     defer self.state.pop(1);
 
     const name_ptr = self.state.getUpvalue(-1, n);
@@ -684,10 +684,10 @@ pub fn getUpvalue(self: Self, func: Lua.Function, n: i32, comptime T: type) ?str
 /// Returns: Name of the upvalue that was set, or null if not available
 pub fn setUpvalue(self: Self, func: Lua.Function, n: i32, comptime T: type, value: T) ?[:0]const u8 {
     // Push function onto the stack first to get its index
-    stack.push(func.ref.lua, func.ref);
+    stack.push(func.state(), func.ref);
 
     // Push the value onto the stack (lua_setupvalue expects value on top)
-    stack.push(func.ref.lua, value);
+    stack.push(func.state(), value);
 
     const name_ptr = self.state.setUpvalue(-2, n); // Function is now at -2, value at -1
 

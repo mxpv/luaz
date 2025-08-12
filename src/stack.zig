@@ -81,31 +81,31 @@ pub fn slotCountFor(comptime T: type) i32 {
 /// Note: For light userdata (pointer types), the caller is responsible for ensuring
 /// the pointed-to object remains alive for as long as it is used in Lua. Light userdata
 /// does not participate in Lua's garbage collection.
-pub fn push(lua: Lua, value: anytype) void {
+pub fn push(state: *const State, value: anytype) void {
     const T = @TypeOf(value);
     const type_info = @typeInfo(T);
 
     switch (type_info) {
         .bool => {
-            lua.state.pushBoolean(value);
+            state.pushBoolean(value);
         },
         .int, .comptime_int => {
-            lua.state.pushInteger(@intCast(value));
+            state.pushInteger(@intCast(value));
         },
         .float, .comptime_float => {
-            lua.state.pushNumber(value);
+            state.pushNumber(value);
         },
         .void => {
             // Push nothing.
         },
         .null => {
-            lua.state.pushNil();
+            state.pushNil();
         },
         .optional => {
             if (value == null) {
-                lua.state.pushNil();
+                state.pushNil();
             } else {
-                push(lua, value.?);
+                push(state, value.?);
             }
         },
         .@"struct" => {
@@ -114,13 +114,13 @@ pub fn push(lua: Lua, value: anytype) void {
                 // Push reference to stack
                 if (value.getRef()) |index| {
                     if (index != State.GLOBALSINDEX) {
-                        _ = lua.state.rawGetI(State.REGISTRYINDEX, index);
+                        _ = state.rawGetI(State.REGISTRYINDEX, index);
                     } else {
                         // Globals table is a special pseudo-index, push it directly
-                        lua.state.pushValue(index);
+                        state.pushValue(index);
                     }
                 } else {
-                    lua.state.pushNil();
+                    state.pushNil();
                 }
                 return;
             }
@@ -136,24 +136,24 @@ pub fn push(lua: Lua, value: anytype) void {
             // Handle tuples by pushing each element individually
             if (type_info.@"struct".is_tuple) {
                 inline for (0..type_info.@"struct".fields.len) |i| {
-                    push(lua, value[i]);
+                    push(state, value[i]);
                 }
                 return;
             }
 
             // Handle arbitrary structs by converting to Lua table (data fields only)
-            lua.state.createTable(0, type_info.@"struct".fields.len);
+            state.createTable(0, type_info.@"struct".fields.len);
 
             // Push struct fields only - exclude all methods since they won't work correctly
             inline for (type_info.@"struct".fields) |field| {
                 if (field.is_comptime) continue; // Skip comptime fields
 
                 // Push field name as key
-                lua.state.pushString(field.name);
+                state.pushString(field.name);
                 // Push field value
-                push(lua, @field(value, field.name));
+                push(state, @field(value, field.name));
                 // Set table[field_name] = field_value
-                lua.state.setTable(-3);
+                state.setTable(-3);
             }
             return;
         },
@@ -161,14 +161,14 @@ pub fn push(lua: Lua, value: anytype) void {
             // Handle Value union
             if (T == Lua.Value) {
                 switch (value) {
-                    .nil => lua.state.pushNil(),
-                    .boolean => |b| lua.state.pushBoolean(b),
-                    .number => |n| lua.state.pushNumber(n),
-                    .string => |s| lua.state.pushLString(s),
-                    .table => |t| push(lua, t),
-                    .function => |f| push(lua, f),
-                    .userdata => |u| push(lua, u), // Push userdata reference
-                    .lightuserdata => |u| lua.state.pushLightUserdata(u),
+                    .nil => state.pushNil(),
+                    .boolean => |b| state.pushBoolean(b),
+                    .number => |n| state.pushNumber(n),
+                    .string => |s| state.pushLString(s),
+                    .table => |t| push(state, t),
+                    .function => |f| push(state, f),
+                    .userdata => |u| push(state, u), // Push userdata reference
+                    .lightuserdata => |u| state.pushLightUserdata(u),
                 }
                 return;
             }
@@ -192,7 +192,7 @@ pub fn push(lua: Lua, value: anytype) void {
 
             // Convert Zig vector to array for pushVector
             const vec_array: [State.VECTOR_SIZE]f32 = @bitCast(value);
-            lua.state.pushVector(vec_array);
+            state.pushVector(vec_array);
         },
         .pointer => |ptr_info| {
             switch (ptr_info.size) {
@@ -212,10 +212,10 @@ pub fn push(lua: Lua, value: anytype) void {
                         // Check if the array is zero-terminated
                         if (comptime std.mem.indexOf(u8, @typeName(ptr_info.child), ":0") != null) {
                             // Zero-terminated array: *const [N:0]u8
-                            lua.state.pushString(@as([:0]const u8, @ptrCast(value)));
+                            state.pushString(@as([:0]const u8, @ptrCast(value)));
                         } else {
                             // Regular array: *const [N]u8
-                            lua.state.pushLString(std.mem.asBytes(value));
+                            state.pushLString(std.mem.asBytes(value));
                         }
                         return;
                     }
@@ -223,7 +223,7 @@ pub fn push(lua: Lua, value: anytype) void {
                     // Handle light user data: *T where T is not an array
                     // IMPORTANT: Caller must ensure the pointed-to object remains alive
                     // for as long as it's used in Lua (no garbage collection for light userdata)
-                    lua.state.pushLightUserdata(@ptrCast(@constCast(value)));
+                    state.pushLightUserdata(@ptrCast(@constCast(value)));
                     return;
                 },
                 .many, .slice => {
@@ -232,21 +232,21 @@ pub fn push(lua: Lua, value: anytype) void {
                         // For slices, check if it's zero-terminated by examining the type
                         if (comptime std.mem.indexOf(u8, @typeName(T), ":0") != null) {
                             // Zero-terminated string: [:0]const u8, [*:0]const u8
-                            lua.state.pushString(@as([:0]const u8, @ptrCast(value)));
+                            state.pushString(@as([:0]const u8, @ptrCast(value)));
                         } else {
                             // Regular slice: []const u8
-                            lua.state.pushLString(value);
+                            state.pushLString(value);
                         }
                         return;
                     }
 
                     // Handle arbitrary slices by converting to Lua table with integer indices
-                    lua.state.createTable(@intCast(value.len), 0);
+                    state.createTable(@intCast(value.len), 0);
                     for (value, 0..) |element, i| {
                         // Push element value
-                        push(lua, element);
+                        push(state, element);
                         // Set table[i+1] = element (Lua arrays are 1-indexed)
-                        lua.state.rawSetI(-2, @intCast(i + 1));
+                        state.rawSetI(-2, @intCast(i + 1));
                     }
                     return;
                 },
@@ -261,32 +261,33 @@ pub fn push(lua: Lua, value: anytype) void {
                 // Check if it's zero-terminated by examining the type name
                 if (comptime std.mem.indexOf(u8, @typeName(T), ":0") != null) {
                     // Zero-terminated array: [N:0]u8
-                    lua.state.pushString(@as([:0]const u8, @ptrCast(&value)));
+                    state.pushString(@as([:0]const u8, @ptrCast(&value)));
                 } else {
                     // Regular array: [N]u8
-                    lua.state.pushLString(&value);
+                    state.pushLString(&value);
                 }
                 return;
             }
 
             // Handle arbitrary arrays by converting to Lua table with integer indices
-            lua.state.createTable(array_info.len, 0);
+            state.createTable(array_info.len, 0);
             for (value, 0..) |element, i| {
                 // Push element value
-                push(lua, element);
+                push(state, element);
                 // Set table[i+1] = element (Lua arrays are 1-indexed)
-                lua.state.rawSetI(-2, @intCast(i + 1));
+                state.rawSetI(-2, @intCast(i + 1));
             }
             return;
         },
         .@"fn" => {
             if (*const T == @typeInfo(State.CFunction).optional.child) {
-                lua.state.pushCFunction(value, @typeName(T));
+                state.pushCFunction(value, @typeName(T));
                 return;
             }
 
-            const trampoline = createFunc(lua, value);
-            lua.state.pushCFunction(trampoline, @typeName(T));
+            // For Zig functions, create the trampoline function
+            const trampoline = createFunc(value);
+            state.pushCFunction(trampoline, @typeName(T));
         },
         else => {
             @compileError("Unable to push type " ++ @typeName(T));
@@ -296,7 +297,7 @@ pub fn push(lua: Lua, value: anytype) void {
 
 /// Pushes a function result onto the Lua stack, handling error unions, tuples, and regular values.
 /// Returns the number of values pushed onto the stack.
-pub fn pushResult(lua: Lua, result: anytype) c_int {
+pub fn pushResult(state: *const State, result: anytype) c_int {
     const ResultType = @TypeOf(result);
     const result_info = @typeInfo(ResultType);
 
@@ -305,30 +306,30 @@ pub fn pushResult(lua: Lua, result: anytype) c_int {
         const payload = result catch |err| {
             // Push error message to Lua and raise error
             const err_msg = @errorName(err);
-            lua.state.pushString(err_msg);
-            lua.state.raiseError();
+            state.pushString(err_msg);
+            state.raiseError();
         };
 
         // Recursively handle the success payload
-        return pushResult(lua, payload);
+        return pushResult(state, payload);
     }
 
     // Handle tuple results by pushing each element individually
     if (result_info == .@"struct" and result_info.@"struct".is_tuple) {
         inline for (0..result_info.@"struct".fields.len) |i| {
-            push(lua, result[i]);
+            push(state, result[i]);
         }
         return @intCast(result_info.@"struct".fields.len);
     }
 
     // Handle non-tuple results normally
-    push(lua, result);
+    push(state, result);
     return slotCountFor(ResultType);
 }
 
 /// Creates a Lua C function from a Zig function.
 /// Automatically detects Upvalues type in first parameter for closure functions.
-pub fn createFunc(_: Lua, value: anytype) State.CFunction {
+pub fn createFunc(value: anytype) State.CFunction {
     const T = @TypeOf(value);
     const arg_tuple = std.meta.ArgsTuple(T);
     const arg_fields = std.meta.fields(arg_tuple);
@@ -396,7 +397,7 @@ pub fn createFunc(_: Lua, value: anytype) State.CFunction {
 
             // Call Zig func and push result
             const result = @call(.auto, value, args);
-            return pushResult(l, result);
+            return pushResult(&l.state, result);
         }
     }.f;
 }
@@ -754,34 +755,34 @@ test "push and pop types" {
     defer lua.deinit();
 
     // Test integers
-    push(lua, @as(i32, 42));
+    push(&lua.state, @as(i32, 42));
     try expectEq(pop(lua, i32).?, 42);
 
     // Test floats
-    push(lua, @as(f64, 3.14));
+    push(&lua.state, @as(f64, 3.14));
     try expectEq(pop(lua, f64).?, 3.14);
 
     // Test booleans
-    push(lua, true);
+    push(&lua.state, true);
     try expect(pop(lua, bool).?);
 
     // Test optional with value
-    push(lua, @as(?i32, 42));
+    push(&lua.state, @as(?i32, 42));
     try expectEq(pop(lua, ?i32).?, 42);
 
     // Test optional null
-    push(lua, @as(?i32, null));
+    push(&lua.state, @as(?i32, null));
     try expect(pop(lua, ?i32) == null);
 
     // Test zero and negative values
-    push(lua, @as(i32, 0));
+    push(&lua.state, @as(i32, 0));
     try expectEq(pop(lua, i32).?, 0);
 
-    push(lua, @as(i32, -42));
+    push(&lua.state, @as(i32, -42));
     try expectEq(pop(lua, i32).?, -42);
 
     // Test comptime values
-    push(lua, 123);
+    push(&lua.state, 123);
     try expectEq(pop(lua, i32).?, 123);
 
     try expectEq(lua.state.getTop(), 0);
@@ -792,7 +793,7 @@ test "push and pop vector types" {
     defer lua.deinit();
 
     const vec3 = @Vector(3, f32){ 1.0, 2.0, 3.0 };
-    push(lua, vec3);
+    push(&lua.state, vec3);
     try expect(lua.state.isVector(-1));
     const popped_vec3 = pop(lua, @Vector(3, f32)).?;
     try expectEq(popped_vec3[0], 1.0);
@@ -807,19 +808,19 @@ test "string operations" {
     defer lua.deinit();
 
     // Test basic string push
-    push(lua, "hello");
+    push(&lua.state, "hello");
     try expect(lua.state.isString(-1));
     lua.state.pop(1);
 
     // Test string retrieval
-    push(lua, "hello world");
+    push(&lua.state, "hello world");
     const str_slice = toValue(lua, []const u8, -1);
     try expect(str_slice != null);
     try expect(std.mem.eql(u8, str_slice.?, "hello world"));
     lua.state.pop(1);
 
     // Test that numbers don't get converted to strings
-    push(lua, @as(i32, 42));
+    push(&lua.state, @as(i32, 42));
     const not_string = toValue(lua, []const u8, -1);
     try expect(not_string == null);
     lua.state.pop(1);
@@ -856,7 +857,7 @@ test "toValue type conversions" {
             return a * 2;
         }
     }.f;
-    push(lua, testFn);
+    push(&lua.state, testFn);
     const func_ref = toValue(lua, Lua.Function, -1);
     try expect(func_ref != null);
     func_ref.?.ref.deinit();
@@ -874,7 +875,7 @@ test "push structs as tables" {
     };
 
     const point = Point{ .x = 10, .y = 20, .name = "origin" };
-    push(lua, point);
+    push(&lua.state, point);
 
     try expect(lua.state.isTable(-1));
 
@@ -903,7 +904,7 @@ test "push arrays as tables" {
     defer lua.deinit();
 
     const arr = [_]i32{ 1, 2, 3, 4, 5 };
-    push(lua, arr);
+    push(&lua.state, arr);
 
     try expect(lua.state.isTable(-1));
 
@@ -923,7 +924,7 @@ test "push slices as tables" {
 
     const arr = [_]f64{ 1.1, 2.2, 3.3 };
     const slice: []const f64 = &arr;
-    push(lua, slice);
+    push(&lua.state, slice);
 
     try expect(lua.state.isTable(-1));
 
@@ -947,7 +948,7 @@ test "push nested structs and arrays" {
     };
 
     const config = Config{ .values = [_]i32{ 10, 20, 30 }, .enabled = true };
-    push(lua, config);
+    push(&lua.state, config);
 
     try expect(lua.state.isTable(-1));
 

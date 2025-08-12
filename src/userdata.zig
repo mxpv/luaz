@@ -278,7 +278,7 @@ fn pushResult(comptime T: type, lua: Lua, result: anytype, comptime type_name: [
     }
 
     // For all other types, use the standard pushResult
-    return stack.pushResult(lua, result);
+    return stack.pushResult(&lua.state, result);
 }
 
 /// Generates a function that handles translation between Lua's stack-based
