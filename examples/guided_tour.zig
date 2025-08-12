@@ -15,6 +15,8 @@
 //! - Control garbage collection for memory management
 //! - Work with coroutines and threads
 //! - Build strings efficiently with StrBuf
+//! - Use callbacks for monitoring VM events
+//! - Debug Lua code with breakpoints and variable inspection
 
 const std = @import("std");
 const luaz = @import("luaz");
@@ -650,6 +652,170 @@ pub fn main() !void {
         try globals.setClosure("formatMessage", &lua, formatMessage);
         const result = try lua.eval("return formatMessage('Alice', 25)", .{}, []const u8);
         print("From function: {s}\n", .{result.ok.?});
+    }
+
+    // VM Callbacks for logging allocations
+    {
+        print("\n-- VM Callbacks for Allocation Logging --\n", .{});
+
+        // Create a callback struct that logs allocations using onallocate
+        const AllocationLogger = struct {
+            total_allocated: i64 = 0,
+            allocation_count: u32 = 0,
+            reallocation_count: u32 = 0,
+            free_count: u32 = 0,
+
+            pub fn onallocate(self: *@This(), state: *luaz.State, osize: usize, nsize: usize) void {
+                _ = state;
+
+                if (osize == 0 and nsize > 0) {
+                    // New allocation
+                    self.allocation_count += 1;
+                    self.total_allocated += @intCast(nsize);
+                } else if (nsize == 0 and osize > 0) {
+                    // Free
+                    self.free_count += 1;
+                    self.total_allocated -= @intCast(osize);
+                } else if (osize > 0 and nsize > 0) {
+                    // Reallocation
+                    self.reallocation_count += 1;
+                    self.total_allocated += @intCast(nsize);
+                    self.total_allocated -= @intCast(osize);
+                }
+
+                // Log significant allocations
+                if (nsize > 1024) {
+                    print("  Large allocation: {} bytes\n", .{nsize});
+                }
+            }
+        };
+
+        var alloc_logger = AllocationLogger{};
+        lua.setCallbacks(&alloc_logger);
+
+        print("Set up allocation logging callbacks\n", .{});
+        print("Initial - Total allocated: {} bytes\n", .{alloc_logger.total_allocated});
+
+        // Create some allocations to trigger the callback
+        _ = try lua.eval(
+            \\local data = {}
+            \\for i = 1, 50 do
+            \\    data[i] = "String allocation " .. i
+            \\end
+            \\
+            \\-- Create a large string to trigger the large allocation log
+            \\local large = string.rep("x", 2000)
+            \\
+            \\-- Create nested tables
+            \\local nested = {}
+            \\for i = 1, 20 do
+            \\    nested[i] = {id = i, name = "item" .. i}
+            \\end
+        , .{}, void);
+
+        print("After Lua allocations:\n", .{});
+        print("  Allocations: {}\n", .{alloc_logger.allocation_count});
+        print("  Reallocations: {}\n", .{alloc_logger.reallocation_count});
+        print("  Frees: {}\n", .{alloc_logger.free_count});
+        print("  Total allocated: {} bytes\n", .{alloc_logger.total_allocated});
+
+        // Force garbage collection to trigger free callbacks
+        const gc = lua.gc();
+        gc.collect();
+
+        print("After garbage collection:\n", .{});
+        print("  Allocations: {}\n", .{alloc_logger.allocation_count});
+        print("  Reallocations: {}\n", .{alloc_logger.reallocation_count});
+        print("  Frees: {}\n", .{alloc_logger.free_count});
+        print("  Total allocated: {} bytes\n", .{alloc_logger.total_allocated});
+    }
+
+    // Debugger functionality
+    {
+        print("\n-- Debugger --\n", .{});
+
+        // Create debug callbacks to handle breakpoints
+        const DebugCallbacks = struct {
+            breakpoint_hits: u32 = 0,
+            variables_inspected: u32 = 0,
+
+            pub fn debugbreak(self: *@This(), debug: *luaz.Lua.Debug, ar: luaz.Lua.Debug.Info) void {
+                self.breakpoint_hits += 1;
+                print("Breakpoint #{} hit at line {}\n", .{ self.breakpoint_hits, ar.current_line });
+
+                // Get stack depth
+                const depth = debug.stackDepth();
+                print("  Stack depth: {}\n", .{depth});
+
+                // Get debug info about current function
+                const info = debug.getInfo(0, .{ .source = true, .line = true, .name = true });
+                if (info) |debug_info| {
+                    print("  Function: {?s} at line {}\n", .{ debug_info.name, debug_info.current_line });
+                }
+
+                // Get function arguments
+                const arg1 = debug.getArg(0, 1, i32);
+                const arg2 = debug.getArg(0, 2, i32);
+                if (arg1) |a1| print("  Arg 1: {}\n", .{a1});
+                if (arg2) |a2| print("  Arg 2: {}\n", .{a2});
+
+                // Get local variables (requires debug level 2)
+                const local = debug.getLocal(0, 1, i32);
+                if (local) |l| {
+                    print("  Local '{s}': {}\n", .{ l.name, l.value });
+                    self.variables_inspected += 1;
+                }
+            }
+        };
+
+        var callbacks = DebugCallbacks{};
+        lua.setCallbacks(&callbacks);
+
+        // Create a function to debug with local variables
+        const source =
+            \\function debugTarget(x, y)
+            \\    local sum = x + y
+            \\    local product = x * y
+            \\    return sum, product
+            \\end
+        ;
+
+        // Compile with debug level 2 for local variable names
+        const compile_result = try luaz.Compiler.compile(source, .{ .dbg_level = 2 });
+        defer compile_result.deinit();
+
+        switch (compile_result) {
+            .ok => |bytecode| {
+                _ = try lua.exec(bytecode, void);
+            },
+            .err => |message| {
+                print("Debug compile error: {s}\n", .{message});
+                return;
+            },
+        }
+
+        // Get the function and set a breakpoint
+        const func = try lua.globals().get("debugTarget", luaz.Lua.Function);
+        defer func.?.deinit();
+
+        print("Setting breakpoint on line 3...\n", .{});
+        const actual_line = try func.?.setBreakpoint(3, true);
+        print("Breakpoint set on line {}\n", .{actual_line});
+
+        // Create a thread for debugging (avoids C-call boundary issues)
+        const debug_thread = lua.createThread();
+        defer debug_thread.deinit();
+
+        // Get the function in the thread context
+        const thread_func = try debug_thread.globals().get("debugTarget", luaz.Lua.Function);
+        defer thread_func.?.deinit();
+
+        // Call the function - this should hit the breakpoint
+        print("Calling debugTarget(5, 7) in thread...\n", .{});
+        const debug_result = try thread_func.?.call(.{ 5, 7 }, struct { i32, i32 });
+        if (debug_result.ok) |result| {
+            print("Function completed: sum={}, product={}\n", .{ result[0], result[1] });
+        }
     }
 
     print("\n=== Tour Complete! ===\n", .{});
