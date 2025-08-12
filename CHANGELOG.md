@@ -20,7 +20,13 @@ All notable changes to this project will be documented in this file.
 - `Table.clear()` method to remove all entries from a table
 - `Table.clone()` method to create a shallow copy of a table
 - `Function.clone()` method to create a copy of a function with shared upvalue references
-- High-level debugger API with `setCallbacks()` for VM event handling supporting both static and instance methods
+- Debug API with breakpoints, stack inspection, and variable access:
+  - `Debug` module with execution control: `setSingleStep()`, `debugBreak()`, `debugTrace()`, `stackDepth()`
+  - Call stack inspection: `getInfo()`, `getArg()`, `getLocal()`/`setLocal()`, `getUpvalue()`/`setUpvalue()`
+  - Callback-based debugging with `setCallbacks()` for breakpoint and step event handling
+  - Function breakpoint support with `Function.setBreakpoint()`
+  - Support for debug compilation levels (0-2) for local variable and upvalue name inspection
+  - Thread-safe debugging with coroutine support and debug interruption handling
 
 ### Changed
 - **BREAKING**: Table iteration API now uses standard Zig iterator pattern (`iterator.next()`)
