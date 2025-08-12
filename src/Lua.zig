@@ -46,7 +46,7 @@ const Allocator = std.mem.Allocator;
 pub const State = @import("State.zig");
 pub const Compiler = @import("Compiler.zig");
 pub const Debug = @import("Debug.zig");
-pub const Gc = @import("Gc.zig");
+pub const GC = @import("GC.zig");
 
 /// Error types that can be returned by Lua operations.
 pub const Error = error{
@@ -120,9 +120,9 @@ pub inline fn debug(self: Self) Debug {
 }
 
 /// Get garbage collector control for this Lua state.
-/// Returns a Gc instance that provides GC operations.
-pub inline fn gc(self: Self) Gc {
-    return Gc{ .lua = self };
+/// Returns a GC instance that provides GC operations.
+pub inline fn gc(self: Self) GC {
+    return GC{ .lua = self };
 }
 
 pub inline fn fromState(state: State.LuaState) Self {

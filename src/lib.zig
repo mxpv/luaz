@@ -8,4 +8,4 @@ pub const Lua = @import("Lua.zig");
 pub const State = @import("State.zig");
 pub const Compiler = @import("Compiler.zig");
 pub const Debug = @import("Debug.zig");
-pub const Gc = @import("Gc.zig");
+pub const GC = @import("GC.zig");
