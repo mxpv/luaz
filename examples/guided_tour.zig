@@ -181,10 +181,10 @@ pub fn main() !void {
         const float_val = try globals.get("float_var", f64);
         const bool_val = try globals.get("bool_var", bool);
 
-        print("string_var: {s}\n", .{str_val.?});
-        print("int_var: {}\n", .{int_val.?});
-        print("float_var: {d:.2}\n", .{float_val.?});
-        print("bool_var: {}\n", .{bool_val.?});
+        print("string_var: {s}\n", .{str_val});
+        print("int_var: {}\n", .{int_val});
+        print("float_var: {d:.2}\n", .{float_val});
+        print("bool_var: {}\n", .{bool_val});
     }
 
     // Evaluating Lua code
@@ -204,7 +204,7 @@ pub fn main() !void {
         _ = try lua.eval("global = 'foo' .. 'bar'", .{}, void);
         const globals = lua.globals();
         const concat = try globals.get("global", []const u8);
-        print("'foo' .. 'bar' = {s}\n", .{concat.?});
+        print("'foo' .. 'bar' = {s}\n", .{concat});
 
         // Multiple return values as tuples
         const tuple_result = try lua.eval("return 10, 2.5, false", .{}, struct { i32, f64, bool });
@@ -264,7 +264,7 @@ pub fn main() !void {
 
         // Read back values
         const v = try map_table.get("two", i32);
-        print("map_table['two'] = {}\n", .{v.?});
+        print("map_table['two'] = {}\n", .{v});
 
         // Pass tables to Lua
         const globals = lua.globals();
@@ -478,7 +478,7 @@ pub fn main() !void {
         // Retrieve individual fields from table structures
         const x_coord = try point_table.get("x", f32);
         const y_coord = try point_table.get("y", f32);
-        print("Retrieved point coordinates: x={d:.1}, y={d:.1}\n", .{ x_coord.?, y_coord.? });
+        print("Retrieved point coordinates: x={d:.1}, y={d:.1}\n", .{ x_coord, y_coord });
     }
 
     // Garbage collection control
@@ -600,21 +600,21 @@ pub fn main() !void {
 
         const thread = lua.createThread();
         const func = try thread.globals().get("accumulator", luaz.Lua.Function);
-        defer func.?.deinit();
+        defer func.deinit();
 
         // Start the coroutine - yields initial sum (0)
-        const result1 = try func.?.call(.{}, i32);
+        const result1 = try func.call(.{}, i32);
         print("Start: sum={}\n", .{result1.yield.?});
 
         // Continue with values to accumulate
-        const result2 = try func.?.call(.{10}, i32);
+        const result2 = try func.call(.{10}, i32);
         print("Add 10: sum={}\n", .{result2.yield.?});
 
-        const result3 = try func.?.call(.{25}, i32);
+        const result3 = try func.call(.{25}, i32);
         print("Add 25: sum={}\n", .{result3.yield.?});
 
         // Send nil to finish
-        const final_result = try func.?.call(.{@as(?i32, null)}, i32);
+        const final_result = try func.call(.{@as(?i32, null)}, i32);
         print("Final: sum={}\n", .{final_result.ok.?});
     }
 
@@ -634,7 +634,7 @@ pub fn main() !void {
         const globals = lua.globals();
         try globals.set("message", &buf);
         const message = try globals.get("message", []const u8);
-        print("Built string: {s}\n", .{message.?});
+        print("Built string: {s}\n", .{message});
 
         // Return StrBuf from Zig functions
         const formatMessage = struct {
@@ -796,10 +796,10 @@ pub fn main() !void {
 
         // Get the function and set a breakpoint
         const func = try lua.globals().get("debugTarget", luaz.Lua.Function);
-        defer func.?.deinit();
+        defer func.deinit();
 
         print("Setting breakpoint on line 3...\n", .{});
-        const actual_line = try func.?.setBreakpoint(3, true);
+        const actual_line = try func.setBreakpoint(3, true);
         print("Breakpoint set on line {}\n", .{actual_line});
 
         // Create a thread for debugging (avoids C-call boundary issues)
@@ -808,11 +808,11 @@ pub fn main() !void {
 
         // Get the function in the thread context
         const thread_func = try debug_thread.globals().get("debugTarget", luaz.Lua.Function);
-        defer thread_func.?.deinit();
+        defer thread_func.deinit();
 
         // Call the function - this should hit the breakpoint
         print("Calling debugTarget(5, 7) in thread...\n", .{});
-        const debug_result = try thread_func.?.call(.{ 5, 7 }, struct { i32, i32 });
+        const debug_result = try thread_func.call(.{ 5, 7 }, struct { i32, i32 });
         if (debug_result.ok) |result| {
             print("Function completed: sum={}, product={}\n", .{ result[0], result[1] });
         }
