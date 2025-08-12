@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.0] - 2025-08-12
+
 ### Added
 - **Luau StrBuf support** for efficient string building with automatic memory management
   - High-level `StrBuf` API with `init()`, `initSize()`, `addString()`, `addChar()`, and `add()` methods
