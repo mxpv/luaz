@@ -29,13 +29,20 @@ and [performance](https://luau.org/performance) characteristics.
 - Built-in `Luau` tools provided by the build system out of the box:
   - [`luau-compiler`](#compiler) to compile Luau source to bytecode
   - [`luau-analyzer`](#analyzer) to typecheck and lint Luau code
-- Excellent [test coverage](https://app.codecov.io/gh/mxpv/luaz) and API [documentation](https://mxpv.github.io/luaz/#luaz.lua)
+- Excellent [test coverage](https://app.codecov.io/gh/mxpv/luaz) and API [documentation](https://mxpv.github.io/luaz/#luaz)
 
 ## 📚 Documentation
 
-Full API documentation is available at: https://mxpv.github.io/luaz/#luaz.lua
+Full API documentation is available at: https://mxpv.github.io/luaz/#luaz
 
 The documentation is automatically updated on every change to the `main` branch.
+
+- [Documentation](https://mxpv.github.io/luaz/#luaz.lib)
+  + [High level Lua interface](https://mxpv.github.io/luaz/#luaz.lib.Lua)
+  + [Low level State wrapper](https://mxpv.github.io/luaz/#luaz.State)
+  + [GC API](https://mxpv.github.io/luaz/#luaz.GC)
+  + [Debugger API](https://mxpv.github.io/luaz/#luaz.Debug)
+  + [Compiler](https://mxpv.github.io/luaz/#luaz.Compiler)
 
 > [!TIP]
 > For a comprehensive overview of all features, see the [guided tour example](examples/guided_tour.zig) which can be run with `zig build guided-tour`.
