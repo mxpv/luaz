@@ -23,6 +23,7 @@ and [performance](https://luau.org/performance) characteristics.
   - Support for references, tables, and functions
   - Full coroutine and thread support
   - Comprehensive garbage collection APIs
+  - A fully featured debugger APIs
 - First-class [userdata support](#userdata-integration) including metamethods
 - Luau-specific features:
   - Vector type support
