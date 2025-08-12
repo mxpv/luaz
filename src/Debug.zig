@@ -85,7 +85,7 @@
 //!
 //! ## Inspecting Call Stack
 //!
-//! Use `getInfo()` to examine the call stack at any time:
+//! Use `getInfo()` and `getArg()` to examine the call stack at any time:
 //! ```zig
 //! const debug = lua.debug();
 //! const depth = debug.stackDepth();
@@ -98,6 +98,10 @@
 //!         debug_info.name, debug_info.source, debug_info.current_line
 //!     });
 //! }
+//!
+//! // Get function arguments (useful in debug breakpoints)
+//! const arg1 = debug.getArg(0, 1, i32); // First argument as i32
+//! const arg2 = debug.getArg(0, 2, []const u8); // Second argument as string
 //! ```
 //!
 //! ## Single-Step Debugging
@@ -120,6 +124,7 @@
 
 const std = @import("std");
 const State = @import("State.zig");
+const stack = @import("stack.zig");
 
 state: *State,
 
@@ -427,6 +432,43 @@ pub fn getInfo(self: Self, level: i32, comptime fields: Info.Fields) ?Info {
     return Info.fromC(&c_debug, fields);
 }
 
+/// Get function argument at a specific stack level and position.
+///
+/// Retrieves the value of function argument `n` from the function at stack `level`.
+/// Level 0 is the current function, level 1 is the caller, and so on.
+/// Arguments are numbered starting from 1 (first argument).
+///
+/// Returns the argument value with automatic type conversion, or null if:
+/// - The stack level is invalid
+/// - The argument number is out of range
+/// - The function at that level is a native/C function
+///
+/// Example:
+/// ```zig
+/// // In a debug breakpoint callback:
+/// const debug = lua.debug();
+/// const arg1 = debug.getArg(0, 1, i32); // Get first argument as i32
+/// const arg2 = debug.getArg(0, 2, []const u8); // Get second argument as string
+/// ```
+///
+/// Parameters:
+/// - `level`: Stack level (0 = current function, 1 = caller, etc.)
+/// - `n`: Argument number (1-based indexing)
+/// - `T`: Type to convert the argument to
+///
+/// Returns: Converted argument value, or null if not available
+pub fn getArg(self: Self, level: i32, n: i32, comptime T: type) ?T {
+    const result = self.state.getArgument(level, n);
+    if (result == 0) {
+        return null; // Argument not available
+    }
+
+    // Get the value from the top of the stack and pop it
+    defer self.state.pop(1);
+
+    return stack.toValue(Lua{ .state = self.state.* }, T, -1);
+}
+
 // Tests for debug functionality
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
@@ -696,4 +738,63 @@ test "stackDepth and getInfo basic functionality" {
     // Test getInfo function exists and handles invalid level correctly
     const invalid = debug.getInfo(999, .{ .source = true });
     try expect(invalid == null);
+}
+
+test "getArg in debug breakpoint" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    // Callback to test getArg when breakpoint is hit
+    const ArgumentTester = struct {
+        var breakpoint_hit: bool = false;
+
+        pub fn debugbreak(self: *@This(), debug: *Self, ar: Info) void {
+            _ = self;
+            _ = ar;
+            if (!breakpoint_hit) {
+                breakpoint_hit = true;
+
+                // Test getting first argument (should be 100)
+                const arg1 = debug.getArg(0, 1, i32);
+                std.debug.assert(arg1.? == 100);
+
+                // Test getting second argument (should be 200)
+                const arg2 = debug.getArg(0, 2, i32);
+                std.debug.assert(arg2.? == 200);
+
+                // Test getting non-existent third argument (should be null)
+                const arg3 = debug.getArg(0, 3, i32);
+                std.debug.assert(arg3 == null);
+
+                // Test invalid level (should be null)
+                const invalid_level = debug.getArg(999, 1, i32);
+                std.debug.assert(invalid_level == null);
+            }
+        }
+    };
+
+    var tester = ArgumentTester{};
+    lua.setCallbacks(&tester);
+
+    // Create a test function with known arguments
+    const code =
+        \\function testArguments(first, second)
+        \\    local sum = first + second
+        \\    return sum  -- Breakpoint will be set on this line
+        \\end
+    ;
+
+    _ = try lua.eval(code, .{}, void);
+
+    // Get the function and set a breakpoint
+    const func = try lua.globals().get("testArguments", Lua.Function);
+    defer func.?.deinit();
+    _ = try func.?.setBreakpoint(3, true); // Line 3: return sum
+
+    // Call the function with known arguments - this should hit the breakpoint
+    const result = try func.?.call(.{ 100, 200 }, i32);
+    try expectEqual(result.ok.?, 300);
+
+    // Verify breakpoint was hit and arguments were tested
+    try expect(ArgumentTester.breakpoint_hit);
 }
