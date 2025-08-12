@@ -19,16 +19,19 @@ and [performance](https://luau.org/performance) characteristics.
 - Bidirectional [function calls](#function-calls) between `Zig` and `Lua`
   - Closures support with upvalue capture
   - Variadic arguments support
+- Complete Lua API coverage:
+  - Support for references, tables, and functions
+  - Full coroutine and thread support
+  - Comprehensive garbage collection APIs
 - First-class [userdata support](#userdata-integration) including metamethods
-- Support for reference types, functions, tables, and vector types
-- [Luau StrBuf support](#string-buffer-strbuf) for efficient string building
-- Full coroutine and thread support
-- Garbage collection APIs
-- `Luau` Sandboxing APIs for secure execution environments
-- Supports `Luau` code generation for improved performance on supported platforms
-- Built-in `Luau` tools provided by the build system out of the box:
-  - [`luau-compiler`](#compiler) to compile Luau source to bytecode
-  - [`luau-analyzer`](#analyzer) to typecheck and lint Luau code
+- Luau-specific features:
+  - Vector type support
+  - [StrBuf support](#string-buffer-strbuf)
+  - Sandboxing APIs for secure execution and improved performance
+  - Native code generation support for improved performance on supported platforms
+  - Built-in Luau tools provided out of the box:
+    - [`luau-compile`](#compiler) - Compile Lua source to optimized bytecode
+    - [`luau-analyze`](#analyzer) - Type checking and linting for Luau code
 - Excellent [test coverage](https://app.codecov.io/gh/mxpv/luaz) and API [documentation](https://mxpv.github.io/luaz/#luaz)
 
 ## 📚 Documentation
