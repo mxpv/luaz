@@ -16,6 +16,68 @@ const expect = std.testing.expect;
 const expectEq = std.testing.expectEqual;
 const expectError = std.testing.expectError;
 
+test "breakpoint function from lua code" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    const BreakpointTest = struct {
+        var breakpoint_hit: bool = false;
+
+        pub fn debugbreak(self: *@This(), debug: *Debug, ar: Debug.Info) void {
+            _ = self;
+            _ = debug;
+            // Verify we hit the expected line
+            std.debug.assert(ar.current_line == 8);
+            breakpoint_hit = true;
+        }
+    };
+
+    var callbacks = BreakpointTest{};
+    lua.setCallbacks(&callbacks);
+
+    var debug = lua.debug();
+
+    const breakpoint_func = struct {
+        fn call(upv: Lua.Upvalues(*Debug), line: i32, enabled: ?bool) i32 {
+            const dbg = upv.value;
+            const enabled_val = enabled orelse true;
+
+            const stack_depth = dbg.stackDepth();
+
+            // Fetch debug info for the current stack frame
+            const info = dbg.getInfo(stack_depth - 1, .{ .function = true });
+            std.debug.assert(info != null);
+
+            const result = dbg.state.breakpoint(-1, line, enabled_val);
+            return if (result == -1) 0 else 0;
+        }
+    }.call;
+
+    try lua.globals().setClosure("breakpoint", &debug, breakpoint_func);
+
+    // Test Lua code with breakpoint() call
+    const code =
+        \\function test_func()
+        \\    local x = 10     -- line 2
+        \\    local y = 20     -- line 3
+        \\    local z = x + y  -- line 4
+        \\    breakpoint(8)    -- line 5 - set breakpoint on line 8
+        \\    local w = z * 2  -- line 6
+        \\    local result = w + 5  -- line 7
+        \\    return result    -- line 8 - breakpoint should hit here
+        \\end
+    ;
+
+    _ = try lua.eval(code, .{}, void);
+
+    const func = try lua.globals().get("test_func", Lua.Function);
+    defer func.deinit();
+
+    const result = try func.call(.{}, i32);
+    try expectEq(result.ok, 65);
+    try expect(BreakpointTest.breakpoint_hit);
+}
+
 test "globals access" {
     const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();

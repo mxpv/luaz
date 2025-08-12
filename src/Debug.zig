@@ -172,6 +172,40 @@
 //! const trace = debug.debugTrace();
 //! std.log.info("Stack trace:\n{s}", .{trace});
 //! ```
+//!
+//! ## Breakpoint Function for Lua Code
+//!
+//! You can implement a `breakpoint(line)` function in Lua code as well to set breakpoints
+//! dynamically:
+//! ```zig
+//! // Create Debug struct to pass as upvalue
+//! var debug = lua.debug();
+//!
+//! // Register a breakpoint function that Lua can call
+//! fn breakpointFunc(upv: Lua.Upvalues(*Debug), line: i32, enabled: ?bool) i32 {
+//!     const dbg = upv.value;
+//!     const enabled_val = enabled orelse true;
+//!
+//!     const stack_depth = dbg.stackDepth();
+//!
+//!     // Get function using high-level getInfo
+//!     const info = dbg.getInfo(stack_depth - 1, .{ .function = true });
+//!
+//!     const result = dbg.state.breakpoint(-1, line, enabled_val);
+//!     return if (result == -1) 0 else 0;
+//! }
+//!
+//! try lua.globals().setClosure("breakpoint", &debug, breakpointFunc);
+//!
+//! // Now Lua code can call breakpoint(line)
+//! const code =
+//!     \\function test_func()
+//!     \\    local x = 10
+//!     \\    breakpoint(4)    -- Set breakpoint on line 4
+//!     \\    return x * 2     -- Breakpoint will hit here
+//!     \\end
+//! ;
+//! ```
 
 const std = @import("std");
 const State = @import("State.zig");
@@ -218,13 +252,16 @@ pub const Info = struct {
         line: bool = false,
         /// Upvalue information (upvalue_count, param_count, is_vararg)
         upvalues: bool = false,
+        /// Function closure (pushes function onto stack)
+        function: bool = false,
 
         /// Convert fields to string format for lua_getinfo()
         pub fn toString(comptime self: Fields) [:0]const u8 {
             return (if (self.name) "n" else "") ++
                 (if (self.source) "s" else "") ++
                 (if (self.line) "l" else "") ++
-                (if (self.upvalues) "ua" else "");
+                (if (self.upvalues) "ua" else "") ++
+                (if (self.function) "f" else "");
         }
 
         /// Returns a Fields struct with all fields enabled
@@ -234,6 +271,7 @@ pub const Info = struct {
                 .source = true,
                 .line = true,
                 .upvalues = true,
+                .function = true,
             };
         }
     };
