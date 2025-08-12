@@ -4,6 +4,26 @@
 //! single-stepping, and execution interruption. The debug system uses a callback-based
 //! approach where the VM notifies your application when debug events occur.
 //!
+//! ## Debug Level Requirement
+//!
+//! For local variable inspection (`getLocal`/`setLocal`) to work, Lua code must be
+//! compiled with debug level 2. This provides full debug information including
+//! local and upvalue names:
+//!
+//! ```zig
+//! const Compiler = @import("Compiler.zig");
+//! var options = Compiler.Opts{};
+//! options.dbg_level = 2;  // Required for local variable debugging
+//!
+//! const result = try Compiler.compile(source, options);
+//! // ... execute the bytecode
+//! ```
+//!
+//! Debug levels:
+//! - `0` - no debugging support
+//! - `1` - line info & function names only; sufficient for backtraces
+//! - `2` - full debug info with local & upvalue names; necessary for debugger
+//!
 //! ## Debug Flow
 //!
 //! The debugging process follows this flow:
@@ -85,7 +105,7 @@
 //!
 //! ## Inspecting Call Stack
 //!
-//! Use `getInfo()` and `getArg()` to examine the call stack at any time:
+//! Use `getInfo()`, `getArg()`, and `getLocal()` to examine the call stack at any time:
 //! ```zig
 //! const debug = lua.debug();
 //! const depth = debug.stackDepth();
@@ -102,6 +122,13 @@
 //! // Get function arguments (useful in debug breakpoints)
 //! const arg1 = debug.getArg(0, 1, i32); // First argument as i32
 //! const arg2 = debug.getArg(0, 2, []const u8); // Second argument as string
+//!
+//! // Get and modify local variables
+//! const local1 = debug.getLocal(0, 1, i32); // Get first local variable
+//! if (local1) |l| {
+//!     std.log.info("Local '{}' = {}", .{ l.name, l.value });
+//! }
+//! const name = debug.setLocal(0, 1, i32, 42); // Set first local to 42
 //! ```
 //!
 //! ## Single-Step Debugging
@@ -469,6 +496,99 @@ pub fn getArg(self: Self, level: i32, n: i32, comptime T: type) ?T {
     return stack.toValue(Lua{ .state = self.state.* }, T, -1);
 }
 
+/// Get local variable at a specific stack level and position.
+///
+/// Retrieves the value of local variable `n` from the function at stack `level`.
+/// Level 0 is the current function, level 1 is the caller, and so on.
+/// Local variables are numbered starting from 1 (first local variable).
+///
+/// IMPORTANT: Requires debug level 2 for Lua code compilation. Local variables
+/// are only accessible when the code was compiled with full debug information.
+/// Use `Compiler.Opts{ .dbg_level = 2 }` when compiling Lua source.
+///
+/// Returns a struct containing both the variable name and value, or null if:
+/// - The stack level is invalid
+/// - The local variable number is out of range
+/// - The function at that level is a native/C function
+/// - The code was not compiled with debug level 2
+///
+/// Example:
+/// ```zig
+/// // In a debug breakpoint callback:
+/// const debug = lua.debug();
+/// const local1 = debug.getLocal(0, 1, i32); // Get first local as i32
+/// if (local1) |l| {
+///     std.log.info("Local variable '{}' = {}", .{ l.name, l.value });
+/// }
+/// ```
+///
+/// Parameters:
+/// - `level`: Stack level (0 = current function, 1 = caller, etc.)
+/// - `n`: Local variable number (1-based indexing)
+/// - `T`: Type to convert the variable value to
+///
+/// Returns: Struct with name and converted value, or null if not available
+pub fn getLocal(self: Self, level: i32, n: i32, comptime T: type) ?struct { name: [:0]const u8, value: T } {
+    const name_ptr = self.state.getLocal(level, n);
+    if (name_ptr == null) {
+        return null; // Local variable not available
+    }
+
+    // Get the value from the top of the stack and pop it
+    defer self.state.pop(1);
+
+    const value = stack.toValue(Lua{ .state = self.state.* }, T, -1) orelse return null;
+    const name = name_ptr.?;
+
+    return .{ .name = name, .value = value };
+}
+
+/// Set local variable at a specific stack level and position.
+///
+/// Sets the value of local variable `n` in the function at stack `level`.
+/// Level 0 is the current function, level 1 is the caller, and so on.
+/// Local variables are numbered starting from 1 (first local variable).
+///
+/// IMPORTANT: Requires debug level 2 for Lua code compilation. Local variables
+/// are only accessible when the code was compiled with full debug information.
+/// Use `Compiler.Opts{ .dbg_level = 2 }` when compiling Lua source.
+///
+/// Returns the name of the variable that was set, or null if:
+/// - The stack level is invalid
+/// - The local variable number is out of range
+/// - The function at that level is a native/C function
+/// - The code was not compiled with debug level 2
+///
+/// Example:
+/// ```zig
+/// // In a debug breakpoint callback:
+/// const debug = lua.debug();
+/// const name = debug.setLocal(0, 1, i32, 42); // Set first local to 42
+/// if (name) |var_name| {
+///     std.log.info("Set local variable '{s}' = 42", .{var_name});
+/// }
+/// ```
+///
+/// Parameters:
+/// - `level`: Stack level (0 = current function, 1 = caller, etc.)
+/// - `n`: Local variable number (1-based indexing)
+/// - `T`: Type of the value to set
+/// - `value`: The value to set the local variable to
+///
+/// Returns: Name of the variable that was set, or null if not available
+pub fn setLocal(self: Self, level: i32, n: i32, comptime T: type, value: T) ?[:0]const u8 {
+    // Push the value onto the stack first
+    stack.push(Lua{ .state = self.state.* }, value);
+
+    const name_ptr = self.state.setLocal(level, n);
+    if (name_ptr == null) {
+        // setLocal pops the value even on failure, so we don't need to pop it
+        return null; // Local variable not available
+    }
+
+    return name_ptr.?;
+}
+
 // Tests for debug functionality
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
@@ -798,3 +918,98 @@ test "getArg in debug breakpoint" {
     // Verify breakpoint was hit and arguments were tested
     try expect(ArgumentTester.breakpoint_hit);
 }
+
+test "getLocal and setLocal in debug breakpoint" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    // Callback to test getLocal when breakpoint is hit
+    const LocalVariableTester = struct {
+        var breakpoint_hit: bool = false;
+
+        pub fn debugbreak(self: *@This(), debug: *Self, ar: Info) void {
+            _ = self;
+            _ = ar;
+            if (!breakpoint_hit) {
+                breakpoint_hit = true;
+
+                // Test getting function parameters (local variables 1-2)
+                const param1 = debug.getLocal(0, 1, i32);
+                std.debug.assert(param1.?.value == 100);
+
+                const param2 = debug.getLocal(0, 2, i32);
+                std.debug.assert(param2.?.value == 200);
+
+                // Test getting local variables (local variables 3-5)
+                const local_x = debug.getLocal(0, 3, i32);
+                std.debug.assert(local_x.?.value == 150);
+
+                const local_y = debug.getLocal(0, 4, i32);
+                std.debug.assert(local_y.?.value == 250);
+
+                const local_sum = debug.getLocal(0, 5, i32);
+                std.debug.assert(local_sum.?.value == 400);
+
+                // Test setting a local variable to a new value (modify x)
+                const set_name = debug.setLocal(0, 3, i32, 999);
+                std.debug.assert(set_name != null);
+
+                // Verify the local was actually changed
+                const local_x_after = debug.getLocal(0, 3, i32);
+                std.debug.assert(local_x_after.?.value == 999);
+
+                // Test getting non-existent local variable (should be null)
+                const local_invalid = debug.getLocal(0, 10, i32);
+                std.debug.assert(local_invalid == null);
+
+                // Test setting non-existent local variable (should be null)
+                const set_invalid = debug.setLocal(0, 10, i32, 42);
+                std.debug.assert(set_invalid == null);
+
+                // Test invalid level (should be null)
+                const invalid_level = debug.getLocal(999, 1, i32);
+                std.debug.assert(invalid_level == null);
+            }
+        }
+    };
+
+    var tester = LocalVariableTester{};
+    lua.setCallbacks(&tester);
+
+    // Create a test function with known local variables
+    const code =
+        \\function testLocals(param1, param2)
+        \\    local x = param1 + 50
+        \\    local y = param2 + 50
+        \\    local sum = x + y
+        \\    return sum  -- Breakpoint will be set on this line
+        \\end
+    ;
+
+    // Compile with debug level 2 like the conformance test
+    const Compiler = @import("Compiler.zig");
+    var options = Compiler.Opts{};
+    options.dbg_level = 2;
+
+    const result = try Compiler.compile(code, options);
+    defer result.deinit();
+    switch (result) {
+        .ok => |bytecode| {
+            _ = try lua.exec(bytecode, void);
+        },
+        .err => |message| {
+            std.debug.print("Compile error: {s}\n", .{message});
+            return error.CompileError;
+        },
+    }
+
+    const func = try lua.globals().get("testLocals", Lua.Function);
+    defer func.?.deinit();
+    _ = try func.?.setBreakpoint(5, true); // Line 5: return sum
+
+    const call_result = try func.?.call(.{ 100, 200 }, i32);
+    try expectEqual(call_result.ok.?, 400);
+
+    try expect(LocalVariableTester.breakpoint_hit);
+}
+
