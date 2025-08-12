@@ -227,11 +227,12 @@ Functions return error unions or optionals for type-safe error handling.
 Keep commit messages brief and to the point:
 - Use a short, descriptive commit title (50 characters or less)
 - Include a brief commit body that summarizes changes in 1-3 sentences when needed (wrap at 120 characters)
-- NEVER include any automated signatures, generation notices, or AI attribution in commit messages or pull requests
-- NEVER add "Generated with Claude Code" or similar AI generation notices
-- NEVER add "Co-Authored-By: Claude" or any AI co-author attribution
-- NEVER add any reference to AI assistance, generation, or automation in commit messages
-- NEVER use heredoc patterns that include these forbidden signatures
+- ABSOLUTELY FORBIDDEN: ANY AI attribution, signatures, or generation notices in commits or PRs
+- ABSOLUTELY FORBIDDEN: "Generated with Claude Code" or any similar AI generation notices
+- ABSOLUTELY FORBIDDEN: "Co-Authored-By: Claude" or any AI co-author attribution  
+- ABSOLUTELY FORBIDDEN: Any reference to AI assistance, generation, or automation
+- ABSOLUTELY FORBIDDEN: Heredoc patterns containing these forbidden signatures
+- CRITICAL: These restrictions are NON-NEGOTIABLE and must be strictly enforced
 - Keep commits focused and atomic - one logical change per commit
 - Ensure unit tests pass
 - Before committing: verify all documentation examples match the current API signatures and behavior
@@ -246,7 +247,8 @@ Keep PR descriptions concise and focused:
 - Avoid verbose sections like "Changes Made", "Test Plan", or extensive bullet lists
 - Focus on what the change does and why, not exhaustive implementation details
 - Include code examples only when they help demonstrate usage or key functionality
-- NEVER include any AI generation notices, signatures, or attribution in pull requests
+- ABSOLUTELY FORBIDDEN: ANY AI generation notices, signatures, or attribution in pull requests
+- ABSOLUTELY FORBIDDEN: "Generated with Claude Code" or any automation references
 - NEVER add "Generated with Claude Code" or similar automation references
 - Before creating PR: ensure all documentation examples are tested and work with the current API
 - IMPORTANT: Always verify that the guided tour in README.md compiles and is up to date before creating a pull request
