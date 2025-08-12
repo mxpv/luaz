@@ -39,14 +39,28 @@ directories.
 ### High-Level API (`src/lua.zig`)
 The main `Lua` struct provides an idiomatic Zig interface with automatic type conversions:
 - `init()` - Initialize Lua state with optional custom allocator
+- `deinit()` - Clean up Lua state and free resources
+- `openLibs()` - Open all standard Lua libraries (math, string, table, etc.)
 - `enable_codegen()` - Enable Luau's JIT code generator for improved performance
 - `globals()` - Access to the global environment table for setting/getting global variables
 - `eval()` - Compile and execute Lua source code in one step
 - `exec()` - Execute pre-compiled bytecode
 - `createTable()` - Create new Lua tables with optional size hints
+- `createMetaTable()` - Create metatable for a specific type with automatic method registration
+- `createThread()` - Create new Lua thread/coroutine for concurrent execution
 - `dumpStack()` - Debug utility to inspect the current Lua stack state
 - `registerUserData()` - Register Zig structs as Lua userdata with automatic method binding
 - `setAssertHandler()` - Set custom handler for Luau VM assertions
+- `setCallbacks()` - Set VM callbacks for events like function calls and returns
+- `sandbox()` - Enable sandbox mode for restricted execution environment
+- `debug()` - Access debug functionality for breakpoints and tracing
+- `gc()` - Access garbage collector control for memory management
+- `top()` - Get current stack top position
+- `status()` - Get coroutine/thread execution status
+- `isYieldable()` - Check if current state can yield
+- `reset()` / `isReset()` - Reset state to initial condition
+- `getData()` / `setData()` - Manage user-defined data pointer
+- `isThread()` - Check if this state is a thread/coroutine
 
 ### Type System Integration
 The library provides seamless conversion between Zig and Lua types through its high-level API:
@@ -57,17 +71,33 @@ The library provides seamless conversion between Zig and Lua types through its h
 - Table wrapper (`Table`) provides safe access to Lua tables with automatic type conversion
 - Function wrapper (`Function`) provides direct access to Lua functions with automatic type conversion
 - Generic Value type for runtime Lua value handling when types are unknown at compile time
+- Varargs iterator for handling variadic function arguments
+- StrBuf for efficient string building and concatenation
+- Result wrapper for function return values with multiple results support
 
 ### Table Operations
 The library provides table operations through the `Table` type:
 - Raw operations (`setRaw`/`getRaw`) bypass metamethods like `__index` and `__newindex` for direct table access
 - Non-raw operations (`set`/`get`) invoke metamethods when present, providing full Lua semantics
+- Closure setting (`setClosure`) sets functions with upvalues for persistent state
 - Function calling (`call`) retrieves and calls functions stored in tables with automatic argument and return type handling
 - Function compilation (`compile`) compiles table functions to native code via JIT for better performance
 - Table length (`len`) returns table length following Lua semantics, including metamethod support
-- Table iteration (`next`) provides entry-by-entry iteration with automatic resource management
+- Table iteration (`iterator`) creates an iterator for traversing table entries
+- Readonly control (`setReadonly`/`isReadonly`) manages table mutability
+- Safe environment (`setSafeEnv`) marks table as safe execution environment
+- Metatable management (`setMetaTable`/`getMetaTable`) controls table behavior
+- Table utilities (`clear`/`clone`) for resetting and duplicating tables
 - Global access via `lua.globals()` returns a `Table` for interacting with the global environment
 - Tables are reference-counted and must be explicitly released with `deinit()` (except globals table)
+
+### Function Operations
+The library provides function operations through the `Function` type:
+- Function calling (`call`) invokes the function with automatic type conversion
+- JIT compilation (`compile`) compiles the function to native code for better performance
+- Function cloning (`clone`) creates a duplicate of the function
+- Breakpoint support (`setBreakpoint`) for debugging with line-level control
+- Functions are reference-counted and must be explicitly released with `deinit()`
 
 ### UserData Support
 The library provides automatic compile-time binding generation for Zig structs:
@@ -139,6 +169,51 @@ Key test files for understanding debug features:
 - `luau/tests/Conformance.test.cpp` - Contains C++ test code showing how to use `lua_break`, `debuginterrupt`, and breakpoint functionality
 - `luau/tests/conformance/interrupt.luau` - Luau script for testing interrupt functionality
 - `luau/tests/conformance/debugger.luau` - Luau script demonstrating breakpoint usage
+
+## Using Subagents
+
+When working with Claude Code on this repository, use specialized subagents for complex or multi-step tasks. These agents can work in sequence to handle complete workflows.
+
+### When to Use Subagents
+- Use the `general-purpose` agent for:
+  - Searching for specific patterns or implementations across the codebase
+  - Investigating Luau submodule implementation details
+  - Complex debugging tasks requiring multiple file searches
+  - Understanding how specific features are implemented in the C++ code
+
+- Use the `committer` agent for:
+  - Creating git commits with properly formatted messages
+  - Ensuring commits follow the repository's strict guidelines (no AI attribution)
+  - Staging and committing changes atomically
+
+- Use the `note-keeper` agent for:
+  - Updating the CHANGELOG.md with new features or changes
+  - Maintaining consistent changelog format
+  - Documenting user-facing changes
+
+- Use the `guide` agent for:
+  - Automatically triggered when CHANGELOG.md is modified in a commit
+  - Ensuring documentation consistency after changes
+  - Verifying examples and guides are up to date
+
+- Use the `releaser` agent for:
+  - Creating new releases with proper versioning
+  - Generating release notes from changelog
+  - Tagging releases appropriately
+
+### Sequential Agent Workflows
+These agents often work together in sequence:
+1. Make code changes → `committer` creates the commit
+2. If CHANGELOG.md is updated → `guide` automatically verifies documentation
+3. When ready for release → `releaser` handles the release process
+
+### Subagent Usage Examples
+- "Search for all uses of lua_break in the codebase" - Use general-purpose agent
+- "Find how metamethods are implemented" - Use general-purpose agent  
+- "Commit these changes" - Use committer agent
+- "Update the changelog" - Use note-keeper agent
+- "Make a new release" - Use releaser agent
+- "Create a PR for this feature" - Use committer agent
 
 ## Development Patterns
 
