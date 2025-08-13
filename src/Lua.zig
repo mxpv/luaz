@@ -2378,7 +2378,6 @@ pub fn dumpStack(self: Self, allocator: std.mem.Allocator) ![]u8 {
     return list.toOwnedSlice();
 }
 
-
 /// Apply sandbox restrictions to create a secure execution environment.
 ///
 /// This method performs the following security hardening operations:
