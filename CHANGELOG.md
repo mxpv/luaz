@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- Updated Luau dependency from version 0.684 to 0.686
+
 ## [0.3.0] - 2025-08-12
 
 ### Added
