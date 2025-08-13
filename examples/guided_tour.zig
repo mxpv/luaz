@@ -15,6 +15,7 @@
 //! - Control garbage collection for memory management
 //! - Work with coroutines and threads
 //! - Build strings efficiently with StrBuf
+//! - Work with binary data using native Buffer type
 //! - Use callbacks for monitoring VM events
 //! - Debug Lua code with breakpoints and variable inspection
 
@@ -653,6 +654,112 @@ pub fn main() !void {
         try globals.setClosure("formatMessage", &lua, formatMessage);
         const result = try lua.eval("return formatMessage('Alice', 25)", .{}, []const u8);
         print("From function: {s}\n", .{result.ok.?});
+    }
+
+    // Binary Data with Native Buffer type
+    {
+        print("\n-- Native Buffer for Binary Data --\n", .{});
+
+        // Create a 1KB buffer for binary data manipulation
+        var buf = try lua.createBuffer(1024);
+        defer buf.deinit();
+
+        print("Created buffer with {} bytes of capacity\n", .{buf.len()});
+
+        // Direct memory access - write some binary data pattern
+        for (buf.data, 0..) |*byte, i| {
+            byte.* = @intCast((i * 3) % 256); // Create a pattern
+        }
+
+        // Copy some structured data using memcpy
+        const header = "LUAZ";
+        const version: u32 = 0x01020304;
+        @memcpy(buf.data[0..header.len], header);
+        std.mem.writeInt(u32, buf.data[header.len .. header.len + 4], version, .little);
+
+        print("Header: {s}\n", .{buf.data[0..4]});
+        print("Version: 0x{X:0>8}\n", .{std.mem.readInt(u32, buf.data[4..8], .little)});
+
+        // Use std.io patterns for structured reading/writing
+        var stream = buf.stream();
+
+        // Seek past header and write structured data
+        try stream.seekTo(16);
+
+        // Write various data types using the stream writer
+        const writer = stream.writer();
+        try writer.writeInt(u16, 0xABCD, .big); // 16-bit big-endian
+        try writer.writeInt(u32, 0x12345678, .little); // 32-bit little-endian
+        try writer.writeAll("Binary data chunk"); // Raw bytes
+        // Write float as raw bytes (IEEE 754 double)
+        const write_float_bytes = std.mem.toBytes(@as(f64, 3.14159));
+        try writer.writeAll(&write_float_bytes);
+
+        // Read back the data using stream reader
+        try stream.seekTo(16);
+        const reader = stream.reader();
+        const val16 = try reader.readInt(u16, .big);
+        const val32 = try reader.readInt(u32, .little);
+
+        var text_buf: [17]u8 = undefined;
+        _ = try reader.read(&text_buf);
+        // Read float as raw bytes and convert back
+        var float_bytes: [8]u8 = undefined;
+        _ = try reader.read(&float_bytes);
+        const float_val = std.mem.bytesToValue(f64, &float_bytes);
+
+        print("Read back: u16=0x{X}, u32=0x{X}, text='{s}', float={d:.5}\n", .{ val16, val32, text_buf, float_val });
+
+        // Expose buffer to Lua for interoperability with buffer library
+        const globals = lua.globals();
+        try globals.set("mybuffer", buf);
+
+        // Use Lua's buffer library functions on our native buffer
+        _ = try lua.eval(
+            \\-- Check buffer length from Lua
+            \\print("Buffer length from Lua: " .. buffer.len(mybuffer))
+            \\
+            \\-- Read our header bytes using Lua buffer functions
+            \\print("First 4 bytes: " .. buffer.readu8(mybuffer, 0) .. ", " .. 
+            \\                           buffer.readu8(mybuffer, 1) .. ", " .. 
+            \\                           buffer.readu8(mybuffer, 2) .. ", " .. 
+            \\                           buffer.readu8(mybuffer, 3))
+            \\
+            \\-- Write some data from Lua
+            \\buffer.writeu32(mybuffer, 8, 0xDEADBEEF)
+            \\print("Wrote 0xDEADBEEF at offset 8")
+            \\
+            \\-- Read back the u32 version we wrote earlier (should be modified now)
+            \\local modified_version = buffer.readu32(mybuffer, 8)
+            \\print("Modified version: 0x" .. string.format("%08X", modified_version))
+        , .{}, void);
+
+        // Verify the change from Zig side
+        const modified_val = std.mem.readInt(u32, buf.data[8..12], .little);
+        print("Verified from Zig: 0x{X:0>8}\n", .{modified_val});
+
+        // Demonstrate Buffer as Value type for runtime handling
+        const buffer_table = lua.createTable(.{ .rec = 2 });
+        defer buffer_table.deinit();
+
+        try buffer_table.set("data_buffer", buf);
+
+        // Retrieve as specific Buffer type
+        const retrieved_buf = try buffer_table.get("data_buffer", luaz.Lua.Buffer);
+        defer retrieved_buf.deinit();
+        print("Retrieved buffer has length: {}\n", .{retrieved_buf.len()});
+
+        // Retrieve as generic Value type for runtime type checking
+        const value = try buffer_table.get("data_buffer", luaz.Lua.Value);
+        defer value.deinit();
+
+        switch (value) {
+            .buffer => |b| {
+                defer b.deinit();
+                print("Runtime type check: Found buffer with {} bytes\n", .{b.len()});
+            },
+            else => print("Unexpected value type\n", .{}),
+        }
     }
 
     // VM Callbacks for logging allocations
