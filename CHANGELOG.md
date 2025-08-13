@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 - Updated Luau dependency from version 0.684 to 0.686
+- Enhanced State.zig documentation with detailed stack operation descriptions and Lua 5.1 manual references
 
 ## [0.3.0] - 2025-08-12
 
