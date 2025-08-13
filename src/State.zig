@@ -1,4 +1,7 @@
 //! A low level Lua state wrapper providing access to Lua VM operations
+//!
+//! These are mostly low level wrappers with minimal changes to call them more conveniently from Zig.
+//! More extended information can be found at: https://www.lua.org/manual/5.1/
 
 const std = @import("std");
 const assert = std.debug.assert;
@@ -137,11 +140,18 @@ pub inline fn isThreadReset(self: Self) bool {
 // Stack Manipulation
 
 /// Convert a relative stack index to an absolute one
+///
+/// Converts the acceptable index `idx` into an equivalent absolute index.
+/// Positive indices are unchanged; negative indices are converted to positive ones
+/// by adding the current stack size.
 pub inline fn absIndex(self: Self, idx: i32) i32 {
     return c.lua_absindex(self.lua, idx);
 }
 
 /// Get the index of the top element in the stack
+///
+/// Returns the index of the top element in the stack. Because indices start at 1,
+/// this result is equal to the number of elements in the stack; in particular, 0 means an empty stack.
 pub inline fn getTop(self: Self) i32 {
     return c.lua_gettop(self.lua);
 }
@@ -160,36 +170,56 @@ pub inline fn setTop(self: Self, idx: i32) void {
 }
 
 /// Pop n elements from the stack
+///
+/// Pops `n` elements from the top of the stack. This is equivalent to
+/// calling `setTop(getTop() - n)`. Reduces the stack size by `n` elements.
 pub inline fn pop(self: Self, n: i32) void {
     c.lua_settop(self.lua, -(n) - 1);
 }
 
 /// Push a copy of the element at index idx onto the stack
+///
+/// Increases stack size by 1.
 pub inline fn pushValue(self: Self, idx: i32) void {
     c.lua_pushvalue(self.lua, idx);
 }
 
 /// Remove the element at index idx
+///
+/// Removes the element at the given valid index, shifting down the elements
+/// above this index to fill the gap. Decreases stack size by 1.
 pub inline fn remove(self: Self, idx: i32) void {
     c.lua_remove(self.lua, idx);
 }
 
 /// Insert the top element at index idx
+///
+/// Moves the top element into the given valid index, shifting up the elements
+/// above this index to open space. Does not change stack size.
 pub inline fn insert(self: Self, idx: i32) void {
     c.lua_insert(self.lua, idx);
 }
 
 /// Replace the element at index idx with the top element
+///
+/// Pops a value from the stack and sets it as the new value at the given index,
+/// without shifting any element. Decreases stack size by 1.
 pub inline fn replace(self: Self, idx: i32) void {
     c.lua_replace(self.lua, idx);
 }
 
 /// Check if the stack can grow to accommodate sz more elements
+///
+/// Ensures that there are at least `sz` free stack slots in the stack.
+/// Returns true if successful, false if it cannot fulfill the request.
 pub inline fn checkStack(self: Self, sz: i32) bool {
     return c.lua_checkstack(self.lua, sz) != 0;
 }
 
 /// Ensure stack can grow (allows unlimited frames)
+///
+/// Similar to `checkStack`, but allows unlimited call frames.
+/// If the stack cannot grow, it raises an error instead of returning false.
 pub inline fn rawCheckStack(self: Self, sz: i32) void {
     c.lua_rawcheckstack(self.lua, sz);
 }
@@ -202,6 +232,8 @@ pub inline fn xMove(from: Self, to: Self, n: i32) void {
 }
 
 /// Push element at idx from one state to another
+///
+/// Pushes a copy of the element at index `idx` from state `from` onto state `to`.
 pub inline fn xPush(from: Self, to: Self, idx: i32) void {
     c.lua_xpush(from.lua, to.lua, idx);
 }
@@ -209,11 +241,15 @@ pub inline fn xPush(from: Self, to: Self, idx: i32) void {
 // Type Checking
 
 /// Check if value at index is a number
+///
+/// Returns true if the value is a number or a string convertible to a number.
 pub inline fn isNumber(self: Self, idx: i32) bool {
     return c.lua_isnumber(self.lua, idx) != 0;
 }
 
 /// Check if value at index is a string
+///
+/// Returns true if the value is a string or a number (always convertible to string).
 pub inline fn isString(self: Self, idx: i32) bool {
     return c.lua_isstring(self.lua, idx) != 0;
 }
@@ -234,6 +270,8 @@ pub inline fn isUserdata(self: Self, idx: i32) bool {
 }
 
 /// Get the type of value at index
+///
+/// Returns `Type.none` for a non-valid index.
 pub inline fn getType(self: Self, idx: i32) Type {
     return @enumFromInt(c.lua_type(self.lua, idx));
 }
@@ -467,6 +505,8 @@ pub inline fn pushVector(self: Self, vec: [c.LUA_VECTOR_SIZE]f32) void {
 }
 
 /// Push a string slice onto the stack
+///
+/// The string may contain embedded zeros.
 pub inline fn pushLString(self: Self, s: []const u8) void {
     c.lua_pushlstring(self.lua, s.ptr, s.len);
 }
@@ -542,6 +582,9 @@ pub inline fn newUserdataTagged(self: Self, size: usize, tag: c_int) ?*anyopaque
 }
 
 /// Create new userdata
+///
+/// Allocates a new block of memory with the given size, pushes onto the stack a new full userdata
+/// with the block address, and returns this address.
 pub inline fn newUserdata(self: Self, size: usize) ?*anyopaque {
     return c.lua_newuserdatatagged(self.lua, size, 0);
 }
@@ -640,11 +683,16 @@ pub inline fn setSafeEnv(self: Self, idx: c_int, enabled: bool) void {
 }
 
 /// Get metatable and push onto stack
+///
+/// If the object at the given index has a metatable, pushes that metatable onto the stack and returns true.
+/// Otherwise, returns false and pushes nothing.
 pub inline fn getMetatable(self: Self, objindex: c_int) bool {
     return c.lua_getmetatable(self.lua, objindex) != 0;
 }
 
 /// Get function environment
+///
+/// Pushes onto the stack the environment table of the value at the given index.
 pub inline fn getFEnv(self: Self, idx: c_int) void {
     c.lua_getfenv(self.lua, idx);
 }
@@ -714,21 +762,31 @@ pub inline fn rawSetI(self: Self, idx: i32, n: i32) void {
 }
 
 /// Set metatable
+///
+/// Pops a table from the stack and sets it as the new metatable for the value at the given index.
+/// Returns false if the value at the given index is not userdata or table.
 pub inline fn setMetatable(self: Self, objindex: i32) bool {
     return c.lua_setmetatable(self.lua, objindex) != 0;
 }
 
 /// Set function environment
+///
+/// Pops a table from the stack and sets it as the new environment for the value at the given index.
+/// Returns false if the value at the given index is neither a function nor a thread nor a userdata.
 pub inline fn setFEnv(self: Self, idx: i32) bool {
     return c.lua_setfenv(self.lua, idx) != 0;
 }
 
 /// Set global variable
+///
+/// Pops a value from the stack and sets it as the new value of global `name`.
 pub inline fn setGlobal(self: Self, name: [*:0]const u8) void {
     c.lua_setfield(self.lua, GLOBALSINDEX, name);
 }
 
 /// Get global variable
+///
+/// Pushes onto the stack the value of the global `name`. Returns the type of that value.
 pub inline fn getGlobal(self: Self, name: [*:0]const u8) Type {
     return @enumFromInt(c.lua_getfield(self.lua, GLOBALSINDEX, name));
 }
@@ -741,6 +799,12 @@ pub inline fn load(self: Self, chunkname: [:0]const u8, data: []const u8, env: c
 }
 
 /// Call a function
+///
+/// To call a function you must use the following protocol:
+/// first, the function to be called is pushed onto the stack; then, the arguments
+/// are pushed in direct order. Finally you call this function.
+/// Both the function and arguments are popped from the stack when called.
+/// The function results are pushed onto the stack when the function returns.
 pub inline fn call(self: Self, nargs: u32, nresults: i32) void {
     c.lua_call(self.lua, @intCast(nargs), nresults);
 }
@@ -760,6 +824,10 @@ pub inline fn pcall(self: Self, nargs: u32, nresults: i32, errfunc: i32) Status 
 // Coroutine Operations
 
 /// Yield from coroutine
+///
+/// Yields a coroutine (thread). When a C function calls `yield` in this way, the running coroutine
+/// suspends its execution, and the call to `resume` that started this coroutine returns.
+/// The parameter `nresults` is the number of values from the stack that will be passed as results to `resume`.
 pub inline fn yield(self: Self, nresults: u32) Status {
     return @enumFromInt(c.lua_yield(self.lua, @intCast(nresults)));
 }
@@ -772,6 +840,10 @@ pub inline fn break_(self: Self) void {
 }
 
 /// Resume coroutine
+///
+/// Starts and resumes a coroutine in the given thread. To start a coroutine, you push onto the thread stack
+/// the main function plus any arguments; then you call this function with `narg` being the number of arguments.
+/// This call returns when the coroutine suspends or finishes its execution.
 pub inline fn resume_(self: Self, from: ?Self, narg: u32) Status {
     const from_lua = if (from) |f| f.lua else null;
     return @enumFromInt(c.lua_resume(self.lua, from_lua, @intCast(narg)));
@@ -812,6 +884,9 @@ pub inline fn coStatus(self: Self, co: Self) CoStatus {
 
 /// Control garbage collector
 ///
+/// Performs several tasks according to the value of `what`.
+/// For some operations, `data` provides additional arguments. Returns different values depending on the operation.
+///
 /// Luau uses an incremental garbage collector which does a little bit of work every so often,
 /// and at no point does it stop the world to traverse the entire heap.
 ///
@@ -848,19 +923,25 @@ pub inline fn raiseError(self: Self) noreturn {
 /// Table iteration
 ///
 /// Pops a key from the stack, and pushes a key–value pair from the table at the given index (the "next" pair
-/// after the given key).
-///
-/// If there are no more elements in the table, then `lua_next` returns 0 (and pushes nothing).
+/// after the given key). If there are no more elements in the table, then returns false (and pushes nothing).
+/// Returns true if a key-value pair was pushed.
 pub inline fn next(self: Self, idx: i32) bool {
     return c.lua_next(self.lua, idx) != 0;
 }
 
 /// Raw table iteration
+///
+/// Returns an iterator position for raw iteration over table at the given index.
+/// Use with successive calls to iterate through the table without invoking metamethods.
 pub inline fn rawIter(self: Self, idx: i32, iter: i32) i32 {
     return c.lua_rawiter(self.lua, idx, iter);
 }
 
 /// Concatenate values on stack
+///
+/// Concatenates the `n` values at the top of the stack, pops them, and leaves the result at the top.
+/// If `n` is 1, the result is the single value on the stack (that is, the function does nothing);
+/// if `n` is 0, the result is the empty string.
 pub inline fn concat(self: Self, n: u32) void {
     c.lua_concat(self.lua, @intCast(n));
 }
@@ -873,11 +954,17 @@ pub inline fn encodePointer(self: Self, p: usize) usize {
 // Comparison Operations
 
 /// Check equality of two values
+///
+/// Returns true if the two values in acceptable indices are equal,
+/// following the semantics of the Lua `==` operator (may call metamethods).
 pub inline fn equal(self: Self, idx1: i32, idx2: i32) bool {
     return c.lua_equal(self.lua, idx1, idx2) != 0;
 }
 
 /// Raw equality check (no metamethods)
+///
+/// Returns true if the two values in acceptable indices are primitively equal
+/// (without calling metamethods).
 pub inline fn rawEqual(self: Self, idx1: i32, idx2: i32) bool {
     return c.lua_rawequal(self.lua, idx1, idx2) != 0;
 }
@@ -916,6 +1003,9 @@ pub inline fn unref(self: Self, ref_id: i32) void {
 }
 
 /// Get value from reference
+///
+/// Pushes onto the stack the value associated with the reference `ref_id` in the registry.
+/// Returns the type of the pushed value.
 pub inline fn getRef(self: Self, ref_id: i32) Type {
     return @enumFromInt(c.lua_rawgeti(self.lua, REGISTRYINDEX, ref_id));
 }
@@ -961,6 +1051,8 @@ pub inline fn getLightUserdataName(self: Self, tag: i32) ?[:0]const u8 {
 // Function Operations
 
 /// Clone function at index
+///
+/// Pushes a copy of the function at the given index onto the stack.
 pub inline fn cloneFunction(self: Self, idx: i32) void {
     c.lua_clonefunction(self.lua, idx);
 }
@@ -968,11 +1060,15 @@ pub inline fn cloneFunction(self: Self, idx: i32) void {
 // Table Utilities
 
 /// Clear all entries from table
+///
+/// Clears all entries from the table at the given index. The table remains on the stack.
 pub inline fn clearTable(self: Self, idx: i32) void {
     c.lua_cleartable(self.lua, idx);
 }
 
 /// Clone table at index
+///
+/// Pushes a copy of the table at the given index onto the stack.
 pub inline fn cloneTable(self: Self, idx: i32) void {
     c.lua_clonetable(self.lua, idx);
 }
