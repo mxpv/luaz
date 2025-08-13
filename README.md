@@ -266,6 +266,14 @@ const greeting = result.ok.?;
 > [!WARNING]
 > This library is still evolving and the API is not stable. Backward incompatible changes may be introduced up until the 1.0 release. Consider pinning to a specific commit or tag if you need stability.
 
+## 🔧 Build Configuration
+
+### Vector Size
+By default, luaz is built with 4-component vectors. To customize:
+```bash
+zig build -Dvector-size=3  # Build with 3-component vectors
+```
+
 ## 🛠️ Using Luau Tools
 
 The build system provides prebuilt Luau tools that can be invoked directly:

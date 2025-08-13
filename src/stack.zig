@@ -792,13 +792,24 @@ test "push and pop vector types" {
     const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
-    const vec3 = @Vector(3, f32){ 1.0, 2.0, 3.0 };
-    push(&lua.state, vec3);
-    try expect(lua.state.isVector(-1));
-    const popped_vec3 = pop(lua, @Vector(3, f32)).?;
-    try expectEq(popped_vec3[0], 1.0);
-    try expectEq(popped_vec3[1], 2.0);
-    try expectEq(popped_vec3[2], 3.0);
+    if (State.VECTOR_SIZE == 3) {
+        const vec = @Vector(3, f32){ 1.0, 2.0, 3.0 };
+        push(&lua.state, vec);
+        try expect(lua.state.isVector(-1));
+        const popped_vec = pop(lua, @Vector(3, f32)).?;
+        try expectEq(popped_vec[0], 1.0);
+        try expectEq(popped_vec[1], 2.0);
+        try expectEq(popped_vec[2], 3.0);
+    } else {
+        const vec = @Vector(4, f32){ 1.0, 2.0, 3.0, 4.0 };
+        push(&lua.state, vec);
+        try expect(lua.state.isVector(-1));
+        const popped_vec = pop(lua, @Vector(4, f32)).?;
+        try expectEq(popped_vec[0], 1.0);
+        try expectEq(popped_vec[1], 2.0);
+        try expectEq(popped_vec[2], 3.0);
+        try expectEq(popped_vec[3], 4.0);
+    }
 
     try expectEq(lua.state.getTop(), 0);
 }

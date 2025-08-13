@@ -46,6 +46,7 @@ jobs:
         key: zig-cache-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('build.zig', 'build.zig.zon') }}
 
     - run: zig build test --summary all
+    - run: zig build test -Dvector-size=3 --summary all
 
     - run: zig build luau-compile -- --help
     - run: zig build luau-analyze -- --help

@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Configurable vector size build option (`-Dvector-size=3` or `4`, default 4)
+
 ### Changed
 - Updated Luau dependency from version 0.684 to 0.686
 

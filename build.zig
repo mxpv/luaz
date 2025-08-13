@@ -25,7 +25,14 @@ pub fn build(b: *std.Build) !void {
 
     const opts = .{
         .cover = b.option(bool, "coverage", "Generate test coverage (requires kcov)") orelse false,
+        .vector_size = b.option(u8, "vector-size", "Luau vector size (3 or 4, default 4)") orelse 4,
     };
+
+    // Validate vector size
+    if (opts.vector_size != 3 and opts.vector_size != 4) {
+        std.log.err("Invalid vector size: {}. Must be either 3 or 4", .{opts.vector_size});
+        return error.InvalidVectorSize;
+    }
 
     // Luau VM lib
     const luau_vm = blk: {
@@ -34,6 +41,7 @@ pub fn build(b: *std.Build) !void {
         try addSrcFiles(b, mod, "luau/VM/src", flags);
 
         mod.addCMacro("LUA_USE_LONGJMP", "1");
+        mod.addCMacro("LUA_VECTOR_SIZE", b.fmt("{d}", .{opts.vector_size}));
 
         mod.addIncludePath(b.path("luau/VM/include"));
         mod.addIncludePath(b.path("luau/VM/src"));
@@ -57,6 +65,7 @@ pub fn build(b: *std.Build) !void {
 
         try addSrcFiles(b, mod, "luau/CodeGen/src", flags);
 
+        mod.addCMacro("LUA_VECTOR_SIZE", b.fmt("{d}", .{opts.vector_size}));
         mod.addIncludePath(b.path("luau/CodeGen/include"));
         mod.addIncludePath(b.path("luau/Common/include"));
         mod.addIncludePath(b.path("luau/VM/src"));
@@ -175,6 +184,7 @@ pub fn build(b: *std.Build) !void {
             .file = b.path("src/handler.cpp"),
             .flags = flags,
         });
+        mod.addCMacro("LUA_VECTOR_SIZE", b.fmt("{d}", .{opts.vector_size}));
         mod.addIncludePath(b.path("luau/VM/include"));
         mod.addIncludePath(b.path("luau/Common/include"));
         mod.addIncludePath(b.path("src"));
@@ -219,6 +229,7 @@ pub fn build(b: *std.Build) !void {
             .file = b.path("src/handler.cpp"),
             .flags = flags,
         });
+        unit_tests.root_module.addCMacro("LUA_VECTOR_SIZE", b.fmt("{d}", .{opts.vector_size}));
         unit_tests.root_module.addIncludePath(b.path("luau/VM/include"));
         unit_tests.root_module.addIncludePath(b.path("luau/Common/include"));
         unit_tests.root_module.addIncludePath(b.path("src"));
