@@ -158,17 +158,8 @@ try table.setClosure("transform", .{ 2.0, 10.0 }, transform);
 
 ## Luau Submodule
 
-This repository includes the full Luau source code as a Git submodule located at `/Users/mpavlenko/Github/luaz/luau`. When investigating Luau implementation details, behavior, or test patterns, use this submodule instead of searching external repositories. The submodule contains:
-
-- VM source code in `luau/VM/src/`
-- Test files in `luau/tests/` (C++ unit tests) and `luau/tests/conformance/` (Luau test scripts)
-- Debug API implementation files like `ldebug.cpp`, `ldo.cpp`, and the main header `lua.h`
-- Conformance tests that demonstrate proper usage patterns for debug functionality
-
-Key test files for understanding debug features:
-- `luau/tests/Conformance.test.cpp` - Contains C++ test code showing how to use `lua_break`, `debuginterrupt`, and breakpoint functionality
-- `luau/tests/conformance/interrupt.luau` - Luau script for testing interrupt functionality
-- `luau/tests/conformance/debugger.luau` - Luau script demonstrating breakpoint usage
+The repository includes the full Luau source code as a Git submodule at `luau/`. 
+For investigating implementation details, see the `general-purpose` agent configuration.
 
 ## Using Subagents
 
@@ -215,11 +206,11 @@ These agents often work together in sequence:
 ### Subagent Usage Examples
 - "Search for all uses of lua_break in the codebase" - Use general-purpose agent
 - "Find how metamethods are implemented" - Use general-purpose agent  
-- "Commit these changes" - Use committer agent
-- "Update the changelog" - Use note-keeper agent
-- "Update luau" - Use luau-updater agent
-- "Make a new release" - Use releaser agent
-- "Create a PR for this feature" - Use committer agent
+- "Commit these changes" - Use committer agent (handles all commit guidelines automatically)
+- "Update the changelog" - Use note-keeper agent (maintains format consistency)
+- "Update luau" - Use luau-updater agent (handles submodule updates)
+- "Make a new release" - Use releaser agent (manages versioning and tagging)
+- "Create a PR for this feature" - Use committer agent (enforces PR guidelines)
 
 ## Development Patterns
 
@@ -227,75 +218,19 @@ These agents often work together in sequence:
 The library is currently in pre-1.0 development. Breaking changes are acceptable and encouraged to improve the API design. Backward compatibility is not a concern until version 1.0 is released.
 
 ### Code Style
-Write idiomatic Zig code following the established patterns in the codebase:
-- Use explicit error handling with error unions and optionals
-- Leverage Zig's comptime features for type safety and zero-cost abstractions
-- Follow Zig naming conventions (camelCase for functions, PascalCase for types)
-- Prefer explicit memory management over implicit allocation
-- Do not write implementation comments that explain why code was written a certain way or reference previous implementations
-- NEVER solve problems by removing code - fix issues through proper implementation rather than deletion
-- When encountering errors or unexpected behavior, investigate the underlying C++ implementation in the Luau submodule to understand root causes
-- Always examine relevant files in `luau/VM/src/`, `luau/Compiler/src/`, and `luau/tests/` to understand proper behavior and constraints
-- Fix issues by understanding and working within the constraints of the underlying Luau implementation
-- Always run `zig fmt .` after making code changes to ensure consistent formatting
+See the `general-purpose` agent configuration for detailed code style guidelines and development patterns.
 
 ### Testing
-Unit tests should be written against public APIs in `tests.zig`. New functionality must include
-corresponding unit tests. Tests use `&std.testing.allocator` for memory leak detection.
-
-Keep unit tests minimal and focused. Tests must demonstrate that functionality works.
-Write clear, concise tests that verify the feature without unnecessary complexity.
-Keep unit tests short and understandable.
-
-Important testing guidelines:
-- `tests.zig` should include unit tests that test only public APIs
-- Avoid using functions from `stack.zig` and `State.zig` in `tests.zig`
-- Never use `stack.*` functions when testing public APIs - use only the high-level API methods
-- Focus on testing the high-level API provided by `lua.zig`
-- NEVER write verbose, excessive tests with multiple redundant assertions
-- Each test must be minimal - call the function once with meaningful inputs and assert the essential results
-- Avoid testing multiple variations of the same thing in one test
-- Don't write obvious assertions or duplicate validations already covered elsewhere
-- Keep tests short, focused, and easy to understand
-
-CRITICAL: Tests MUST prove functionality works:
-- NEVER write tests that just call a function and ignore the result
-- NEVER write tests with `try expect(true)` or other always-passing assertions
-- NEVER write tests that just check "it doesn't crash" - that proves nothing
-- Tests MUST verify actual behavior: if a function returns data, check that data is correct
-- Tests MUST have assertions that can actually fail if the implementation is broken
-- Example of BAD test: calling debugTrace() and ignoring result or just checking it's not null
-- Example of GOOD test: calling debugTrace() during actual execution and verifying the trace contains expected function names, line numbers, or stack frames
-- If you can comment out the entire function body and the test still passes, the test is useless
-- Each test must validate the actual purpose of the function being tested
+Unit tests should be written against public APIs in `tests.zig`. New functionality must include corresponding unit tests.
+See the `general-purpose` agent configuration for detailed testing guidelines and patterns.
 
 ### Documentation
-Keep documentation for public interfaces current but reasonably sized. The codebase uses Zig's built-in doc comments
-(`///` syntax) extensively. When adding or modifying public functions, ensure documentation includes:
-- Clear description of functionality and purpose
-- Parameter descriptions and types
-- Return value explanations
-- Usage examples where helpful
-- Error conditions and handling
-
-Keep documentation concise and focused. Don't write extensive documentation - aim for reasonable size that covers the essentials without being verbose.
-
-Documentation Formatting:
-- Avoid empty lines in doc comments (lines with only `///`) as they will be skipped during documentation generation.
-- NEVER use bold formatting (** **) anywhere in the repository - not in comments, not in markdown files, nowhere
-- This includes **Important**, **Note**, **Warning**, or any other bold text
+Keep documentation for public interfaces current but reasonably sized. The codebase uses Zig's built-in doc comments (`///` syntax).
+See the `general-purpose` agent configuration for documentation formatting guidelines.
 
 ### Memory Management
-- Lua states must be explicitly deinitialized with `deinit()`
-- Compilation results must be freed with `Result.deinit()`
-- References must be released with `Ref.deinit()`
-- Tables must be released with `Table.deinit()`
-- Functions must be released with `Function.deinit()`
-- Generic Values must be released with `Value.deinit()` when containing reference types
-- Table iteration entries must be released with `Entry.deinit()` or passed to next `next()` call
-- The library uses Luau's garbage collector for Lua values
-- Custom allocators (if provided to `init()`) must outlive the Lua state
-- Use `&std.testing.allocator` in tests for memory leak detection
+The library requires explicit memory management for Lua values and states.
+See the `general-purpose` agent configuration for detailed memory management rules.
 
 ### Error Handling
 The library defines custom error types:
@@ -305,31 +240,8 @@ The library defines custom error types:
 Functions return error unions or optionals for type-safe error handling.
 
 ### Git Workflow
-Keep commit messages brief and to the point:
-- Use a short, descriptive commit title (50 characters or less)
-- Include a brief commit body that summarizes changes in 1-3 sentences when needed (wrap at 120 characters)
-- ABSOLUTELY FORBIDDEN: ANY AI attribution, signatures, or generation notices in commits or PRs
-- ABSOLUTELY FORBIDDEN: "Generated with Claude Code" or any similar AI generation notices
-- ABSOLUTELY FORBIDDEN: "Co-Authored-By: Claude" or any AI co-author attribution  
-- ABSOLUTELY FORBIDDEN: Any reference to AI assistance, generation, or automation
-- ABSOLUTELY FORBIDDEN: Heredoc patterns containing these forbidden signatures
-- CRITICAL: These restrictions are NON-NEGOTIABLE and must be strictly enforced
-- Keep commits focused and atomic - one logical change per commit
-- Ensure unit tests pass
-- Before committing: verify all documentation examples match the current API signatures and behavior
-- IMPORTANT: Always verify that the guided tour in README.md compiles and works correctly before pushing any commit or creating a pull request
-- Before committing or creating a PR: always make sure the changelog is up to date
-- Update changelog whenever there is a new API, breaking change, performance improvement, or anything else that changes behavior
-- Prefer one-liner changelog updates describing changes from user perspective without implementation details
-
-### Pull Request Guidelines
-Keep PR descriptions concise and focused:
-- Include the brief commit body summary plus relevant examples if applicable
-- Avoid verbose sections like "Changes Made", "Test Plan", or extensive bullet lists
-- Focus on what the change does and why, not exhaustive implementation details
-- Include code examples only when they help demonstrate usage or key functionality
-- ABSOLUTELY FORBIDDEN: ANY AI generation notices, signatures, or attribution in pull requests
-- ABSOLUTELY FORBIDDEN: "Generated with Claude Code" or any automation references
-- NEVER add "Generated with Claude Code" or similar automation references
-- Before creating PR: ensure all documentation examples are tested and work with the current API
-- IMPORTANT: Always verify that the guided tour in README.md compiles and is up to date before creating a pull request
+- For commits: Use the `committer` agent which handles proper formatting and enforces repository guidelines
+- For changelog updates: Use the `note-keeper` agent to maintain consistent format
+- For releases: Use the `releaser` agent for proper versioning and tagging
+- Ensure unit tests pass before committing
+- Verify documentation examples match current API signatures
