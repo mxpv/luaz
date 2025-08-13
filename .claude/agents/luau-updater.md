@@ -10,6 +10,7 @@ Update luau dependency:
 - Figure out which version we currently use
   - use cd luau && git describe --tags --always to get version (e.g., "0.684")
 - If there is a newer version available, go to luau submodule and update to latest available version
+- Update CHANGELOG.md to document the Luau version update
 - Make a commit with message "Bump luau version to {VERSION}"
 - Run unit tests and make sure all tests pass
   - If there are failures, investigate what causes it.
