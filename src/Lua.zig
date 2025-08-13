@@ -1294,6 +1294,7 @@ pub const Value = union(enum) {
     string: []const u8,
     table: Table,
     function: Function,
+    buffer: Buffer,
     userdata: Ref,
     lightuserdata: *anyopaque,
 
@@ -1312,6 +1313,7 @@ pub const Value = union(enum) {
         switch (self) {
             .table => |t| t.deinit(),
             .function => |f| f.deinit(),
+            .buffer => |b| b.deinit(),
             .userdata => |u| u.deinit(),
             else => {}, // No cleanup needed for primitive types
         }
@@ -1473,6 +1475,47 @@ pub inline fn createTable(self: Self, opts: struct { arr: u32 = 0, rec: u32 = 0 
     defer self.state.pop(1);
 
     return Table{ .ref = Ref.init(self, -1) };
+}
+
+/// Creates a new buffer with the specified size.
+///
+/// Allocates a fixed-size buffer managed by Lua's garbage collector.
+/// The buffer provides direct memory access for binary data operations.
+/// Maximum buffer size is limited to 1GB by Luau implementation.
+///
+/// The returned Buffer must be explicitly released using `deinit()` to free the reference.
+/// The underlying buffer memory is subject to garbage collection.
+///
+/// Arguments:
+/// - `size`: Size of the buffer in bytes (must be <= 1GB)
+///
+/// Examples:
+/// ```zig
+/// // Create a 1KB buffer
+/// const buf = try lua.createBuffer(1024);
+/// defer buf.deinit();
+///
+/// // Write data directly
+/// buf.data[0] = 0xFF;
+/// @memcpy(buf.data[10..15], "hello");
+///
+/// // Use with I/O patterns
+/// var stream = buf.stream();
+/// try stream.writer().writeInt(u32, 0x12345678, .little);
+/// ```
+///
+/// Returns: `Buffer` - A wrapper around the newly created buffer
+/// Errors: `Error.OutOfMemory` if allocation fails or size exceeds limit
+pub fn createBuffer(self: Self, size: usize) !Buffer {
+    // Check size limit (imported from C header via State)
+    if (size > State.MAX_BUFFER_SIZE) return Error.OutOfMemory;
+
+    const ptr = self.state.newBuffer(size) orelse return Error.OutOfMemory;
+    const data = @as([*]u8, @ptrCast(ptr))[0..size];
+    const ref = Ref.init(self, -1);
+    self.state.pop(1);
+
+    return Buffer{ .ref = ref, .data = data };
 }
 
 /// Creates a new thread (coroutine) in the Lua state.
@@ -1756,6 +1799,74 @@ pub const Function = struct {
 
     /// Returns the registry reference ID if valid, otherwise null.
     pub inline fn getRef(self: Function) ?c_int {
+        return self.ref.getRef();
+    }
+};
+
+/// High-level buffer type for binary data manipulation
+///
+/// Buffer provides a wrapper around Luau's native buffer type for efficient
+/// binary data operations. Buffers are fixed-size memory regions that can
+/// store and manipulate raw bytes.
+///
+/// The buffer memory is managed by Lua's garbage collector. The Buffer type
+/// holds a reference that prevents collection until explicitly released with `deinit()`.
+///
+/// Example:
+/// ```zig
+/// const buf = try lua.createBuffer(1024);
+/// defer buf.deinit();
+///
+/// // Direct memory access
+/// buf.data[0] = 42;
+/// @memcpy(buf.data[10..20], "hello");
+///
+/// // Use with std.io patterns
+/// var stream = buf.stream();
+/// try stream.writer().writeInt(u32, 0x12345678, .little);
+/// try stream.seekTo(0);
+/// const value = try stream.reader().readInt(u32, .little);
+/// ```
+pub const Buffer = struct {
+    ref: Ref,
+    data: []u8,
+
+    /// Returns the underlying Lua state for direct state operations.
+    pub inline fn state(self: Buffer) *const State {
+        return &self.ref.lua.state;
+    }
+
+    /// Releases the buffer reference, allowing it to be garbage collected.
+    pub fn deinit(self: Buffer) void {
+        self.ref.deinit();
+    }
+
+    /// Returns the length of the buffer in bytes.
+    pub fn len(self: Buffer) usize {
+        return self.data.len;
+    }
+
+    /// Returns a stream for reading/writing/seeking within the buffer.
+    ///
+    /// The stream provides standard I/O operations on the buffer memory:
+    /// - `.writer()` - Get a writer for sequential writing
+    /// - `.reader()` - Get a reader for sequential reading
+    /// - `.seekTo(pos)` - Seek to a specific position
+    /// - `.getPos()` - Get current position
+    ///
+    /// Example:
+    /// ```zig
+    /// var stream = buf.stream();
+    /// try stream.writer().writeAll("Hello");
+    /// try stream.seekTo(0);
+    /// const data = try stream.reader().readAllAlloc(allocator, 1024);
+    /// ```
+    pub fn stream(self: *Buffer) std.io.FixedBufferStream([]u8) {
+        return std.io.fixedBufferStream(self.data);
+    }
+
+    /// Returns the registry reference ID if valid, otherwise null.
+    pub inline fn getRef(self: Buffer) ?c_int {
         return self.ref.getRef();
     }
 };

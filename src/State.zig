@@ -8,6 +8,10 @@ const c = @cImport({
     @cInclude("luacodegen.h");
 });
 
+// Constants
+/// Maximum buffer size (1GB) - defined by Luau implementation
+pub const MAX_BUFFER_SIZE: usize = 1 << 30;
+
 /// Get the current Lua VM clock time
 pub fn clock() f64 {
     return c.lua_clock();

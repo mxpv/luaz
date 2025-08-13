@@ -11,8 +11,11 @@ Make git commit messages for changes in the working directory following these ru
 
 ### Commit Message Format
 - Title: Short and descriptive (50 characters or less)
-- Body: Brief summary in 1-3 sentences when needed (wrap at 120 characters)
+- Body: Brief summary in 1-3 sentences when needed
+- **IMPORTANT: Always wrap commit message body at 80 characters per line**
 - Keep commits focused and atomic - one logical change per commit
+- Focus on what changed and why, not implementation details
+- Avoid mentioning corner cases, edge conditions, or low-level technical details
 
 ### Pre-Commit Checks
 Before committing:

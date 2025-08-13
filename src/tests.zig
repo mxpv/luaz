@@ -1464,6 +1464,139 @@ test "table clone" {
     try expect(std.mem.eql(u8, name, "Alice"));
 }
 
+test "buffer creation and basic operations" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    // Create a buffer
+    const buf = try lua.createBuffer(1024);
+    defer buf.deinit();
+
+    // Test buffer length
+    try expectEq(buf.len(), 1024);
+    try expectEq(buf.data.len, 1024);
+
+    // Test direct memory access
+    buf.data[0] = 42;
+    buf.data[100] = 255;
+    try expectEq(buf.data[0], 42);
+    try expectEq(buf.data[100], 255);
+
+    // Test memory copy
+    const test_data = "Hello, Buffer!";
+    @memcpy(buf.data[10 .. 10 + test_data.len], test_data);
+    try expect(std.mem.eql(u8, buf.data[10 .. 10 + test_data.len], test_data));
+}
+
+test "buffer with std.io patterns" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    var buf = try lua.createBuffer(256);
+    defer buf.deinit();
+
+    // Test writing with stream
+    var stream = buf.stream();
+
+    // Write various integer types
+    try stream.writer().writeInt(u32, 0x12345678, .little);
+    try stream.writer().writeInt(u16, 0xABCD, .little);
+    try stream.writer().writeInt(u8, 0xFF, .little);
+
+    // Write string
+    try stream.writer().writeAll("Hello");
+
+    // Seek back and read
+    try stream.seekTo(0);
+    try expectEq(try stream.reader().readInt(u32, .little), 0x12345678);
+    try expectEq(try stream.reader().readInt(u16, .little), 0xABCD);
+    try expectEq(try stream.reader().readInt(u8, .little), 0xFF);
+
+    var read_buf: [5]u8 = undefined;
+    _ = try stream.reader().read(&read_buf);
+    try expect(std.mem.eql(u8, &read_buf, "Hello"));
+}
+
+test "buffer as Value type" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    const buf = try lua.createBuffer(128);
+    defer buf.deinit();
+
+    // Write some test data
+    @memcpy(buf.data[0..4], "test");
+
+    // Store buffer in a table
+    const table = lua.createTable(.{});
+    defer table.deinit();
+
+    try table.set("mybuffer", buf);
+
+    // Retrieve as Buffer type
+    const retrieved = try table.get("mybuffer", Lua.Buffer);
+    defer retrieved.deinit();
+
+    try expectEq(retrieved.len(), 128);
+    try expect(std.mem.eql(u8, retrieved.data[0..4], "test"));
+
+    // Retrieve as Value type
+    const val = try table.get("mybuffer", Lua.Value);
+    defer val.deinit();
+
+    switch (val) {
+        .buffer => |b| {
+            try expectEq(b.len(), 128);
+            try expect(std.mem.eql(u8, b.data[0..4], "test"));
+        },
+        else => return error.UnexpectedValueType,
+    }
+}
+
+test "buffer in Lua code" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    // Open buffer library
+    lua.openLibs();
+
+    // Create a buffer and expose it to Lua
+    const buf = try lua.createBuffer(64);
+    defer buf.deinit();
+
+    // Initialize buffer with pattern
+    for (buf.data, 0..) |*byte, i| {
+        byte.* = @intCast(i % 256);
+    }
+
+    const globals = lua.globals();
+    try globals.set("mybuf", buf);
+
+    // Use buffer in Lua code
+    _ = try lua.eval(
+        \\assert(buffer.len(mybuf) == 64)
+        \\assert(buffer.readu8(mybuf, 0) == 0)
+        \\assert(buffer.readu8(mybuf, 10) == 10)
+        \\buffer.writeu8(mybuf, 5, 42)
+    , .{}, void);
+
+    // Verify change from Lua
+    try expectEq(buf.data[5], 42);
+}
+
+test "buffer size limits" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    // Test maximum size (should succeed)
+    const max_buf = try lua.createBuffer(State.MAX_BUFFER_SIZE);
+    defer max_buf.deinit();
+    try expectEq(max_buf.len(), State.MAX_BUFFER_SIZE);
+
+    // Test exceeding maximum size (should fail)
+    try expectError(Error.OutOfMemory, lua.createBuffer(State.MAX_BUFFER_SIZE + 1));
+}
+
 test "function clone" {
     const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();

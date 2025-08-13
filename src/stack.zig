@@ -109,8 +109,8 @@ pub fn push(state: *const State, value: anytype) void {
             }
         },
         .@"struct" => {
-            // Handle Ref and Table types
-            if (T == Lua.Ref or T == Lua.Table or T == Lua.Function) {
+            // Handle Ref, Table, Function, and Buffer types
+            if (T == Lua.Ref or T == Lua.Table or T == Lua.Function or T == Lua.Buffer) {
                 // Push reference to stack
                 if (value.getRef()) |index| {
                     if (index != State.GLOBALSINDEX) {
@@ -167,6 +167,7 @@ pub fn push(state: *const State, value: anytype) void {
                     .string => |s| state.pushLString(s),
                     .table => |t| push(state, t),
                     .function => |f| push(state, f),
+                    .buffer => |b| push(state, b),
                     .userdata => |u| push(state, u), // Push userdata reference
                     .lightuserdata => |u| state.pushLightUserdata(u),
                 }
@@ -682,7 +683,7 @@ pub fn toValue(lua: Lua, comptime T: type, index: i32) ?T {
             }
         },
         .@"struct" => {
-            // Handle reference types: Ref, Table, Function
+            // Handle reference types: Ref, Table, Function, Buffer
             if (T == Lua.Ref) {
                 // Create a reference to any value on the stack
                 return Lua.Ref{ .lua = lua, .ref = lua.state.ref(index) };
@@ -698,6 +699,19 @@ pub fn toValue(lua: Lua, comptime T: type, index: i32) ?T {
                     return null;
                 }
                 return Lua.Function{ .ref = Lua.Ref{ .lua = lua, .ref = lua.state.ref(index) } };
+            } else if (T == Lua.Buffer) {
+                // Create a Buffer reference if the value is a buffer
+                if (!lua.state.isBuffer(index)) {
+                    return null;
+                }
+                // Get buffer pointer and length
+                var len: usize = 0;
+                const ptr = lua.state.toBuffer(index, &len) orelse return null;
+                const data = @as([*]u8, @ptrCast(ptr))[0..len];
+                return Lua.Buffer{
+                    .ref = Lua.Ref{ .lua = lua, .ref = lua.state.ref(index) },
+                    .data = data,
+                };
             }
 
             @compileError("Unsupported struct type " ++ @typeName(T));
@@ -724,6 +738,10 @@ pub fn toValue(lua: Lua, comptime T: type, index: i32) ?T {
                         null,
                     .function => if (toValue(lua, Lua.Function, index)) |func|
                         Lua.Value{ .function = func }
+                    else
+                        null,
+                    .buffer => if (toValue(lua, Lua.Buffer, index)) |buf|
+                        Lua.Value{ .buffer = buf }
                     else
                         null,
                     .userdata => if (lua.state.isUserdata(index))
