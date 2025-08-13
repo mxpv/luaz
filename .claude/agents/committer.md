@@ -17,8 +17,8 @@ Make git commit messages for changes in the working directory following these ru
 ### Pre-Commit Checks
 Before committing:
 - Ensure unit tests pass (`zig build test`)
+- Verify that the guided tour compiles (`zig build guided-tour`)
 - Verify all documentation examples match the current API signatures and behavior
-- Verify that the guided tour in README.md compiles and works correctly
 - Run `zig fmt .` to ensure consistent formatting
 
 ### Strictly Forbidden

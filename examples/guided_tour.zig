@@ -403,9 +403,9 @@ pub fn main() !void {
         print("\n-- Vectors --\n", .{});
 
         // Luau supports native vector types (configured size, typically 3 or 4 components)
-        const vec3 = @Vector(3, f32){ 1.0, 2.0, 3.0 };
+        const vec4 = @Vector(4, f32){ 1.0, 2.0, 3.0, 4.0 };
         const globals = lua.globals();
-        try globals.set("myVector", vec3);
+        try globals.set("myVector", vec4);
 
         _ = try lua.eval(
             \\print("Vector: " .. tostring(myVector))
@@ -413,6 +413,7 @@ pub fn main() !void {
             \\print("X component: " .. myVector.X)
             \\print("Y component: " .. myVector.Y)
             \\print("Z component: " .. myVector.Z)
+            \\print("W component: " .. myVector.W)
         , .{}, void);
     }
 
