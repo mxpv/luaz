@@ -669,8 +669,8 @@ test "assert handler" {
     defer lua.deinit();
 
     // Verify the API works by setting and resetting the handler
-    Lua.setAssertHandler(testAssertHandler);
-    Lua.setAssertHandler(null);
+    luaz.setAssertHandler(testAssertHandler);
+    luaz.setAssertHandler(null);
 }
 
 const TestUserDataWithMetaMethods = struct {

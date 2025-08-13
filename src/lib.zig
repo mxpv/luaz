@@ -9,3 +9,7 @@ pub const State = @import("State.zig");
 pub const Compiler = @import("Compiler.zig");
 pub const Debug = @import("Debug.zig");
 pub const GC = @import("GC.zig");
+
+// Assert handling
+pub const setAssertHandler = @import("assert.zig").setAssertHandler;
+pub const AssertHandler = @import("assert.zig").AssertHandler;

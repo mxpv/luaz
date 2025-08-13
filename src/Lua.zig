@@ -2378,26 +2378,6 @@ pub fn dumpStack(self: Self, allocator: std.mem.Allocator) ![]u8 {
     return list.toOwnedSlice();
 }
 
-/// Set a custom assert handler for Luau VM assertions.
-///
-/// The assert handler is called when a Luau VM assertion fails, allowing custom error
-/// handling and debugging. The handler receives information about the failed assertion
-/// including expression, file, line number, and function name.
-///
-/// Example:
-/// ```zig
-/// fn myAssertHandler(expr: [*c]const u8, file: [*c]const u8, line: c_int, func: [*c]const u8) callconv(.C) c_int {
-///     std.debug.print("Assertion failed: {s} at {s}:{} in {s}\n", .{expr, file, line, func});
-///     return 0; // Return 0 to abort
-/// }
-///
-/// Lua.setAssertHandler(myAssertHandler);
-/// ```
-///
-/// Note: The handler function must have C calling convention and return 0 to abort or non-zero to continue.
-pub inline fn setAssertHandler(handler: AssertHandler) void {
-    assert.setAssertHandler(handler);
-}
 
 /// Apply sandbox restrictions to create a secure execution environment.
 ///
