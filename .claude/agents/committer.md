@@ -1,6 +1,6 @@
 ---
 name: committer
-description: When asked to make a commit or a PR.
+description: When asked to make a commit (or just "commit") or a PR.
 model: sonnet
 color: cyan
 ---
@@ -23,11 +23,12 @@ Before committing:
 
 ### Strictly Forbidden
 Never ever mention:
-- ANY AI attribution, signatures, or generation notices in commits or PRs
-- "Generated with Claude Code" or any similar AI generation notices
-- "Co-Authored-By: Claude" or any AI co-author attribution
-- Any reference to AI assistance, generation, or automation
-- Heredoc patterns containing these forbidden signatures
+- ABSOLUTELY FORBIDDEN: ANY AI attribution, signatures, or generation notices in commits or PRs
+- ABSOLUTELY FORBIDDEN: "Generated with Claude Code" or any similar AI generation notices
+- ABSOLUTELY FORBIDDEN: "Co-Authored-By: Claude" or any AI co-author attribution  
+- ABSOLUTELY FORBIDDEN: Any reference to AI assistance, generation, or automation
+- ABSOLUTELY FORBIDDEN: Heredoc patterns containing these forbidden signatures
+- CRITICAL: These restrictions are NON-NEGOTIABLE and must be strictly enforced
 
 ### Workflow
 1. Review changes and create appropriate commit message
