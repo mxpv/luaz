@@ -196,6 +196,11 @@ When working with Claude Code on this repository, use specialized subagents for 
   - Ensuring documentation consistency after changes
   - Verifying examples and guides are up to date
 
+- Use the `luau-updater` agent for:
+  - Updating the Luau submodule to the latest version
+  - Handling submodule synchronization and dependency updates
+  - Ensuring compatibility after Luau updates
+
 - Use the `releaser` agent for:
   - Creating new releases with proper versioning
   - Generating release notes from changelog
@@ -212,6 +217,7 @@ These agents often work together in sequence:
 - "Find how metamethods are implemented" - Use general-purpose agent  
 - "Commit these changes" - Use committer agent
 - "Update the changelog" - Use note-keeper agent
+- "Update luau" - Use luau-updater agent
 - "Make a new release" - Use releaser agent
 - "Create a PR for this feature" - Use committer agent
 
