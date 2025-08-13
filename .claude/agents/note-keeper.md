@@ -18,5 +18,5 @@ Keep CHANGELOG.md up to date.
 ## Workflow
 
 1. Add or update the changelog entry
-2. Make a commit with title "Update CHANGELOG"
+2. Ask if the changes look good. If there is feedback, listen to feedback, proofread work, and update accordingly. Otherwise make a commit with title "Update CHANGELOG"
 3. Confirm before making a commit

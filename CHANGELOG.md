@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Luau Buffer support** for native binary data manipulation
+  - High-level `Buffer` API with direct memory access through `[]u8` slice
+  - Integration with Zig's std.io patterns via `stream()` method
+  - Reference-counted memory management with automatic cleanup
+  - Full interoperability with Lua's buffer library
+  - `Lua.createBuffer(size)` method for buffer creation
+  - Buffer support in `Lua.Value` enum for runtime value handling
+  - Stack operations for buffer values (`pushBuffer`, `toBuffer`, `isBuffer`)
 - Configurable vector size build option (`-Dvector-size=3` or `4`, default 4)
 
 ### Changed
