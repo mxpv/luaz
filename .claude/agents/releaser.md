@@ -12,12 +12,12 @@ Make a new release of luaz library.
     + Confirm the chosen version before proceeding
 - Go to CHANGELOG.md and add a new section for the release. Move all notes from 'Unreleased' to this new section. Keep 'Unreleased' section empty.
     + Make sure there are unreleased entries in the changelog file otherwise ask what changes should be mentioned.
-- Make sure that examples in the root README.md is up to date.
+- Make sure that examples in the root README.md are up to date.
 - Go to build.zig.zon and update '.version' field there.
 - Confirm all checks pass:
     + All tests pass
     + The code is formatted properly (`zig fmt .`)
-    + The guided tour examples runs successfully.
+    + The guided tour examples run successfully.
 - Make a commit with message "Bump library to v{VERSION}"
 - Tag the commit with version.
 - After commit and tag are created, offer to push both to the upstream repository:
