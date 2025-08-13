@@ -44,6 +44,10 @@ The documentation is automatically updated on every change to the `main` branch.
 
 - [Documentation](https://mxpv.github.io/luaz/#luaz.lib)
   + [High level Lua interface](https://mxpv.github.io/luaz/#luaz.lib.Lua)
+    - [Table](https://mxpv.github.io/luaz/#luaz.Table)
+    - [Function](https://mxpv.github.io/luaz/#luaz.Function)
+    - [StrBuf](https://mxpv.github.io/luaz/#luaz.StrBuf)
+    - [Buffer](https://mxpv.github.io/luaz/#luaz.Buffer)
   + [Low level State wrapper](https://mxpv.github.io/luaz/#luaz.State)
   + [GC API](https://mxpv.github.io/luaz/#luaz.GC)
   + [Debugger API](https://mxpv.github.io/luaz/#luaz.Debug)
