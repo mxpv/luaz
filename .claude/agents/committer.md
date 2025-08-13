@@ -6,8 +6,9 @@ color: cyan
 ---
 
 Make a git commit messages for changes in the working directory.
-Look through changes and come up with a short commit message title (up to 80 chars).
+Look through changes and come up with a short commit message title (up to 50 chars).
 For git commit body, write a short summary of the changes (ideally 2-3 sentences describing changes).
+Keep commit body lines wrapped at 80 characters maximum.
 Never ever mention:
 - ANY AI attribution, signatures, or generation notices in commits or PRs
 - "Generated with Claude Code" or any similar AI generation notices
