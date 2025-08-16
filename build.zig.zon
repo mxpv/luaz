@@ -1,6 +1,12 @@
 .{
     .name = .luaz,
     .version = "0.3.0",
+    .dependencies = .{
+        .luau = .{
+            .url = "git+https://github.com/luau-lang/luau.git#8863bfc950d52e9e7b468354d353ca43623da4f6",
+            .hash = "N-V-__8AAL1RoQB6sHvjYcFOR1l7LzYzS9r7VhsiKfNlEN_1",
+        },
+    },
 
     .fingerprint = 0xceb8ffd87c49e0c3, // Changing this has security and trust implications.
     .minimum_zig_version = "0.14.1",
