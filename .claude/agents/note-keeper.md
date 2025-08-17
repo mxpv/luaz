@@ -14,6 +14,9 @@ Keep CHANGELOG.md up to date.
 - For big and complex features it's ok to add sub-list with bullets
 - Write changes from end-user perspective
 - Don't update changelog lines for maintenance tasks, such as readme updates, CLAUDE configuration changes, cosmetic changes, documentation improvements that don't change API behavior, etc
+- NEVER use bold formatting for API names or features (e.g., don't write **Function.getCoverage()**)
+- The ONLY exception for bold formatting is **BREAKING**: to mark breaking changes
+- Write entries in plain text: `Function.getCoverage()` method for collecting code coverage...
 
 ## What NOT to include in changelog
 - Documentation improvements (like adding comments, clarifying existing docs)
