@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
   - Buffer support in `Lua.Value` enum for runtime value handling
   - Stack operations for buffer values (`pushBuffer`, `toBuffer`, `isBuffer`)
 - Configurable vector size build option (`-Dvector-size=3` or `4`, default 4)
+- **Function.getCoverage()** method for collecting code coverage data from Luau functions compiled with coverage enabled
 
 ### Changed
 - **Build System**: Switched from Git submodules to Zig package manager for Luau dependency, simplifying setup process
