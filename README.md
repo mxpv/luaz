@@ -30,10 +30,11 @@ and [performance](https://luau.org/performance) characteristics.
   - Buffer type support for binary data manipulation
   - [StrBuf support](#string-buffer-strbuf)
   - Sandboxing APIs for secure execution and improved performance
+  - Native code generation support for improved performance on supported platforms
   - Built-in Luau tools provided out of the box:
     - [`luau-compile`](#compiler) - Compile Lua source to optimized bytecode
     - [`luau-analyze`](#analyzer) - Type checking and linting for Luau code
-  - Native code generation support for improved performance on supported platforms
+  - Supports coverage API
 - Excellent [test coverage](https://app.codecov.io/gh/mxpv/luaz) and API [documentation](https://mxpv.github.io/luaz/#luaz)
 
 ## 📚 Documentation
