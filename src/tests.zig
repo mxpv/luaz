@@ -2273,3 +2273,45 @@ test "setCallbacks instance methods" {
 
     try expect(callbacks.counter > 0);
 }
+
+test "Function.getCoverage" {
+    const lua = try Lua.init(&std.testing.allocator);
+    defer lua.deinit();
+
+    var lines_with_code: usize = 0;
+    var lines_covered: usize = 0;
+
+    const callback = struct {
+        fn cb(ctx: ?*anyopaque, function: [*c]const u8, linedefined: c_int, depth: c_int, hits: [*c]const c_int, size: usize) callconv(.C) void {
+            _ = function;
+            _ = linedefined;
+            _ = depth;
+            const data = @as(*struct { code: *usize, covered: *usize }, @ptrCast(@alignCast(ctx.?)));
+            for (0..size) |i| {
+                if (hits[i] >= 0) {
+                    data.code.* += 1;
+                    if (hits[i] > 0) data.covered.* += 1;
+                }
+            }
+        }
+    }.cb;
+
+    const compile_result = try luaz.Compiler.compile("function f(x) return x * 2 end", .{ .coverage_level = 1 });
+    defer compile_result.deinit();
+    const bytecode = switch (compile_result) {
+        .ok => |bc| bc,
+        .err => return error.Compile,
+    };
+
+    _ = try lua.exec(bytecode, void);
+    const func = try lua.globals().get("f", Lua.Function);
+    defer func.deinit();
+
+    _ = try func.call(.{5}, i32);
+
+    var ctx = .{ .code = &lines_with_code, .covered = &lines_covered };
+    func.getCoverage(&ctx, callback);
+
+    try expect(lines_with_code > 0);
+    try expect(lines_covered > 0);
+}

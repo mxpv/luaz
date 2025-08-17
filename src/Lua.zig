@@ -1801,6 +1801,71 @@ pub const Function = struct {
     pub inline fn getRef(self: Function) ?c_int {
         return self.ref.getRef();
     }
+
+    /// Get coverage information for this function.
+    ///
+    /// Invokes the provided callback with coverage data for this function and any nested
+    /// functions within it. The callback receives line-by-line execution counts that can
+    /// be used to analyze code coverage.
+    ///
+    /// Prerequisites:
+    /// - Function must be compiled with coverage enabled (coverage_level > 0 in compiler options)
+    /// - Function must be a Lua function (not a C function)
+    ///
+    /// Arguments:
+    /// - `context`: Optional user-provided context pointer passed to the callback
+    /// - `callback`: Function called with coverage data for each function
+    ///
+    /// The callback receives:
+    /// - `context`: The user-provided context
+    /// - `function`: Name of the function (may be null for anonymous functions)
+    /// - `linedefined`: Line number where the function is defined
+    /// - `depth`: Nesting depth of the function
+    /// - `hits`: Array of hit counts for each line (null element means no code on that line)
+    /// - `size`: Size of the hits array
+    ///
+    /// Example:
+    /// ```zig
+    /// const CoverageData = struct {
+    ///     total_lines: usize = 0,
+    ///     covered_lines: usize = 0,
+    /// };
+    ///
+    /// fn coverageCallback(context: ?*anyopaque, function: [*c]const u8, linedefined: c_int, depth: c_int, hits: [*c]const c_int, size: usize) callconv(.C) void {
+    ///     const data = @as(*CoverageData, @ptrCast(@alignCast(context.?)));
+    ///
+    ///     for (0..size) |i| {
+    ///         if (hits[i] >= 0) { // Line has code
+    ///             data.total_lines += 1;
+    ///             if (hits[i] > 0) { // Line was executed
+    ///                 data.covered_lines += 1;
+    ///             }
+    ///         }
+    ///     }
+    /// }
+    ///
+    /// // Compile and run code with coverage enabled
+    /// const bytecode = try Compiler.compile("function test(x) return x * 2 end", .{ .coverage_level = 1 });
+    /// _ = try lua.exec(bytecode, void);
+    ///
+    /// const func = try lua.globals().get("test", Function);
+    /// defer func.deinit();
+    ///
+    /// // Execute function to generate coverage
+    /// _ = try func.call(.{5}, i32);
+    ///
+    /// // Collect coverage data
+    /// var coverage_data = CoverageData{};
+    /// func.getCoverage(&coverage_data, coverageCallback);
+    ///
+    /// std.debug.print("Coverage: {}/{} lines\n", .{coverage_data.covered_lines, coverage_data.total_lines});
+    /// ```
+    pub fn getCoverage(self: Function, context: ?*anyopaque, callback: State.Coverage) void {
+        stack.push(self.state(), self.ref); // Push function ref
+        defer self.state().pop(1); // Remove from stack
+
+        self.state().getCoverage(-1, context, callback);
+    }
 };
 
 /// High-level buffer type for binary data manipulation
