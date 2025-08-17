@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.0] - 2025-08-17
+
 ### Added
 - **Luau Buffer support** for native binary data manipulation
   - High-level `Buffer` API with direct memory access through `[]u8` slice

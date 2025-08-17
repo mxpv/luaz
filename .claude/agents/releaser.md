@@ -18,7 +18,7 @@ Make a new release of luaz library.
     + All tests pass
     + The code is formatted properly (`zig fmt .`)
     + The guided tour examples run successfully.
-- Make a commit with message "Bump library to v{VERSION}"
+- Make a commit with message "Bump library to v{VERSION}" (NEVER include Claude Code attribution or AI mentions in commit messages)
 - Tag the commit with version.
 - After commit and tag are created, offer to push both to the upstream repository:
     + Use `git push origin main` to push the commit
