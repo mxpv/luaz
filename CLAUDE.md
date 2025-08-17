@@ -27,9 +27,9 @@ The build system is written in Zig and provides several targets:
 - `zig build luau-codegen` - Build Luau codegen library only
 
 ### Key Libraries Built
-- luau_vm: Core Luau virtual machine (from `luau/VM/src`)
-- luau_codegen: JIT code generation (from `luau/CodeGen/src`) 
-- luau_compiler: Luau compiler and AST (from `luau/Compiler/src` and `luau/Ast/src`)
+- luau_vm: Core Luau virtual machine (from Luau's `VM/src`)
+- luau_codegen: JIT code generation (from Luau's `CodeGen/src`) 
+- luau_compiler: Luau compiler and AST (from Luau's `Compiler/src` and `Ast/src`)
 
 The build system automatically discovers and compiles all `.cpp` and `.c` files in the respective Luau source
 directories.
@@ -156,10 +156,14 @@ fn transform(upv: Upvalues(struct { f32, f32 }), x: f32) f32 {
 try table.setClosure("transform", .{ 2.0, 10.0 }, transform);
 ```
 
-## Luau Submodule
+## Luau Dependency
 
-The repository includes the full Luau source code as a Git submodule at `luau/`. 
+Luau is managed as a Zig package dependency. The source code is automatically fetched during build and can be found in `.zig-cache/` after running `zig build`. 
 For investigating implementation details, see the `general-purpose` agent configuration.
+
+To update Luau to the latest version:
+1. Check latest release: `git ls-remote --tags https://github.com/luau-lang/luau.git | tail -5`
+2. Update dependency: `zig fetch --save git+https://github.com/luau-lang/luau.git#TAG` (replace TAG with version like 0.687)
 
 ## Using Subagents
 
@@ -168,7 +172,7 @@ When working with Claude Code on this repository, use specialized subagents for 
 ### When to Use Subagents
 - Use the `general-purpose` agent for:
   - Searching for specific patterns or implementations across the codebase
-  - Investigating Luau submodule implementation details
+  - Investigating Luau implementation details in the dependency
   - Complex debugging tasks requiring multiple file searches
   - Understanding how specific features are implemented in the C++ code
 
@@ -188,8 +192,8 @@ When working with Claude Code on this repository, use specialized subagents for 
   - Verifying examples and guides are up to date
 
 - Use the `luau-updater` agent for:
-  - Updating the Luau submodule to the latest version
-  - Handling submodule synchronization and dependency updates
+  - Updating the Luau dependency to the latest version
+  - Handling dependency updates via Zig package manager
   - Ensuring compatibility after Luau updates
 
 - Use the `releaser` agent for:
@@ -208,7 +212,7 @@ These agents often work together in sequence:
 - "Find how metamethods are implemented" - Use general-purpose agent  
 - "Commit these changes" - Use committer agent (handles all commit guidelines automatically)
 - "Update the changelog" - Use note-keeper agent (maintains format consistency)
-- "Update luau" - Use luau-updater agent (handles submodule updates)
+- "Update luau" - Use luau-updater agent (handles dependency updates)
 - "Make a new release" - Use releaser agent (manages versioning and tagging)
 - "Create a PR for this feature" - Use committer agent (enforces PR guidelines)
 

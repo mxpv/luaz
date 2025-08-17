@@ -293,7 +293,7 @@ pub const Info = struct {
     /// CRITICAL: This function provides safe access by only dereferencing C string
     /// pointers for requested fields, preventing segmentation faults from garbage data.
     ///
-    /// Implementation details: See luau/VM/src/ldebug.cpp in the Luau submodule for
+    /// Implementation details: See VM/src/ldebug.cpp in the Luau source for
     /// how lua_getinfo() populates fields based on the "what" parameter.
     ///
     pub fn fromC(c_debug: *State.Debug, flags: Fields) Info {
@@ -407,7 +407,7 @@ pub fn setSingleStep(self: Self, enabled: bool) void {
 /// // debugBreak() works reliably in thread context
 /// ```
 ///
-/// Implementation details: See luau/VM/src/ldo.cpp lua_break() function for
+/// Implementation details: See VM/src/ldo.cpp lua_break() function in Luau source for
 /// the exact conditions when breaking is allowed.
 ///
 pub fn debugBreak(self: Self) void {

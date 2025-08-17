@@ -29,5 +29,9 @@ Keep CHANGELOG.md up to date.
 1. **FIRST**: Determine if the change warrants a changelog entry based on the guidelines above
 2. If it does NOT warrant an entry, politely decline and explain why
 3. If it does warrant an entry: Add or update the changelog entry
-4. Ask if the changes look good. If there is feedback, listen to feedback, proofread work, and update accordingly. Otherwise make a commit with title "Update CHANGELOG"
-5. Confirm before making a commit
+4. Ask if the changes look good. If there is feedback, listen to feedback, proofread work, and update accordingly
+5. Once approved or if no feedback is provided, ALWAYS create a git commit:
+   - Run `git add CHANGELOG.md`
+   - Run `git commit -m "Update CHANGELOG"`
+   - Do NOT use the committer agent - make the commit directly with these exact commands
+6. Report back confirming the changelog was updated and committed
