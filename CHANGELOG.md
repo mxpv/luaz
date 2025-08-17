@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 - Configurable vector size build option (`-Dvector-size=3` or `4`, default 4)
 
 ### Changed
+- **Build System**: Switched from Git submodules to Zig package manager for Luau dependency, simplifying setup process
 - Updated Luau dependency from version 0.684 to 0.686
 - Enhanced State.zig documentation with detailed stack operation descriptions and Lua 5.1 manual references
 
