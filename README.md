@@ -35,7 +35,7 @@ and [performance](https://luau.org/performance) characteristics.
     - [`luau-compile`](#compiler) - Compile Lua source to optimized bytecode
     - [`luau-analyze`](#analyzer) - Type checking and linting for Luau code
   - Supports coverage API
-- Excellent [test coverage](https://app.codecov.io/gh/mxpv/luaz) and API [documentation](https://mxpv.github.io/luaz/#luaz)
+- Excellent [test coverage](https://app.codecov.io/gh/mxpv/luaz) and API [documentation](#-documentation)
 
 ## 📚 Documentation
 
