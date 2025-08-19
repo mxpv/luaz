@@ -71,7 +71,6 @@ const userdata = @import("userdata.zig");
 const stack = @import("stack.zig");
 const alloc = @import("alloc.zig").alloc;
 const assert = @import("assert.zig");
-const DebugImpl = @import("Debug.zig");
 
 /// High-level Lua wrapper and main library entry point.
 /// Provides an idiomatic Zig interface with automatic type conversions for the Luau scripting language.
@@ -118,7 +117,7 @@ pub inline fn openLibs(self: Self) void {
 /// Get debug functionality for this Lua state.
 /// Returns a Debug instance that provides debugging operations.
 pub inline fn debug(self: Self) Debug {
-    return DebugImpl.init(@constCast(&self.state));
+    return Debug.init(@constCast(&self.state));
 }
 
 /// Get garbage collector control for this Lua state.
@@ -374,7 +373,7 @@ pub fn setCallbacks(self: Self, callbacks: anytype) void {
             fn wrapper(L: ?State.LuaState, ar: ?*State.Debug) callconv(.C) void {
                 var lua = Self.fromState(L.?);
                 var debug_instance = lua.debug();
-                const debug_info = DebugImpl.Info.fromC(ar.?, .{});
+                const debug_info = Debug.Info.fromC(ar.?, .{});
 
                 if (comptime is_instance) {
                     const callbacks_struct = lua.state.callbacks();
@@ -392,7 +391,7 @@ pub fn setCallbacks(self: Self, callbacks: anytype) void {
             fn wrapper(L: ?State.LuaState, ar: ?*State.Debug) callconv(.C) void {
                 var lua = Self.fromState(L.?);
                 var debug_instance = lua.debug();
-                const debug_info = DebugImpl.Info.fromC(ar.?, .{});
+                const debug_info = Debug.Info.fromC(ar.?, .{});
 
                 if (comptime is_instance) {
                     const callbacks_struct = lua.state.callbacks();
@@ -410,7 +409,7 @@ pub fn setCallbacks(self: Self, callbacks: anytype) void {
             fn wrapper(L: ?State.LuaState, ar: ?*State.Debug) callconv(.C) void {
                 var lua = Self.fromState(L.?);
                 var debug_instance = lua.debug();
-                const debug_info = DebugImpl.Info.fromC(ar.?, .{});
+                const debug_info = Debug.Info.fromC(ar.?, .{});
 
                 if (comptime is_instance) {
                     const callbacks_struct = lua.state.callbacks();
