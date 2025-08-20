@@ -64,9 +64,6 @@ pub const Error = error{
     KeyNotFound,
 };
 
-/// Assert handler function type for Luau VM assertions.
-pub const AssertHandler = @import("assert.zig").AssertHandler;
-
 const userdata = @import("userdata.zig");
 const stack = @import("stack.zig");
 const alloc = @import("alloc.zig").alloc;
