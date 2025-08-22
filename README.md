@@ -274,6 +274,11 @@ const greeting = result.ok.?;
 
 ## 🔧 Build Configuration
 
+### Zig Version Policy
+Until Zig reaches 1.0 (stable release), luaz targets the latest released version of Zig. When updating to a new breaking Zig version, we create a branch for the previous version (e.g., `zig-0.14`) that can be checked out if the older version is required.
+
+Current supported Zig version: **0.15.1**
+
 ### Vector Size
 By default, luaz is built with 4-component vectors. To customize:
 ```bash
