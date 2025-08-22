@@ -656,7 +656,7 @@ test "checkArg userdata support" {
     try expectEq(lua.top(), 0);
 }
 
-fn testAssertHandler(expr: [*c]const u8, file: [*c]const u8, line: c_int, func: [*c]const u8) callconv(.C) c_int {
+fn testAssertHandler(expr: [*c]const u8, file: [*c]const u8, line: c_int, func: [*c]const u8) callconv(.c) c_int {
     _ = expr;
     _ = file;
     _ = line;
@@ -2282,7 +2282,7 @@ test "Function.getCoverage" {
     var lines_covered: usize = 0;
 
     const callback = struct {
-        fn cb(ctx: ?*anyopaque, function: [*c]const u8, linedefined: c_int, depth: c_int, hits: [*c]const c_int, size: usize) callconv(.C) void {
+        fn cb(ctx: ?*anyopaque, function: [*c]const u8, linedefined: c_int, depth: c_int, hits: [*c]const c_int, size: usize) callconv(.c) void {
             _ = function;
             _ = linedefined;
             _ = depth;

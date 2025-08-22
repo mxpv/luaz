@@ -302,7 +302,7 @@ pub fn setCallbacks(self: Self, callbacks: anytype) void {
 
     if (@hasDecl(CallbackType, "interrupt")) {
         cb.interrupt = struct {
-            fn wrapper(L: ?State.LuaState, gc_flag: c_int) callconv(.C) void {
+            fn wrapper(L: ?State.LuaState, gc_flag: c_int) callconv(.c) void {
                 var state = State{ .lua = L.? };
 
                 if (comptime is_instance) {
@@ -318,7 +318,7 @@ pub fn setCallbacks(self: Self, callbacks: anytype) void {
 
     if (@hasDecl(CallbackType, "panic")) {
         cb.panic = struct {
-            fn wrapper(L: ?State.LuaState, errcode: c_int) callconv(.C) void {
+            fn wrapper(L: ?State.LuaState, errcode: c_int) callconv(.c) void {
                 var state = State{ .lua = L.? };
 
                 if (comptime is_instance) {
@@ -334,7 +334,7 @@ pub fn setCallbacks(self: Self, callbacks: anytype) void {
 
     if (@hasDecl(CallbackType, "userthread")) {
         cb.userthread = struct {
-            fn wrapper(LP: ?State.LuaState, L: ?State.LuaState) callconv(.C) void {
+            fn wrapper(LP: ?State.LuaState, L: ?State.LuaState) callconv(.c) void {
                 var parent_state: ?State = if (LP) |p| State{ .lua = p } else null;
                 var thread_state = State{ .lua = L.? }; // L is never null in practice
 
@@ -351,7 +351,7 @@ pub fn setCallbacks(self: Self, callbacks: anytype) void {
 
     if (@hasDecl(CallbackType, "useratom")) {
         cb.useratom = struct {
-            fn wrapper(s: [*c]const u8, l: usize) callconv(.C) i16 {
+            fn wrapper(s: [*c]const u8, l: usize) callconv(.c) i16 {
                 const slice = s[0..l];
 
                 if (comptime is_instance) {
@@ -367,7 +367,7 @@ pub fn setCallbacks(self: Self, callbacks: anytype) void {
 
     if (@hasDecl(CallbackType, "debugbreak")) {
         cb.debugbreak = struct {
-            fn wrapper(L: ?State.LuaState, ar: ?*State.Debug) callconv(.C) void {
+            fn wrapper(L: ?State.LuaState, ar: ?*State.Debug) callconv(.c) void {
                 var lua = Self.fromState(L.?);
                 var debug_instance = lua.debug();
                 const debug_info = Debug.Info.fromC(ar.?, .{});
@@ -385,7 +385,7 @@ pub fn setCallbacks(self: Self, callbacks: anytype) void {
 
     if (@hasDecl(CallbackType, "debugstep")) {
         cb.debugstep = struct {
-            fn wrapper(L: ?State.LuaState, ar: ?*State.Debug) callconv(.C) void {
+            fn wrapper(L: ?State.LuaState, ar: ?*State.Debug) callconv(.c) void {
                 var lua = Self.fromState(L.?);
                 var debug_instance = lua.debug();
                 const debug_info = Debug.Info.fromC(ar.?, .{});
@@ -403,7 +403,7 @@ pub fn setCallbacks(self: Self, callbacks: anytype) void {
 
     if (@hasDecl(CallbackType, "debuginterrupt")) {
         cb.debuginterrupt = struct {
-            fn wrapper(L: ?State.LuaState, ar: ?*State.Debug) callconv(.C) void {
+            fn wrapper(L: ?State.LuaState, ar: ?*State.Debug) callconv(.c) void {
                 var lua = Self.fromState(L.?);
                 var debug_instance = lua.debug();
                 const debug_info = Debug.Info.fromC(ar.?, .{});
@@ -421,7 +421,7 @@ pub fn setCallbacks(self: Self, callbacks: anytype) void {
 
     if (@hasDecl(CallbackType, "debugprotectederror")) {
         cb.debugprotectederror = struct {
-            fn wrapper(L: ?State.LuaState) callconv(.C) void {
+            fn wrapper(L: ?State.LuaState) callconv(.c) void {
                 var lua = Self.fromState(L.?);
                 var debug_instance = lua.debug();
 
@@ -438,7 +438,7 @@ pub fn setCallbacks(self: Self, callbacks: anytype) void {
 
     if (@hasDecl(CallbackType, "onallocate")) {
         cb.onallocate = struct {
-            fn wrapper(L: ?State.LuaState, osize: usize, nsize: usize) callconv(.C) void {
+            fn wrapper(L: ?State.LuaState, osize: usize, nsize: usize) callconv(.c) void {
                 if (L) |lua_state| {
                     var state = State{ .lua = lua_state };
 
@@ -1827,7 +1827,7 @@ pub const Function = struct {
     ///     covered_lines: usize = 0,
     /// };
     ///
-    /// fn coverageCallback(context: ?*anyopaque, function: [*c]const u8, linedefined: c_int, depth: c_int, hits: [*c]const c_int, size: usize) callconv(.C) void {
+    /// fn coverageCallback(context: ?*anyopaque, function: [*c]const u8, linedefined: c_int, depth: c_int, hits: [*c]const c_int, size: usize) callconv(.c) void {
     ///     const data = @as(*CoverageData, @ptrCast(@alignCast(context.?)));
     ///
     ///     for (0..size) |i| {
@@ -2524,10 +2524,9 @@ pub fn registerUserData(self: Self, comptime T: type) !void {
 /// Returns: Allocated string containing the stack dump. Caller owns the memory.
 /// Errors: `std.mem.Allocator.Error` if memory allocation fails
 pub fn dumpStack(self: Self, allocator: std.mem.Allocator) ![]u8 {
-    var list = std.ArrayList(u8).init(allocator);
-    defer list.deinit();
+    var list: std.ArrayList(u8) = .empty;
 
-    const writer = list.writer();
+    const writer = list.writer(allocator);
     const stack_size = self.state.getTop();
 
     if (stack_size == 0) {
@@ -2547,7 +2546,7 @@ pub fn dumpStack(self: Self, allocator: std.mem.Allocator) ![]u8 {
         n -= 1;
     }
 
-    return list.toOwnedSlice();
+    return list.toOwnedSlice(allocator);
 }
 
 /// Apply sandbox restrictions to create a secure execution environment.
@@ -2588,7 +2587,7 @@ const expectEq = std.testing.expectEqual;
 const expectError = std.testing.expectError;
 
 // Test functions for function push test
-fn testCFunction(state: ?State.LuaState) callconv(.C) c_int {
+fn testCFunction(state: ?State.LuaState) callconv(.c) c_int {
     _ = state;
     return 0;
 }

@@ -112,9 +112,9 @@ pub fn build(b: *std.Build) !void {
 
     // Luau compiler binary
     {
-        const exe = b.addExecutable(.{ .name = "luau-compile", .target = target, .optimize = optimize });
+        const mod = b.createModule(.{ .target = target, .optimize = optimize });
 
-        exe.addCSourceFiles(.{
+        mod.addCSourceFiles(.{
             .root = luau_dep.path("."),
             .files = &.{
                 "CLI/src/Compile.cpp",
@@ -124,11 +124,16 @@ pub fn build(b: *std.Build) !void {
             .flags = flags,
         });
 
-        addLuauIncludes(luau_dep, exe.root_module);
+        addLuauIncludes(luau_dep, mod);
 
-        exe.linkLibrary(luau_vm);
-        exe.linkLibrary(luau_codegen);
-        exe.linkLibrary(luau_compiler);
+        mod.linkLibrary(luau_vm);
+        mod.linkLibrary(luau_codegen);
+        mod.linkLibrary(luau_compiler);
+
+        const exe = b.addExecutable(.{
+            .name = "luau-compile",
+            .root_module = mod,
+        });
 
         const run = b.addRunArtifact(exe);
 
@@ -141,14 +146,14 @@ pub fn build(b: *std.Build) !void {
 
     // Luau analyze binary
     {
-        const exe = b.addExecutable(.{ .name = "luau-analyze", .target = target, .optimize = optimize });
+        const mod = b.createModule(.{ .target = target, .optimize = optimize });
 
-        try addSrcFiles(b, exe.root_module, luau_dep, "Analysis/src", flags);
-        try addSrcFiles(b, exe.root_module, luau_dep, "EqSat/src", flags);
-        try addSrcFiles(b, exe.root_module, luau_dep, "Config/src", flags);
-        try addSrcFiles(b, exe.root_module, luau_dep, "Require/Navigator/src", flags);
+        try addSrcFiles(b, mod, luau_dep, "Analysis/src", flags);
+        try addSrcFiles(b, mod, luau_dep, "EqSat/src", flags);
+        try addSrcFiles(b, mod, luau_dep, "Config/src", flags);
+        try addSrcFiles(b, mod, luau_dep, "Require/Navigator/src", flags);
 
-        exe.addCSourceFiles(.{
+        mod.addCSourceFiles(.{
             .root = luau_dep.path("."),
             .files = &.{
                 // Analyze CLI
@@ -161,11 +166,17 @@ pub fn build(b: *std.Build) !void {
             .flags = flags,
         });
 
-        addLuauIncludes(luau_dep, exe.root_module);
+        addLuauIncludes(luau_dep, mod);
+
+        mod.linkLibrary(luau_vm);
+        mod.linkLibrary(luau_compiler);
+
+        const exe = b.addExecutable(.{
+            .name = "luau-analyze",
+            .root_module = mod,
+        });
 
         exe.linkLibCpp();
-        exe.linkLibrary(luau_vm);
-        exe.linkLibrary(luau_compiler);
 
         const run = b.addRunArtifact(exe);
         if (b.args) |args| {
@@ -267,14 +278,18 @@ pub fn build(b: *std.Build) !void {
 
     // Guided tour example
     {
-        const guided_tour = b.addExecutable(.{
-            .name = "guided_tour",
+        const mod = b.createModule(.{
             .root_source_file = b.path("examples/guided_tour.zig"),
             .target = target,
             .optimize = optimize,
         });
 
-        guided_tour.root_module.addImport("luaz", b.modules.get("luaz").?);
+        mod.addImport("luaz", b.modules.get("luaz").?);
+
+        const guided_tour = b.addExecutable(.{
+            .name = "guided-tour",
+            .root_module = mod,
+        });
 
         const run_guided_tour = b.addRunArtifact(guided_tour);
         if (b.args) |args| {
@@ -302,7 +317,7 @@ fn addSrcFiles(
     var walker = try dir.walk(b.allocator);
     defer walker.deinit();
 
-    var files = std.ArrayList([]const u8).init(b.allocator);
+    var files: std.ArrayList([]const u8) = .empty;
 
     while (try walker.next()) |entry| {
         const ext = std.fs.path.extension(entry.basename);
@@ -312,7 +327,7 @@ fn addSrcFiles(
         } else false;
 
         if (include and entry.kind == .file) {
-            try files.append(b.dupe(entry.path));
+            try files.append(b.allocator, b.dupe(entry.path));
         }
     }
 

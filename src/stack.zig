@@ -356,7 +356,7 @@ pub fn createFunc(value: anytype) State.CFunction {
     }
 
     return struct {
-        fn f(state: ?State.LuaState) callconv(.C) c_int {
+        fn f(state: ?State.LuaState) callconv(.c) c_int {
             const l = Lua.fromState(state.?);
 
             // Build arguments array

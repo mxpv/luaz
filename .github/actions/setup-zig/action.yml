@@ -3,8 +3,8 @@ description: 'Download Zig installation'
 inputs:
   version:
     description: 'Zig version to install'
-    required: true
-    default: '0.14.1'
+    required: false
+    default: '0.15.1'
 
 runs:
   using: 'composite'

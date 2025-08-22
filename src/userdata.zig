@@ -136,7 +136,7 @@ fn createUserDataInstance(comptime T: type, lua: Lua, comptime type_name: [:0]co
     // Allocate userdata with optional destructor support
     const userdata = if (comptime @hasDecl(T, "deinit")) blk: {
         const DtorImpl = struct {
-            fn dtor(ptr: ?*anyopaque) callconv(.C) void {
+            fn dtor(ptr: ?*anyopaque) callconv(.c) void {
                 if (ptr) |p| {
                     const obj: *T = @ptrCast(@alignCast(p));
                     obj.deinit();
@@ -221,7 +221,7 @@ pub fn createUserDataFunc(comptime T: type, comptime method_name: []const u8, me
     }
 
     return struct {
-        fn f(state: ?State.LuaState) callconv(.C) c_int {
+        fn f(state: ?State.LuaState) callconv(.c) c_int {
             const lua = Lua.fromState(state.?);
 
             // Fetch function params from Lua stack

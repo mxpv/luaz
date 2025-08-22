@@ -595,7 +595,7 @@ pub inline fn newUserdataTaggedWithMetatable(self: Self, size: usize, tag: c_int
 }
 
 /// Create new userdata with destructor
-pub inline fn newUserdataDtor(self: Self, size: usize, dtor: *const fn (?*anyopaque) callconv(.C) void) ?*anyopaque {
+pub inline fn newUserdataDtor(self: Self, size: usize, dtor: *const fn (?*anyopaque) callconv(.c) void) ?*anyopaque {
     return c.lua_newuserdatadtor(self.lua, size, dtor);
 }
 
