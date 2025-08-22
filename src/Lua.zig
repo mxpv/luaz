@@ -295,7 +295,8 @@ pub fn setCallbacks(self: Self, callbacks: anytype) void {
 
     // Store instance pointer in userdata if it's a pointer
     if (is_instance) {
-        cb.userdata = @ptrCast(@constCast(callbacks));
+        // Ensure the pointer is properly aligned before storing
+        cb.userdata = @ptrCast(@alignCast(callbacks));
     } else {
         cb.userdata = null;
     }
