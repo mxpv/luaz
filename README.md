@@ -59,35 +59,22 @@ The documentation is automatically updated on every change to the `main` branch.
 
 ### Basic Usage
 
-The following example demonstrates some basic use cases.
-
-- `Lua` takes optional Zig allocator.
-- Global table `_G` is available via `globals()` table.
-- `eval` is a helper function that compiles Lua code to Luau bytecode and executes it.
-- `set` and `get` are used to pass and retrieve data.
-
 ```zig
-const std = @import("std");
-const luaz = @import("luaz");
-const assert = std.debug.assert;
-
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    var lua = try Lua.init(&gpa.allocator); // Create Lua state with custom allocator
-    defer lua.deinit(); // Clean up Lua state
+    var lua = try Lua.init(&gpa.allocator); // Custom allocator (or null for default)
+    defer lua.deinit();
 
-    // Set a global variable
+    // Set and get globals
     try lua.globals().set("greeting", "Hello from Zig!");
-
-    // Get and verify the global variable
     const value = try lua.globals().get("greeting", []const u8);
-    assert(std.mem.eql(u8, value.?, "Hello from Zig!"));
+    std.debug.assert(std.mem.eql(u8, value.?, "Hello from Zig!"));
 
-    // Evaluate Lua code and get result
+    // Evaluate Lua code
     const result = try lua.eval("return 2 + 3 * 4", .{}, i32);
-    assert(result.ok.? == 14);
+    std.debug.assert(result.ok.? == 14);
 }
 ```
 
@@ -96,160 +83,106 @@ pub fn main() !void {
 
 ### Struct and Array Tables
 
-Zig structs and arrays are automatically converted to Lua tables:
+Zig structs and arrays automatically convert to Lua tables:
 
 ```zig
-const std = @import("std");
-const luaz = @import("luaz");
-
 const Point = struct { x: f64, y: f64 };
 
 pub fn main() !void {
     var lua = try Lua.init(null);
     defer lua.deinit();
 
-    // Struct becomes a Lua table with field names as keys
-    const point = Point{ .x = 10.5, .y = 20.3 };
-    try lua.globals().set("point", point);
-
-    // Array becomes a Lua table with 1-based integer indices
-    const numbers = [_]i32{ 1, 2, 3, 4, 5 };
-    try lua.globals().set("numbers", numbers);
+    // Struct → table with field names as keys
+    try lua.globals().set("point", Point{ .x = 10.5, .y = 20.3 });
+    
+    // Array → table with 1-based indices
+    try lua.globals().set("numbers", [_]i32{ 1, 2, 3, 4, 5 });
 
     // Access from Lua
-    const x_result = try lua.eval("return point.x", .{}, f64);
-    const x = x_result.ok.?;          // 10.5
-    const first_result = try lua.eval("return numbers[1]", .{}, i32);
-    const first = first_result.ok.?;   // 1
-    const length_result = try lua.eval("return #numbers", .{}, i32);
-    const length = length_result.ok.?;    // 5
+    const x = (try lua.eval("return point.x", .{}, f64)).ok.?;        // 10.5
+    const first = (try lua.eval("return numbers[1]", .{}, i32)).ok.?; // 1
+    const length = (try lua.eval("return #numbers", .{}, i32)).ok.?;  // 5
 }
 ```
 
 ### Function Calls
 
-Both Lua functions can be called from Zig and Zig functions from Lua with automatic type conversion and argument 
-handling.
+Seamless bidirectional function calls with automatic type conversion:
 
 ```zig
-const std = @import("std");
-const luaz = @import("luaz");
-const assert = std.debug.assert;
-
-fn sum(a: i32, b: i32) i32 {
-    return a + b;
-}
+fn sum(a: i32, b: i32) i32 { return a + b; }
 
 pub fn main() !void {
-    var lua = try Lua.init(null); // Use default allocator
+    var lua = try Lua.init(null);
     defer lua.deinit();
 
-    // Register Zig function in Lua
+    // Register Zig function → call from Lua
     try lua.globals().set("sum", sum);
+    std.debug.assert((try lua.eval("return sum(10, 20)", .{}, i32)).ok.? == 30);
 
-    // Call Zig function from Lua
-    const result1 = try lua.eval("return sum(10, 20)", .{}, i32);
-    assert(result1.ok.? == 30);
-
-    // Define Lua function
+    // Define Lua function → call from Zig
     _ = try lua.eval("function multiply(x, y) return x * y end", .{}, void);
+    std.debug.assert((try lua.globals().call("multiply", .{6, 7}, i32)).ok.? == 42);
 
-    // Call Lua function from Zig
-    const result2 = try lua.globals().call("multiply", .{6, 7}, i32);
-    assert(result2.ok.? == 42);
-
-    // Closures with captured values
+    // Closures with upvalues
     const table = lua.createTable(.{});
     defer table.deinit();
     
     fn getGlobal(upv: Lua.Upvalues(*Lua), key: []const u8) !i32 {
         return try upv.value.globals().get(key, i32) orelse 0;
     }
-    const lua_ptr = @constCast(&lua);
-    try table.setClosure("getGlobal", lua_ptr, getGlobal);
+    try table.setClosure("getGlobal", @constCast(&lua), getGlobal);
     try lua.globals().set("funcs", table);
     try lua.globals().set("myValue", @as(i32, 123));
-    
-    const result3 = try lua.eval("return funcs.getGlobal('myValue')", .{}, i32);
-    assert(result3.ok.? == 123);
+    std.debug.assert((try lua.eval("return funcs.getGlobal('myValue')", .{}, i32)).ok.? == 123);
 }
 ```
 
 ### UserData Integration
 
-luaz has automatic compile-time binding generation for user data. It supports constructors, static and instance 
-methods. If a struct has `deinit`, it'll be automatically invoked on garbage collection.
+Automatic compile-time binding generation with metamethod support:
 
 ```zig
-const std = @import("std");
-const luaz = @import("luaz");
-const assert = std.debug.assert;
-
 const Counter = struct {
     value: i32,
 
-    pub fn init(initial: i32) Counter {
-        return Counter{ .value = initial };
+    pub fn init(initial: i32) Counter { return .{ .value = initial }; }
+    pub fn deinit(self: *Counter) void { _ = self; } // Auto-called on GC
+    pub fn getMaxValue() i32 { return std.math.maxInt(i32); } // Static method
+    pub fn increment(self: *Counter, amount: i32) i32 { 
+        self.value += amount; 
+        return self.value; 
     }
-
-    pub fn deinit(self: *Counter) void {
-        std.log.info("Counter with value {} being destroyed", .{self.value});
-    }
-
-    pub fn getMaxValue() i32 {
-        return std.math.maxInt(i32);
-    }
-
-    pub fn increment(self: *Counter, amount: i32) i32 {
-        self.value += amount;
-        return self.value;
-    }
-
-    pub fn getValue(self: *const Counter) i32 {
-        return self.value;
-    }
-
-    // Metamethods for arithmetic operations
-    pub fn __add(self: Counter, other: i32) Counter {
-        return Counter{ .value = self.value + other };
-    }
-
-    pub fn __tostring(self: Counter) []const u8 {
+    pub fn getValue(self: *const Counter) i32 { return self.value; }
+    
+    // Metamethods
+    pub fn __add(self: Counter, other: i32) Counter { return .{ .value = self.value + other }; }
+    pub fn __len(self: Counter) i32 { return self.value; }
+    pub fn __tostring(self: Counter) []const u8 { 
         return std.fmt.allocPrint(std.heap.page_allocator, "Counter({})", .{self.value}) catch "Counter";
-    }
-
-    pub fn __len(self: Counter) i32 {
-        return self.value;
     }
 };
 
 pub fn main() !void {
-    var lua = try luaz.Lua.init(null);
+    var lua = try Lua.init(null);
     defer lua.deinit();
 
-    // Register Counter type with Lua
     try lua.registerUserData(Counter);
 
     _ = try lua.eval(
-        \\local counter = Counter.new(10)     -- Use constructor
-        \\assert(counter:increment(5) == 15)  -- Call instance method
-        \\assert(counter:getValue() == 15)   -- Get current value
-        \\
-        \\local max = Counter.getMaxValue()   -- Call static method
-        \\assert(max == 2147483647)           -- Max i32 value
-        \\
-        \\-- Metamethods in action
-        \\local new_counter = counter + 5     -- Uses __add metamethod
+        \\local counter = Counter.new(10)      -- Constructor
+        \\assert(counter:increment(5) == 15)   -- Instance method
+        \\assert(Counter.getMaxValue() == 2147483647) -- Static method
+        \\assert(#counter == 15)               -- __len metamethod
+        \\local new_counter = counter + 5      -- __add metamethod
         \\assert(new_counter:getValue() == 20)
-        \\assert(#counter == 15)              -- Uses __len metamethod
-        \\print(tostring(counter))            -- Uses __tostring metamethod
     , .{}, void);
 }
 ```
 
 ### String Buffer (StrBuf)
 
-Efficient string building using Luau's StrBuf API with automatic memory management.
+Efficient string building using Luau's StrBuf API:
 
 ```zig
 fn buildGreeting(upv: Lua.Upvalues(*Lua), name: []const u8, age: i32) !Lua.StrBuf {
@@ -265,19 +198,16 @@ fn buildGreeting(upv: Lua.Upvalues(*Lua), name: []const u8, age: i32) !Lua.StrBu
 
 // Register and call from Lua
 try lua.globals().setClosure("buildGreeting", &lua, buildGreeting);
-const result = try lua.eval("return buildGreeting('Alice', 25)", .{}, []const u8);
-const greeting = result.ok.?;
+const greeting = (try lua.eval("return buildGreeting('Alice', 25)", .{}, []const u8)).ok.?;
 ```
-
-> [!WARNING]
-> This library is still evolving and the API is not stable. Backward incompatible changes may be introduced up until the 1.0 release. Consider pinning to a specific commit or tag if you need stability.
 
 ## 🔧 Build Configuration
 
-### Zig Version Policy
-Until Zig reaches 1.0 (stable release), luaz targets the latest released version of Zig. When updating to a new breaking Zig version, we create a branch for the previous version (e.g., `zig-0.14`) that can be checked out if the older version is required.
+> [!NOTE]
+> Until Zig reaches 1.0 (stable release), luaz targets the latest released version of Zig. When updating to a new breaking Zig version, we create a branch for the previous version (e.g., `zig-0.14`) that can be checked out if the older version is required.
 
-Current supported Zig version: **0.15.1**
+> [!WARNING]
+> This library is still evolving and the API is not stable. Backward incompatible changes may be introduced up until the 1.0 release. Consider pinning to a specific commit or tag if you need stability.
 
 ### Vector Size
 By default, luaz is built with 4-component vectors. To customize:
