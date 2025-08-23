@@ -244,7 +244,8 @@ pub fn enable_codegen(self: Self) bool {
 /// Only methods that exist on the callbacks object will be set. Missing methods are ignored.
 ///
 /// Note: Callbacks are set globally on the Lua state and remain active until the state is destroyed
-/// or new callbacks are set.
+/// or new callbacks are set. When setting new callbacks, any callback methods not present in the
+/// new callback struct will be cleared (set to null) to prevent calling stale function pointers.
 ///
 /// Supports two modes:
 /// 1. Static methods: Pass a struct instance - methods are called as static functions.
@@ -315,6 +316,8 @@ pub fn setCallbacks(self: Self, callbacks: anytype) void {
                 }
             }
         }.wrapper;
+    } else {
+        cb.interrupt = null;
     }
 
     if (@hasDecl(CallbackType, "panic")) {
@@ -331,6 +334,8 @@ pub fn setCallbacks(self: Self, callbacks: anytype) void {
                 }
             }
         }.wrapper;
+    } else {
+        cb.panic = null;
     }
 
     if (@hasDecl(CallbackType, "userthread")) {
@@ -348,6 +353,8 @@ pub fn setCallbacks(self: Self, callbacks: anytype) void {
                 }
             }
         }.wrapper;
+    } else {
+        cb.userthread = null;
     }
 
     if (@hasDecl(CallbackType, "useratom")) {
@@ -364,6 +371,8 @@ pub fn setCallbacks(self: Self, callbacks: anytype) void {
                 }
             }
         }.wrapper;
+    } else {
+        cb.useratom = null;
     }
 
     if (@hasDecl(CallbackType, "debugbreak")) {
@@ -382,6 +391,8 @@ pub fn setCallbacks(self: Self, callbacks: anytype) void {
                 }
             }
         }.wrapper;
+    } else {
+        cb.debugbreak = null;
     }
 
     if (@hasDecl(CallbackType, "debugstep")) {
@@ -400,6 +411,8 @@ pub fn setCallbacks(self: Self, callbacks: anytype) void {
                 }
             }
         }.wrapper;
+    } else {
+        cb.debugstep = null;
     }
 
     if (@hasDecl(CallbackType, "debuginterrupt")) {
@@ -418,6 +431,8 @@ pub fn setCallbacks(self: Self, callbacks: anytype) void {
                 }
             }
         }.wrapper;
+    } else {
+        cb.debuginterrupt = null;
     }
 
     if (@hasDecl(CallbackType, "debugprotectederror")) {
@@ -435,6 +450,8 @@ pub fn setCallbacks(self: Self, callbacks: anytype) void {
                 }
             }
         }.wrapper;
+    } else {
+        cb.debugprotectederror = null;
     }
 
     if (@hasDecl(CallbackType, "onallocate")) {
@@ -453,6 +470,8 @@ pub fn setCallbacks(self: Self, callbacks: anytype) void {
                 }
             }
         }.wrapper;
+    } else {
+        cb.onallocate = null;
     }
 }
 
