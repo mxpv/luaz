@@ -1,4 +1,6 @@
 ---
+allowed-tools: Bash(git describe:*)
+argument-hint: [version]
 description: Make a new release of luaz library
 ---
 
@@ -24,17 +26,13 @@ Arguments: `$ARGUMENTS` (optional version like "0.3.1", "v0.3.1", "0.3", "v0.3")
     + The guided tour examples run successfully.
 - Make a commit with message "Bump library to v{VERSION}" (NEVER include Claude Code attribution or AI mentions in commit messages)
 - Tag the commit with version.
-- After commit and tag are created, offer to push both to the upstream repository:
+- After commit and tag are created, push both to the upstream repository:
     + Use `git push origin main` to push the commit
     + Use `git push origin v{VERSION}` to push the tag
-    + Confirm with user before pushing
 - Once changes are pushed, create a GitHub release:
     + Prepare the release details:
         * Title: version number (e.g., "v0.3.0")
         * Body: markdown content from CHANGELOG.md for this version
         * Append Luau version info: use `cd luau && git describe --tags --always` to get version (e.g., "0.684")
         * Add a line like "Luau version: [0.684](https://github.com/luau-lang/luau/releases/tag/0.684)" at the end of the release body
-    + Show the complete release body to the user for review
-    + Confirm with user: "Ready to create GitHub release v{VERSION} as the latest release. Proceed?"
     + Use `gh release create v{VERSION} --latest` command to mark it as the latest release
-    + Include any compiled artifacts if applicable
