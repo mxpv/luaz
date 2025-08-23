@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - **BREAKING**: Updated Zig toolchain requirement to version 0.15.1 ([#11](https://github.com/mxpv/luaz/issues/11))
 - `setCallbacks()` now explicitly clears unused callback pointers to null, fixing behavior when switching between different callback struct types
+- Updated Luau dependency from version 0.686 to [0.688](https://github.com/luau-lang/luau/releases/tag/0.688)
 
 ## [0.4.0] - 2025-08-17
 
