@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Enabled Ubuntu 22.04 ARM on CI.
+
 ### Changed
 - **BREAKING**: Updated Zig toolchain requirement to version 0.15.1 ([#11](https://github.com/mxpv/luaz/issues/11))
 - `setCallbacks()` now explicitly clears unused callback pointers to null, fixing behavior when switching between different callback struct types
