@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **BREAKING**: Updated Zig toolchain requirement to version 0.15.1 ([#11](https://github.com/mxpv/luaz/issues/11))
+- `setCallbacks()` now explicitly clears unused callback pointers to null, fixing behavior when switching between different callback struct types
+
 ## [0.4.0] - 2025-08-17
 
 ### Added
