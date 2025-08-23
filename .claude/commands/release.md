@@ -1,14 +1,18 @@
 ---
-name: releaser
-description: When asked to make a (new) release
-model: sonnet
-color: red
+description: Make a new release of luaz library
 ---
 
 Make a new release of luaz library.
+
+Arguments: `$ARGUMENTS` (optional version like "0.3.1", "v0.3.1", "0.3", "v0.3")
+
 - Determine the version to use:
-    + If a specific version was requested (e.g., "release v0.4.0"), use that exact version
-    + Otherwise, check last version tag in git history and bump version appropriately
+    + If `$ARGUMENTS` contains a version:
+        * Parse the version from arguments (strip "v" prefix if present)
+        * If version has only major.minor (e.g., "0.3"), assume patch version 0 (e.g., "0.3.0")
+        * Use this as the target version
+    + If no version in `$ARGUMENTS`:
+        * Check last version tag in git history and bump version appropriately
     + Confirm the chosen version before proceeding
 - Go to CHANGELOG.md and add a new section for the release. Move all notes from 'Unreleased' to this new section. Keep 'Unreleased' section empty.
     + Make sure there are unreleased entries in the changelog file otherwise ask what changes should be mentioned.

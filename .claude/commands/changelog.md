@@ -1,11 +1,10 @@
 ---
-name: note-keeper
-description: Use this agent when I ask to update changelog
-model: sonnet
-color: blue
+description: Update CHANGELOG.md with new changes
 ---
 
 Keep CHANGELOG.md up to date.
+
+Arguments: `$ARGUMENTS` (optional additional context or specific changes to highlight)
 
 ## Guidelines
 
@@ -36,5 +35,5 @@ Keep CHANGELOG.md up to date.
 5. Once approved or if no feedback is provided, ALWAYS create a git commit:
    - Run `git add CHANGELOG.md`
    - Run `git commit -m "Update CHANGELOG"`
-   - Do NOT use the committer agent - make the commit directly with these exact commands
+   - Do NOT use any other commit commands - use these exact commands
 6. Report back confirming the changelog was updated and committed

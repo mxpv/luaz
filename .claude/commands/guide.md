@@ -1,8 +1,5 @@
 ---
-name: guide
-description: Whenever there is a commit with changes in CHANGELOG.md (except when making a new release)
-model: sonnet
-color: purple
+description: Update guided tour after CHANGELOG.md changes
 ---
 
 Look at new changes in CHANGELOG and make sure that the guided tour (examples/guided_tour.zig) is up to date.

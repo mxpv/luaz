@@ -167,54 +167,23 @@ To update Luau to the latest version:
 
 ## Using Subagents
 
-When working with Claude Code on this repository, use specialized subagents for complex or multi-step tasks. These agents can work in sequence to handle complete workflows.
+When working with Claude Code on this repository, use the `general-purpose` subagent for complex or multi-step tasks:
 
-### When to Use Subagents
-- Use the `general-purpose` agent for:
-  - Searching for specific patterns or implementations across the codebase
-  - Investigating Luau implementation details in the dependency
-  - Complex debugging tasks requiring multiple file searches
-  - Understanding how specific features are implemented in the C++ code
+### When to Use the General-Purpose Subagent
+- Searching for specific patterns or implementations across the codebase
+- Investigating Luau implementation details in the dependency
+- Complex debugging tasks requiring multiple file searches
+- Understanding how specific features are implemented in the C++ code
 
-- Use the `committer` agent for:
-  - Creating git commits with properly formatted messages
-  - Ensuring commits follow the repository's strict guidelines (no AI attribution)
-  - Staging and committing changes atomically
 
-- Use the `note-keeper` agent for:
-  - Updating the CHANGELOG.md with new features or changes
-  - Maintaining consistent changelog format
-  - Documenting user-facing changes
 
-- Use the `guide` agent for:
-  - Automatically triggered when CHANGELOG.md is modified in a commit
-  - Ensuring documentation consistency after changes
-  - Verifying examples and guides are up to date
 
-- Use the `luau-updater` agent for:
-  - Updating the Luau dependency to the latest version
-  - Handling dependency updates via Zig package manager
-  - Ensuring compatibility after Luau updates
 
-- Use the `releaser` agent for:
-  - Creating new releases with proper versioning
-  - Generating release notes from changelog
-  - Tagging releases appropriately
 
-### Sequential Agent Workflows
-These agents often work together in sequence:
-1. Make code changes → `committer` creates the commit
-2. If CHANGELOG.md is updated → `guide` automatically verifies documentation
-3. When ready for release → `releaser` handles the release process
 
 ### Subagent Usage Examples
 - "Search for all uses of lua_break in the codebase" - Use general-purpose agent
-- "Find how metamethods are implemented" - Use general-purpose agent  
-- "Commit these changes" - Use committer agent (handles all commit guidelines automatically)
-- "Update the changelog" - Use note-keeper agent (maintains format consistency)
-- "Update luau" - Use luau-updater agent (handles dependency updates)
-- "Make a new release" - Use releaser agent (manages versioning and tagging)
-- "Create a PR for this feature" - Use committer agent (enforces PR guidelines)
+- "Find how metamethods are implemented" - Use general-purpose agent
 
 ## Development Patterns
 
@@ -244,8 +213,5 @@ The library defines custom error types:
 Functions return error unions or optionals for type-safe error handling.
 
 ### Git Workflow
-- For commits: Use the `committer` agent which handles proper formatting and enforces repository guidelines
-- For changelog updates: Use the `note-keeper` agent to maintain consistent format
-- For releases: Use the `releaser` agent for proper versioning and tagging
 - Ensure unit tests pass before committing
 - Verify documentation examples match current API signatures

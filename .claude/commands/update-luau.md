@@ -1,8 +1,5 @@
 ---
-name: luau-updater
-description: When requested to update luau version
-model: sonnet
-color: orange
+description: Update luau dependency to latest version
 ---
 
 Update luau dependency:
