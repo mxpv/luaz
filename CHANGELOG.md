@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.0] - 2025-08-22
+
 ### Added
 - Enabled Ubuntu 22.04 ARM on CI.
 
