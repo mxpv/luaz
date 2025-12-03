@@ -125,6 +125,30 @@ pub fn push(state: *const State, value: anytype) void {
                 return;
             }
 
+            // Handle CaptureWrapper (from Capture) by pushing upvalues and creating closure
+            if (@hasDecl(T, "is_capture_wrapper") and T.is_capture_wrapper) {
+                const upvalues = value.upvalues;
+                const upvalues_info = @typeInfo(@TypeOf(upvalues));
+                const upvalue_count = if (upvalues_info == .@"struct" and upvalues_info.@"struct".is_tuple)
+                    upvalues_info.@"struct".fields.len
+                else
+                    1;
+
+                // Push upvalues onto the stack
+                if (upvalues_info == .@"struct" and upvalues_info.@"struct".is_tuple) {
+                    inline for (0..upvalues_info.@"struct".fields.len) |i| {
+                        push(state, upvalues[i]);
+                    }
+                } else {
+                    push(state, upvalues);
+                }
+
+                // Create the closure with upvalues (func_ptr is a comptime constant)
+                const trampoline: State.CFunction = createFunc(T.func_ptr);
+                state.pushCClosureK(trampoline, @typeName(T.Func), @intCast(upvalue_count), null);
+                return;
+            }
+
             // Handle StrBuf by fixing pointers and pushing as string
             if (T == Lua.StrBuf) {
                 var fixed_buf = value.buf;
@@ -1028,7 +1052,7 @@ test "StrBuf pointer fixup on value copy" {
 
     // Register the function that returns StrBuf by value
     const globals = lua.globals();
-    try globals.setClosure("buildMessage", &lua, TestFunction.buildMessage);
+    try globals.set("buildMessage", Lua.Capture(&lua, TestFunction.buildMessage));
 
     // Call the function - this would segfault without proper pointer fixup
     const result = try lua.eval("return buildMessage('Alice', 25)", .{}, []const u8);

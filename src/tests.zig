@@ -53,7 +53,7 @@ test "breakpoint function from lua code" {
         }
     }.call;
 
-    try lua.globals().setClosure("breakpoint", &debug, breakpoint_func);
+    try lua.globals().set("breakpoint", Lua.Capture(&debug, breakpoint_func));
 
     // Test Lua code with breakpoint() call
     const code =
@@ -1660,7 +1660,7 @@ const ClosureCounter = struct {
     }
 };
 
-test "table setClosure" {
+test "Capture" {
     const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
@@ -1668,28 +1668,28 @@ test "table setClosure" {
     defer table.deinit();
 
     // Single upvalue
-    try table.setClosure("add5", 5, closureAdd5);
+    try table.set("add5", Lua.Capture(@as(i32, 5), closureAdd5));
 
     // Multiple upvalues
-    try table.setClosure("transform", .{ 2.0, 10.0 }, closureTransform);
+    try table.set("transform", Lua.Capture(.{ @as(f32, 2.0), @as(f32, 10.0) }, closureTransform));
 
     // Optional parameters
-    try table.setClosure("optAdd", 10, closureOptAdd);
+    try table.set("optAdd", Lua.Capture(@as(i32, 10), closureOptAdd));
 
     // Table reference upvalue
     const config = lua.createTable(.{});
     defer config.deinit();
     try config.set("mult", @as(i32, 3));
-    try table.setClosure("multiply", config, closureMultiply);
+    try table.set("multiply", Lua.Capture(config, closureMultiply));
 
     // No additional parameters
-    try table.setClosure("const", 42, closureConstant);
+    try table.set("const", Lua.Capture(@as(i32, 42), closureConstant));
 
     // Multiple optionals
-    try table.setClosure("sum", 100, closureSumAll);
+    try table.set("sum", Lua.Capture(@as(i32, 100), closureSumAll));
 
     // Single upvalue (not wrapped in struct)
-    try table.setClosure("single", 42, closureSingle);
+    try table.set("single", Lua.Capture(@as(i32, 42), closureSingle));
 
     try lua.globals().set("f", table);
     try lua.globals().set("config", config);
@@ -1722,7 +1722,7 @@ test "table setClosure" {
     try expect(multiply2_result.ok == 35);
 }
 
-test "setClosure with pointer receiver" {
+test "Capture with pointer receiver" {
     const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
@@ -1734,8 +1734,8 @@ test "setClosure with pointer receiver" {
 
     // Register methods with *Self receivers as closures (direct pointer)
     // Note: User is responsible for ensuring the pointer remains valid for the lifetime of the closure
-    try table.setClosure("increment", &counter, ClosureCounter.increment);
-    try table.setClosure("getValue", &counter, ClosureCounter.getValue);
+    try table.set("increment", Lua.Capture(&counter, ClosureCounter.increment));
+    try table.set("getValue", Lua.Capture(&counter, ClosureCounter.getValue));
 
     try lua.globals().set("counter", table);
 
@@ -1758,7 +1758,7 @@ test "setClosure with pointer receiver" {
     try expect(getValue3_result.ok == 20);
 }
 
-test "metatable with closure function and table attachment" {
+test "metatable with Capture" {
     const lua = try Lua.init(&std.testing.allocator);
     defer lua.deinit();
 
@@ -1776,7 +1776,7 @@ test "metatable with closure function and table attachment" {
         }
     };
 
-    try metatable.setClosure("compute", 4, AddFunc.add);
+    try metatable.set("compute", Lua.Capture(@as(i32, 4), AddFunc.add));
 
     // Set __index to metatable itself for method lookup
     try metatable.set("__index", metatable);
@@ -2063,7 +2063,7 @@ test "StrBuf returned from Zig functions" {
     defer lua.deinit();
 
     // Test if function is registered at all
-    try lua.globals().setClosure("makeMsg", &lua, makeMsg);
+    try lua.globals().set("makeMsg", Lua.Capture(&lua, makeMsg));
 
     // Check if the function exists
     const funcExists = try lua.eval("return makeMsg ~= nil", .{}, bool);
@@ -2093,7 +2093,7 @@ test "StrBuf returned in tuple from Zig functions" {
     defer lua.deinit();
 
     // Set function that returns a tuple containing StrBuf
-    try lua.globals().setClosure("makeTuple", &lua, makeMsgTuple);
+    try lua.globals().set("makeTuple", Lua.Capture(&lua, makeMsgTuple));
 
     // Check if the function exists
     const funcExists = try lua.eval("return makeTuple ~= nil", .{}, bool);
@@ -2132,7 +2132,7 @@ test "StrBuf with dynamic allocation returned from Zig functions" {
     defer lua.deinit();
 
     // Set function that creates large StrBuf requiring dynamic allocation
-    try lua.globals().setClosure("makeLarge", &lua, makeLargeMsg);
+    try lua.globals().set("makeLarge", Lua.Capture(&lua, makeLargeMsg));
 
     // Test with enough iterations to exceed 512 bytes
     // Each iteration adds ~50+ bytes, so 15 iterations should exceed 512 bytes

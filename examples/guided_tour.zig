@@ -21,6 +21,7 @@
 
 const std = @import("std");
 const luaz = @import("luaz");
+const Lua = luaz.Lua;
 const print = std.debug.print;
 
 // Example functions for demonstrating Zig function integration
@@ -651,7 +652,7 @@ pub fn main() !void {
             }
         }.call;
 
-        try globals.setClosure("formatMessage", &lua, formatMessage);
+        try globals.set("formatMessage", Lua.Capture(&lua, formatMessage));
         const result = try lua.eval("return formatMessage('Alice', 25)", .{}, []const u8);
         print("From function: {s}\n", .{result.ok.?});
     }

@@ -131,7 +131,7 @@ pub fn main() !void {
     fn getGlobal(upv: Lua.Upvalues(*Lua), key: []const u8) !i32 {
         return try upv.value.globals().get(key, i32) orelse 0;
     }
-    try table.setClosure("getGlobal", @constCast(&lua), getGlobal);
+    try table.set("getGlobal", Lua.Capture(@constCast(&lua), getGlobal));
     try lua.globals().set("funcs", table);
     try lua.globals().set("myValue", @as(i32, 123));
     std.debug.assert((try lua.eval("return funcs.getGlobal('myValue')", .{}, i32)).ok.? == 123);
@@ -197,7 +197,7 @@ fn buildGreeting(upv: Lua.Upvalues(*Lua), name: []const u8, age: i32) !Lua.StrBu
 }
 
 // Register and call from Lua
-try lua.globals().setClosure("buildGreeting", &lua, buildGreeting);
+try lua.globals().set("buildGreeting", Lua.Capture(&lua, buildGreeting));
 const greeting = (try lua.eval("return buildGreeting('Alice', 25)", .{}, []const u8)).ok.?;
 ```
 

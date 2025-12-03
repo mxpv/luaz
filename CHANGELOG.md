@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - Updated Luau dependency from version 0.688 to [0.702](https://github.com/luau-lang/luau/releases/tag/0.702)
 - Raw Luau C API is now re-exported from the library via the `c` module
+- **BREAKING**: Replaced `Table.setClosure()` with `Lua.Capture()` for creating closures with upvalues. New API: `table.set("name", Lua.Capture(upvalues, func))`
 
 ### Fixed
 - registerUserData() now properly detects global name collisions when registering types from different modules with the same short name

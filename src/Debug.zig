@@ -195,7 +195,7 @@
 //!     return if (result == -1) 0 else 0;
 //! }
 //!
-//! try lua.globals().setClosure("breakpoint", &debug, breakpointFunc);
+//! try lua.globals().set("breakpoint", Lua.Capture(&debug, breakpointFunc));
 //!
 //! // Now Lua code can call breakpoint(line)
 //! const code =

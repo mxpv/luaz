@@ -82,7 +82,7 @@ The library provides seamless conversion between Zig and Lua types through its h
 The library provides table operations through the `Table` type:
 - Raw operations (`setRaw`/`getRaw`) bypass metamethods like `__index` and `__newindex` for direct table access
 - Non-raw operations (`set`/`get`) invoke metamethods when present, providing full Lua semantics
-- Closure setting (`setClosure`) sets functions with upvalues for persistent state
+- Closure setting with `Capture()` sets functions with upvalues for persistent state
 - Function calling (`call`) retrieves and calls functions stored in tables with automatic argument and return type handling
 - Function compilation (`compile`) compiles table functions to native code via JIT for better performance
 - Table length (`len`) returns table length following Lua semantics, including metamethod support
@@ -153,11 +153,11 @@ The library supports custom memory allocators through `Lua.init()`:
 - Deviates from typical Zig conventions due to C interop requirements
 - All Lua memory operations (allocation, reallocation, freeing) go through the custom allocator
 
-### Closure Upvalues (`setClosure`)
-The `setClosure` method creates Lua C closures using the `Upvalues(T)` wrapper type:
+### Closure Upvalues (`Capture`)
+The `Capture` function creates Lua C closures using the `Upvalues(T)` wrapper type:
 - Functions must use `Upvalues(T)` as their first parameter
-- Single upvalue: `setClosure("func", value, fn)` where fn takes `Upvalues(T)`
-- Multiple upvalues: Use tuple `setClosure("func", .{val1, val2}, fn)` where fn takes `Upvalues(struct{T1, T2})`
+- Single upvalue: `Capture(value, fn)` where fn takes `Upvalues(T)`
+- Multiple upvalues: Use tuple `Capture(.{val1, val2}, fn)` where fn takes `Upvalues(struct{T1, T2})`
 
 Examples:
 ```zig
@@ -165,18 +165,18 @@ Examples:
 fn getValue(upv: Upvalues(*State), key: []const u8) i32 {
     return upv.value.getGlobal(key);
 }
-try table.setClosure("getValue", &state, getValue);
+try table.set("getValue", Lua.Capture(&state, getValue));
 
 fn addFive(upv: Upvalues(i32), x: i32) i32 {
     return x + upv.value;
 }
-try table.setClosure("addFive", 5, addFive);
+try table.set("addFive", Lua.Capture(@as(i32, 5), addFive));
 
 // Multiple upvalues - use tuple
 fn transform(upv: Upvalues(struct { f32, f32 }), x: f32) f32 {
     return x * upv.value[0] + upv.value[1];
 }
-try table.setClosure("transform", .{ 2.0, 10.0 }, transform);
+try table.set("transform", Lua.Capture(.{ @as(f32, 2.0), @as(f32, 10.0) }, transform));
 ```
 
 ## Luau Dependency
