@@ -1,6 +1,6 @@
 .{
     .name = .luaz,
-    .version = "0.5.0",
+    .version = "0.6.0",
     .dependencies = .{
         .luau = .{
             .url = "git+https://github.com/luau-lang/luau.git?ref=0.702#c836feb2450a074581010f84da2eadeea38a3d55",
