@@ -131,11 +131,7 @@ pub fn build(b: *std.Build) !void {
         mod.linkLibrary(luau_codegen);
         mod.linkLibrary(luau_compiler);
 
-        const exe = b.addExecutable(.{
-            .name = "luau-compile",
-            .root_module = mod,
-        });
-
+        const exe = b.addExecutable(.{ .name = "luau-compile", .root_module = mod });
         const run = b.addRunArtifact(exe);
 
         if (b.args) |args| {
@@ -236,10 +232,7 @@ pub fn build(b: *std.Build) !void {
         mod.addImport("c", c_module);
 
         // Add C wrapper
-        mod.addCSourceFile(.{
-            .file = b.path("src/handler.cpp"),
-            .flags = flags,
-        });
+        mod.addCSourceFile(.{ .file = b.path("src/handler.cpp"), .flags = flags });
         mod.addCMacro("LUA_VECTOR_SIZE", b.fmt("{d}", .{opts.vector_size}));
         mod.addIncludePath(luau_dep.path("VM/include"));
         mod.addIncludePath(luau_dep.path("Common/include"));
@@ -278,21 +271,10 @@ pub fn build(b: *std.Build) !void {
             .optimize = optimize,
         });
 
+        test_mod.addImport("luaz", b.modules.get("luaz").?);
         test_mod.addImport("c", c_module);
 
-        const unit_tests = b.addTest(.{
-            .root_module = test_mod,
-        });
-
-        // Add C wrapper
-        unit_tests.root_module.addCSourceFile(.{
-            .file = b.path("src/handler.cpp"),
-            .flags = flags,
-        });
-        unit_tests.root_module.addCMacro("LUA_VECTOR_SIZE", b.fmt("{d}", .{opts.vector_size}));
-        unit_tests.root_module.addIncludePath(luau_dep.path("VM/include"));
-        unit_tests.root_module.addIncludePath(luau_dep.path("Common/include"));
-        unit_tests.root_module.addIncludePath(b.path("src"));
+        const unit_tests = b.addTest(.{ .root_module = test_mod });
 
         // See https://zig.news/squeek502/code-coverage-for-zig-1dk1
         if (opts.cover) {
@@ -305,9 +287,6 @@ pub fn build(b: *std.Build) !void {
             });
         }
 
-        unit_tests.linkLibrary(luau_vm);
-        unit_tests.linkLibrary(luau_codegen);
-        unit_tests.linkLibrary(luau_compiler);
         unit_tests.linkLibCpp();
 
         const run_tests = b.addRunArtifact(unit_tests);
@@ -331,10 +310,7 @@ pub fn build(b: *std.Build) !void {
 
         mod.addImport("luaz", b.modules.get("luaz").?);
 
-        const guided_tour = b.addExecutable(.{
-            .name = "guided-tour",
-            .root_module = mod,
-        });
+        const guided_tour = b.addExecutable(.{ .name = "guided-tour", .root_module = mod });
 
         const run_guided_tour = b.addRunArtifact(guided_tour);
         if (b.args) |args| {
