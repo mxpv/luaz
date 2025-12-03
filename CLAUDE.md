@@ -7,10 +7,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 `luaz` is a zero-cost wrapper library for Luau written in Zig. It provides idiomatic Zig bindings for the Luau
 scripting language, focusing specifically on Luau's unique features and performance characteristics.
 
-The project consists of three main Zig modules:
+The library entry point is `src/lib.zig`, which exports five public modules:
+- Lua (`src/Lua.zig`): High-level idiomatic Zig API with automatic type conversions
 - State (`src/State.zig`): Low-level Lua state wrapper providing direct access to Lua VM operations
 - Compiler (`src/Compiler.zig`): Luau compiler interface for converting Lua source to bytecode
-- Lua (`src/lua.zig`): High-level idiomatic Zig API with automatic type conversions
+- Debug (`src/Debug.zig`): Debug functionality for breakpoints, stepping, and stack inspection
+- GC (`src/GC.zig`): Garbage collector control for memory management tuning
 
 ## Build System
 
@@ -25,6 +27,7 @@ The build system is written in Zig and provides several targets:
 - `zig build check-fmt` - Check code formatting
 - `zig build luau-vm` - Build Luau VM library only
 - `zig build luau-codegen` - Build Luau codegen library only
+- `zig build guided-tour` - Run the guided tour example
 
 ### Key Libraries Built
 - luau_vm: Core Luau virtual machine (from Luau's `VM/src`)
@@ -36,7 +39,7 @@ directories.
 
 ## Architecture
 
-### High-Level API (`src/lua.zig`)
+### High-Level API (`src/Lua.zig`)
 The main `Lua` struct provides an idiomatic Zig interface with automatic type conversions:
 - `init()` - Initialize Lua state with optional custom allocator
 - `deinit()` - Clean up Lua state and free resources
@@ -121,6 +124,26 @@ Interfaces with the Luau compiler to:
 - Compile Lua source to bytecode with configurable optimization levels
 - Handle compilation errors with detailed error messages
 - Support debug info and coverage options
+
+### Debug Module (`src/Debug.zig`)
+Provides debugging support for Luau scripts:
+- `setSingleStep()` - Enable/disable single-step debugging mode
+- `debugBreak()` - Interrupt thread execution during debug callbacks
+- `debugTrace()` - Get formatted stack traces for error reporting
+- `stackDepth()` - Get current call stack depth
+- `getInfo()` - Get debug information about functions on the call stack
+- `getArg()` - Get function arguments at specific stack levels
+- `getLocal()`/`setLocal()` - Get/set local variables (requires debug level 2)
+- `getUpvalue()`/`setUpvalue()` - Get/set function upvalues
+
+### GC Module (`src/GC.zig`)
+Controls Luau's incremental garbage collector:
+- `stop()`/`restart()` - Disable/enable automatic garbage collection
+- `collect()` - Force a full garbage collection cycle
+- `step()` - Perform incremental GC work
+- `count()`/`countBytes()` - Query current memory usage
+- `isRunning()` - Check if GC is enabled
+- `setGoal()`/`setStepMul()`/`setStepSize()` - Tune GC performance
 
 ### Custom Allocator Support
 The library supports custom memory allocators through `Lua.init()`:
