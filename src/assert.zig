@@ -1,6 +1,4 @@
-const c = @cImport({
-    @cInclude("handler.h");
-});
+const c = @import("c");
 
 /// Assert handler function type for Luau VM assertions.
 pub const AssertHandler = c.Luau_AssertHandler;

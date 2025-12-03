@@ -1,10 +1,7 @@
 //! Luau compiler interface for compiling Lua source code to bytecode.
 
 const std = @import("std");
-const c = @cImport({
-    @cInclude("stdlib.h");
-    @cInclude("luacode.h");
-});
+const c = @import("c");
 
 const Self = @This();
 
@@ -21,8 +18,8 @@ pub const Result = union(enum) {
     /// Either way, must use `C.free` to let it go.
     pub fn deinit(self: Result) void {
         switch (self) {
-            .ok => |bytecode| c.free(@constCast(bytecode.ptr)),
-            .err => |message| c.free(@constCast(message.ptr)),
+            .ok => |bytecode| std.c.free(@constCast(bytecode.ptr)),
+            .err => |message| std.c.free(@constCast(message.ptr)),
         }
     }
 };

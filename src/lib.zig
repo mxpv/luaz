@@ -10,6 +10,9 @@ pub const Compiler = @import("Compiler.zig");
 pub const Debug = @import("Debug.zig");
 pub const GC = @import("GC.zig");
 
+// Raw Luau C API
+pub const c = @import("c");
+
 // Assert handling
 pub const setAssertHandler = @import("assert.zig").setAssertHandler;
 pub const AssertHandler = @import("assert.zig").AssertHandler;

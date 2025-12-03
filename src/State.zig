@@ -5,11 +5,7 @@
 
 const std = @import("std");
 const assert = std.debug.assert;
-const c = @cImport({
-    @cInclude("lua.h");
-    @cInclude("lualib.h");
-    @cInclude("luacodegen.h");
-});
+const c = @import("c");
 
 // Constants
 /// Maximum buffer size (1GB) - defined by Luau implementation

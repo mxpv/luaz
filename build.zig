@@ -186,6 +186,45 @@ pub fn build(b: *std.Build) !void {
         steps.luau_analysis.dependOn(&run.step);
     }
 
+    // Translated C headers module
+    const c_module = blk: {
+        const write_files = b.addWriteFiles();
+
+        // Create consolidated header
+        const header = write_files.add("_luau.h",
+            \\#include <lua.h>
+            \\#include <lualib.h>
+            \\#include <luacode.h>
+            \\#include <luacodegen.h>
+            \\#include <handler.h>
+        );
+
+        const translated = b.addTranslateC(.{
+            .root_source_file = header,
+            .target = target,
+            .optimize = optimize,
+        });
+
+        translated.addIncludePath(luau_dep.path("VM/include"));
+        translated.addIncludePath(luau_dep.path("Common/include"));
+        translated.addIncludePath(luau_dep.path("Compiler/include"));
+        translated.addIncludePath(luau_dep.path("CodeGen/include"));
+        translated.addIncludePath(b.path("src"));
+        translated.defineCMacro("LUA_VECTOR_SIZE", b.fmt("{d}", .{opts.vector_size}));
+
+        const mod = b.addModule("c", .{
+            .root_source_file = translated.getOutput(),
+            .target = target,
+            .optimize = optimize,
+        });
+
+        mod.linkLibrary(luau_vm);
+        mod.linkLibrary(luau_codegen);
+        mod.linkLibrary(luau_compiler);
+
+        break :blk mod;
+    };
+
     // Main module
     {
         const mod = b.addModule("luaz", .{
@@ -193,6 +232,8 @@ pub fn build(b: *std.Build) !void {
             .target = target,
             .optimize = optimize,
         });
+
+        mod.addImport("c", c_module);
 
         // Add C wrapper
         mod.addCSourceFile(.{
@@ -231,12 +272,16 @@ pub fn build(b: *std.Build) !void {
 
     // zig build test
     {
+        const test_mod = b.createModule(.{
+            .root_source_file = b.path("src/tests.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+
+        test_mod.addImport("c", c_module);
+
         const unit_tests = b.addTest(.{
-            .root_module = b.createModule(.{
-                .root_source_file = b.path("src/tests.zig"),
-                .target = target,
-                .optimize = optimize,
-            }),
+            .root_module = test_mod,
         });
 
         // Add C wrapper
