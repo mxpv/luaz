@@ -399,6 +399,7 @@ fn addLuauIncludes(dep: *std.Build.Dependency, mod: *std.Build.Module) void {
     mod.addIncludePath(dep.path("Compiler/include"));
     mod.addIncludePath(dep.path("CodeGen/include"));
 
+    mod.addIncludePath(dep.path("Require/include"));
     mod.addIncludePath(dep.path("Require/Navigator/include"));
     mod.addIncludePath(dep.path("Require/Runtime/include"));
 
