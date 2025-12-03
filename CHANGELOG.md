@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 - Updated Luau dependency from version 0.688 to [0.702](https://github.com/luau-lang/luau/releases/tag/0.702)
+- Raw Luau C API is now re-exported from the library via the `c` module
+
+### Fixed
+- registerUserData() now properly detects global name collisions when registering types from different modules with the same short name
 
 ## [0.5.0] - 2025-08-22
 
