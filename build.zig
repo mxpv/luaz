@@ -92,6 +92,7 @@ pub fn build(b: *std.Build) !void {
 
         try addSrcFiles(b, mod, luau_dep, "Compiler/src", flags);
         try addSrcFiles(b, mod, luau_dep, "Ast/src", flags);
+        try addSrcFiles(b, mod, luau_dep, "Common/src", flags);
 
         mod.addCMacro("LUA_USE_LONGJMP", "1");
 
@@ -149,9 +150,8 @@ pub fn build(b: *std.Build) !void {
         const mod = b.createModule(.{ .target = target, .optimize = optimize });
 
         try addSrcFiles(b, mod, luau_dep, "Analysis/src", flags);
-        try addSrcFiles(b, mod, luau_dep, "EqSat/src", flags);
         try addSrcFiles(b, mod, luau_dep, "Config/src", flags);
-        try addSrcFiles(b, mod, luau_dep, "Require/Navigator/src", flags);
+        try addSrcFiles(b, mod, luau_dep, "Require/src", flags);
 
         mod.addCSourceFiles(.{
             .root = luau_dep.path("."),
