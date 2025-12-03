@@ -2485,32 +2485,31 @@ pub fn registerUserData(self: Self, comptime T: type) !void {
 
     const type_name: [:0]const u8 = @typeName(T);
 
+    // Extract just the type name without module prefix for global registration
+    // Example: "myapp.data.User" -> "User", "TestUserData" -> "TestUserData"
+    const normalized_name: [:0]const u8 = if (comptime std.mem.lastIndexOf(u8, type_name, ".")) |last_dot|
+        type_name[last_dot + 1 ..]
+    else
+        type_name;
+
     try self.checkStack(1);
 
-    // Check if type is already registered
-    if (self.state.getField(State.REGISTRYINDEX, type_name) != State.Type.nil) {
-        @panic("Type " ++ @typeName(T) ++ " is already registered");
+    // Check if global name is already taken (prevents collisions from different modules)
+    if (self.state.getGlobal(normalized_name) != State.Type.nil) {
+        @panic("Global name '" ++ normalized_name ++ "' is already registered (from type " ++ @typeName(T) ++ ")");
     }
     self.state.pop(1); // Pop nil
 
     // Create the metatable (leaves it on stack)
     userdata.createMetaTable(T, @constCast(&self.state), type_name);
 
-    // Store the metatable in the registry for userdata type checking
+    // Store the metatable in the registry for userdata type checking (uses full path for uniqueness)
     self.state.pushValue(-1); // Duplicate metatable on stack
     self.state.setField(State.REGISTRYINDEX, type_name); // Store copy in registry
 
-    // Extract just the type name without module prefix for global registration
-    // Example: "myapp.data.User" -> "User", "TestUserData" -> "TestUserData"
-    const full_type_name = @typeName(T);
-    const type_name_only = if (std.mem.lastIndexOf(u8, full_type_name, ".")) |last_dot|
-        full_type_name[last_dot + 1 ..]
-    else
-        full_type_name;
-
     // Register it globally so static methods are accessible as TypeName.method()
     // Metatable is still on stack, set it as global directly
-    self.state.setGlobal(type_name_only);
+    self.state.setGlobal(normalized_name);
 }
 
 /// Dump the current stack contents to a string for debugging
