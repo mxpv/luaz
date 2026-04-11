@@ -1495,25 +1495,23 @@ test "buffer with std.io patterns" {
     var buf = try lua.createBuffer(256);
     defer buf.deinit();
 
-    // Test writing with stream
-    var stream = buf.stream();
+    // Write with writer
+    var w = buf.writer();
+    try w.writeInt(u32, 0x12345678, .little);
+    try w.writeInt(u16, 0xABCD, .little);
+    try w.writeByte(0xFF);
+    try w.writeAll("Hello");
+    const bytes_written = w.end;
 
-    // Write various integer types
-    try stream.writer().writeInt(u32, 0x12345678, .little);
-    try stream.writer().writeInt(u16, 0xABCD, .little);
-    try stream.writer().writeInt(u8, 0xFF, .little);
-
-    // Write string
-    try stream.writer().writeAll("Hello");
-
-    // Seek back and read
-    try stream.seekTo(0);
-    try expectEq(try stream.reader().readInt(u32, .little), 0x12345678);
-    try expectEq(try stream.reader().readInt(u16, .little), 0xABCD);
-    try expectEq(try stream.reader().readInt(u8, .little), 0xFF);
+    // Read with reader - limit to bytes written
+    var r = buf.reader();
+    r.end = bytes_written;
+    try expectEq(try r.takeVarInt(u32, .little, 4), 0x12345678);
+    try expectEq(try r.takeVarInt(u16, .little, 2), 0xABCD);
+    try expectEq(try r.takeByte(), 0xFF);
 
     var read_buf: [5]u8 = undefined;
-    _ = try stream.reader().read(&read_buf);
+    try r.readSliceAll(&read_buf);
     try expect(std.mem.eql(u8, &read_buf, "Hello"));
 }
 

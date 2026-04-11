@@ -152,7 +152,7 @@ const Counter = struct {
 
 pub fn main() !void {
     // Create an allocator (you can use any Zig allocator)
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -682,31 +682,29 @@ pub fn main() !void {
         print("Version: 0x{X:0>8}\n", .{std.mem.readInt(u32, buf.data[4..8], .little)});
 
         // Use std.io patterns for structured reading/writing
-        var stream = buf.stream();
+        var w = buf.writer();
+        w.end = 16; // Seek past header
 
-        // Seek past header and write structured data
-        try stream.seekTo(16);
-
-        // Write various data types using the stream writer
-        const writer = stream.writer();
-        try writer.writeInt(u16, 0xABCD, .big); // 16-bit big-endian
-        try writer.writeInt(u32, 0x12345678, .little); // 32-bit little-endian
-        try writer.writeAll("Binary data chunk"); // Raw bytes
+        // Write various data types using the writer
+        try w.writeInt(u16, 0xABCD, .big); // 16-bit big-endian
+        try w.writeInt(u32, 0x12345678, .little); // 32-bit little-endian
+        try w.writeAll("Binary data chunk"); // Raw bytes
         // Write float as raw bytes (IEEE 754 double)
         const write_float_bytes = std.mem.toBytes(@as(f64, 3.14159));
-        try writer.writeAll(&write_float_bytes);
+        try w.writeAll(&write_float_bytes);
 
-        // Read back the data using stream reader
-        try stream.seekTo(16);
-        const reader = stream.reader();
-        const val16 = try reader.readInt(u16, .big);
-        const val32 = try reader.readInt(u32, .little);
+        // Read back the data using the reader
+        var r = buf.reader();
+        r.seek = 16;
+        r.end = w.end; // Limit to bytes written
+        const val16 = try r.takeInt(u16, .big);
+        const val32 = try r.takeInt(u32, .little);
 
         var text_buf: [17]u8 = undefined;
-        _ = try reader.read(&text_buf);
+        try r.readSliceAll(&text_buf);
         // Read float as raw bytes and convert back
         var float_bytes: [8]u8 = undefined;
-        _ = try reader.read(&float_bytes);
+        try r.readSliceAll(&float_bytes);
         const float_val = std.mem.bytesToValue(f64, &float_bytes);
 
         print("Read back: u16=0x{X}, u32=0x{X}, text='{s}', float={d:.5}\n", .{ val16, val32, text_buf, float_val });

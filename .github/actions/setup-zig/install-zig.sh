@@ -54,7 +54,12 @@ else
     EXTRACT_CMD="tar -xf"
 fi
 
-URL="https://ziglang.org/download/${VERSION}/${FILENAME}"
+# Dev/nightly builds are served from /builds/, stable releases from /download/<version>/
+if [[ "$VERSION" == *"-dev."* ]]; then
+    URL="https://ziglang.org/builds/${FILENAME}"
+else
+    URL="https://ziglang.org/download/${VERSION}/${FILENAME}"
+fi
 ARCHIVE_PATH="${INSTALL_DIR}/${FILENAME}"
 EXTRACTED_DIR="${INSTALL_DIR}/zig-${ARCH}-${OS}-${VERSION}"
 
