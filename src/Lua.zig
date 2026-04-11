@@ -1499,8 +1499,8 @@ pub inline fn createTable(self: Self, opts: struct { arr: u32 = 0, rec: u32 = 0 
 /// @memcpy(buf.data[10..15], "hello");
 ///
 /// // Use with I/O patterns
-/// var stream = buf.stream();
-/// try stream.writer().writeInt(u32, 0x12345678, .little);
+/// var w = buf.writer();
+/// try w.writeInt(u32, 0x12345678, .little);
 /// ```
 ///
 /// Returns: `Buffer` - A wrapper around the newly created buffer
@@ -1886,10 +1886,12 @@ pub const Function = struct {
 /// @memcpy(buf.data[10..20], "hello");
 ///
 /// // Use with std.io patterns
-/// var stream = buf.stream();
-/// try stream.writer().writeInt(u32, 0x12345678, .little);
-/// try stream.seekTo(0);
-/// const value = try stream.reader().readInt(u32, .little);
+/// var w = buf.writer();
+/// try w.writeInt(u32, 0x12345678, .little);
+///
+/// var r = buf.reader();
+/// r.end = w.end; // Limit to bytes written
+/// const value = try r.takeVarInt(u32, .little, 4);
 /// ```
 pub const Buffer = struct {
     ref: Ref,
@@ -1910,23 +1912,38 @@ pub const Buffer = struct {
         return self.data.len;
     }
 
-    /// Returns a stream for reading/writing/seeking within the buffer.
+    /// Returns a Writer for sequential writing to the buffer.
     ///
-    /// The stream provides standard I/O operations on the buffer memory:
-    /// - `.writer()` - Get a writer for sequential writing
-    /// - `.reader()` - Get a reader for sequential reading
-    /// - `.seekTo(pos)` - Seek to a specific position
-    /// - `.getPos()` - Get current position
+    /// The writer uses the entire buffer capacity. It returns `error.WriteFailed`
+    /// when the buffer is full. Check `writer.end` for the current write position.
     ///
     /// Example:
     /// ```zig
-    /// var stream = buf.stream();
-    /// try stream.writer().writeAll("Hello");
-    /// try stream.seekTo(0);
-    /// const data = try stream.reader().readAllAlloc(allocator, 1024);
+    /// var w = buf.writer();
+    /// try w.writeInt(u32, 0x12345678, .little);
+    /// const bytes_written = w.end;
     /// ```
-    pub fn stream(self: *Buffer) std.io.FixedBufferStream([]u8) {
-        return std.io.fixedBufferStream(self.data);
+    pub fn writer(self: *Buffer) std.Io.Writer {
+        return std.Io.Writer.fixed(self.data);
+    }
+
+    /// Returns a Reader for sequential reading from the buffer.
+    ///
+    /// By default, reads from position 0 to the end of the buffer. Adjust
+    /// `reader.seek` and `reader.end` fields to control the read range.
+    ///
+    /// Example:
+    /// ```zig
+    /// // Read only bytes that were written
+    /// var w = buf.writer();
+    /// try w.writeAll("hello");
+    ///
+    /// var r = buf.reader();
+    /// r.end = w.end; // Limit to bytes written
+    /// const data = try r.peek(r.end);
+    /// ```
+    pub fn reader(self: *Buffer) std.Io.Reader {
+        return std.Io.Reader.fixed(self.data);
     }
 
     /// Returns the registry reference ID if valid, otherwise null.
@@ -2526,9 +2543,9 @@ pub fn registerUserData(self: Self, comptime T: type) !void {
 /// Returns: Allocated string containing the stack dump. Caller owns the memory.
 /// Errors: `std.mem.Allocator.Error` if memory allocation fails
 pub fn dumpStack(self: Self, allocator: std.mem.Allocator) ![]u8 {
-    var list: std.ArrayList(u8) = .empty;
+    var list = std.Io.Writer.Allocating.init(allocator);
+    const writer = &list.writer;
 
-    const writer = list.writer(allocator);
     const stack_size = self.state.getTop();
 
     if (stack_size == 0) {
@@ -2548,7 +2565,7 @@ pub fn dumpStack(self: Self, allocator: std.mem.Allocator) ![]u8 {
         n -= 1;
     }
 
-    return list.toOwnedSlice(allocator);
+    return list.toOwnedSlice();
 }
 
 /// Apply sandbox restrictions to create a secure execution environment.

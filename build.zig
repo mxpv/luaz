@@ -38,7 +38,11 @@ pub fn build(b: *std.Build) !void {
 
     // Luau VM lib
     const luau_vm = blk: {
-        const mod = b.createModule(.{ .target = target, .optimize = optimize });
+        const mod = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+            .link_libcpp = true,
+        });
 
         try addSrcFiles(b, mod, luau_dep, "VM/src", flags);
 
@@ -52,7 +56,6 @@ pub fn build(b: *std.Build) !void {
         const lib = b.addLibrary(.{ .name = "luau_vm", .root_module = mod, .linkage = .static });
 
         lib.installHeadersDirectory(luau_dep.path("VM/include"), "", .{});
-        lib.linkLibCpp();
 
         b.installArtifact(lib);
 
@@ -63,7 +66,11 @@ pub fn build(b: *std.Build) !void {
 
     // Luau CodeGen lib
     const luau_codegen = blk: {
-        const mod = b.createModule(.{ .target = target, .optimize = optimize });
+        const mod = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+            .link_libcpp = true,
+        });
 
         try addSrcFiles(b, mod, luau_dep, "CodeGen/src", flags);
 
@@ -72,12 +79,11 @@ pub fn build(b: *std.Build) !void {
         mod.addIncludePath(luau_dep.path("Common/include"));
         mod.addIncludePath(luau_dep.path("VM/src"));
 
+        mod.linkLibrary(luau_vm);
+
         const lib = b.addLibrary(.{ .name = "luau_codegen", .root_module = mod, .linkage = .static });
 
         lib.installHeader(luau_dep.path("CodeGen/include/luacodegen.h"), "luacodegen.h");
-
-        lib.linkLibCpp();
-        lib.linkLibrary(luau_vm);
 
         b.installArtifact(lib);
 
@@ -88,7 +94,11 @@ pub fn build(b: *std.Build) !void {
 
     // Luau compiler lib
     const luau_compiler = blk: {
-        const mod = b.createModule(.{ .target = target, .optimize = optimize });
+        const mod = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+            .link_libcpp = true,
+        });
 
         try addSrcFiles(b, mod, luau_dep, "Compiler/src", flags);
         try addSrcFiles(b, mod, luau_dep, "Ast/src", flags);
@@ -104,7 +114,6 @@ pub fn build(b: *std.Build) !void {
         const lib = b.addLibrary(.{ .name = "luau_compiler", .root_module = mod, .linkage = .static });
 
         lib.installHeader(luau_dep.path("Compiler/include/luacode.h"), "luacode.h");
-        lib.linkLibCpp();
 
         b.installArtifact(lib);
 
@@ -113,7 +122,11 @@ pub fn build(b: *std.Build) !void {
 
     // Luau compiler binary
     {
-        const mod = b.createModule(.{ .target = target, .optimize = optimize });
+        const mod = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+            .link_libcpp = true,
+        });
 
         mod.addCSourceFiles(.{
             .root = luau_dep.path("."),
@@ -143,7 +156,11 @@ pub fn build(b: *std.Build) !void {
 
     // Luau analyze binary
     {
-        const mod = b.createModule(.{ .target = target, .optimize = optimize });
+        const mod = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+            .link_libcpp = true,
+        });
 
         try addSrcFiles(b, mod, luau_dep, "Analysis/src", flags);
         try addSrcFiles(b, mod, luau_dep, "Config/src", flags);
@@ -171,8 +188,6 @@ pub fn build(b: *std.Build) !void {
             .name = "luau-analyze",
             .root_module = mod,
         });
-
-        exe.linkLibCpp();
 
         const run = b.addRunArtifact(exe);
         if (b.args) |args| {
@@ -269,6 +284,7 @@ pub fn build(b: *std.Build) !void {
             .root_source_file = b.path("src/tests.zig"),
             .target = target,
             .optimize = optimize,
+            .link_libcpp = true,
         });
 
         test_mod.addImport("luaz", b.modules.get("luaz").?);
@@ -286,8 +302,6 @@ pub fn build(b: *std.Build) !void {
                 null,
             });
         }
-
-        unit_tests.linkLibCpp();
 
         const run_tests = b.addRunArtifact(unit_tests);
         steps.@"test".dependOn(&run_tests.step);
@@ -332,15 +346,15 @@ fn addSrcFiles(
     const extensions = [_][]const u8{ ".cpp", ".c" };
 
     const abs_path = dep.path(dir_path).getPath(b);
-    var dir = try std.fs.openDirAbsolute(abs_path, .{ .iterate = true });
-    defer dir.close();
+    var dir = try b.build_root.handle.openDir(b.graph.io, abs_path, .{ .iterate = true });
+    defer dir.close(b.graph.io);
 
     var walker = try dir.walk(b.allocator);
     defer walker.deinit();
 
     var files: std.ArrayList([]const u8) = .empty;
 
-    while (try walker.next()) |entry| {
+    while (try walker.next(b.graph.io)) |entry| {
         const ext = std.fs.path.extension(entry.basename);
         const include = for (extensions) |e| {
             if (std.mem.eql(u8, ext, e))

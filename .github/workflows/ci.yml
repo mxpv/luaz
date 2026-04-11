@@ -26,7 +26,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-latest]
-        zig-version: ['0.15.1']
+        zig-version: ['0.16.0-dev.3153+d6f43caad']
 
     defaults:
       run:
