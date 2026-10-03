@@ -1336,13 +1336,13 @@ pub fn CaptureWrapper(comptime func: anytype, comptime UpvaluesType: type) type 
     }
 
     const arg_tuple = std.meta.ArgsTuple(FuncType);
-    const arg_fields = std.meta.fields(arg_tuple);
+    const arg_types = @typeInfo(arg_tuple).@"struct".field_types;
 
-    if (arg_fields.len == 0) {
+    if (arg_types.len == 0) {
         @compileError("Function must have at least one parameter (Upvalues)");
     }
 
-    const FirstParamType = arg_fields[0].type;
+    const FirstParamType = arg_types[0];
     const first_param_info = @typeInfo(FirstParamType);
 
     if (first_param_info != .@"struct" or
@@ -2316,7 +2316,7 @@ fn call(self: Self, args: anytype, comptime R: type, is_resume: bool) !Result(R)
                     inline for (args) |arg| {
                         stack.push(&self.state, arg);
                     }
-                    break :blk @as(u32, @intCast(info.fields.len));
+                    break :blk @as(u32, @intCast(info.field_names.len));
                 } else {
                     stack.push(&self.state, args);
                     break :blk 1;
@@ -2350,9 +2350,9 @@ fn call(self: Self, args: anytype, comptime R: type, is_resume: bool) !Result(R)
                 const info = ret_type_info.@"struct";
                 if (info.is_tuple) {
                     // Pop tuple elements in reverse order (stack is LIFO)
-                    inline for (0..info.fields.len) |i| {
-                        const field_index = info.fields.len - 1 - i;
-                        result[field_index] = stack.pop(self, info.fields[field_index].type).?;
+                    inline for (0..info.field_names.len) |i| {
+                        const field_index = info.field_names.len - 1 - i;
+                        result[field_index] = stack.pop(self, info.field_types[field_index]).?;
                     }
                 } else {
                     result = stack.pop(self, R).?;

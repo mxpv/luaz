@@ -269,12 +269,12 @@ pub inline fn isUserdata(self: Self, idx: i32) bool {
 ///
 /// Returns `Type.none` for a non-valid index.
 pub inline fn getType(self: Self, idx: i32) Type {
-    return @enumFromInt(c.lua_type(self.lua, idx));
+    return @fromBackingInt(@intCast(c.lua_type(self.lua, idx)));
 }
 
 /// Get the type name for a given type
 pub inline fn typeName(self: Self, tp: Type) [:0]const u8 {
-    return std.mem.span(c.lua_typename(self.lua, @intFromEnum(tp)));
+    return std.mem.span(c.lua_typename(self.lua, @backingInt(tp)));
 }
 
 /// Check if value at index is a function
@@ -616,7 +616,7 @@ pub inline fn newBuffer(self: Self, size: usize) ?*anyopaque {
 ///
 /// See <https://www.lua.org/pil/25.1.html>
 pub inline fn getTable(self: Self, idx: c_int) Type {
-    return @enumFromInt(c.lua_gettable(self.lua, idx));
+    return @fromBackingInt(@intCast(c.lua_gettable(self.lua, idx)));
 }
 
 /// Get field from table and push onto stack
@@ -624,17 +624,17 @@ pub inline fn getTable(self: Self, idx: c_int) Type {
 /// Pushes onto the stack the value t[k], where t is the value at the given index.
 /// As in Lua, this function may trigger a metamethod for the "index" event
 pub inline fn getField(self: Self, idx: i32, k: [:0]const u8) Type {
-    return @enumFromInt(c.lua_getfield(self.lua, idx, k.ptr));
+    return @fromBackingInt(@intCast(c.lua_getfield(self.lua, idx, k.ptr)));
 }
 
 /// Raw get field from table
 pub inline fn rawGetField(self: Self, idx: i32, k: [:0]const u8) Type {
-    return @enumFromInt(c.lua_rawgetfield(self.lua, idx, k.ptr));
+    return @fromBackingInt(@intCast(c.lua_rawgetfield(self.lua, idx, k.ptr)));
 }
 
 /// Raw get from table
 pub inline fn rawGet(self: Self, idx: i32) Type {
-    return @enumFromInt(c.lua_rawget(self.lua, idx));
+    return @fromBackingInt(@intCast(c.lua_rawget(self.lua, idx)));
 }
 
 /// Pushes onto the stack the value `t[n]`, where `t` is the table at the given index.
@@ -646,7 +646,7 @@ pub inline fn rawGet(self: Self, idx: i32) Type {
 ///
 /// Returns the type of the pushed value.
 pub inline fn rawGetI(self: Self, idx: i32, n: i32) Type {
-    return @enumFromInt(c.lua_rawgeti(self.lua, idx, n));
+    return @fromBackingInt(@intCast(c.lua_rawgeti(self.lua, idx, n)));
 }
 
 /// Creates a new empty table and pushes it onto the stack.
@@ -784,14 +784,14 @@ pub inline fn setGlobal(self: Self, name: [*:0]const u8) void {
 ///
 /// Pushes onto the stack the value of the global `name`. Returns the type of that value.
 pub inline fn getGlobal(self: Self, name: [*:0]const u8) Type {
-    return @enumFromInt(c.lua_getfield(self.lua, GLOBALSINDEX, name));
+    return @fromBackingInt(@intCast(c.lua_getfield(self.lua, GLOBALSINDEX, name)));
 }
 
 // Load and Call
 
 /// Load Luau bytecode
 pub inline fn load(self: Self, chunkname: [:0]const u8, data: []const u8, env: c_int) Status {
-    return @enumFromInt(c.luau_load(self.lua, chunkname, data.ptr, data.len, env));
+    return @fromBackingInt(@intCast(c.luau_load(self.lua, chunkname, data.ptr, data.len, env)));
 }
 
 /// Call a function
@@ -814,7 +814,7 @@ pub inline fn call(self: Self, nargs: u32, nresults: i32) void {
 ///
 /// All arguments and the function value are popped from the stack when the function is called.
 pub inline fn pcall(self: Self, nargs: u32, nresults: i32, errfunc: i32) Status {
-    return @enumFromInt(c.lua_pcall(self.lua, @intCast(nargs), nresults, errfunc));
+    return @fromBackingInt(@intCast(c.lua_pcall(self.lua, @intCast(nargs), nresults, errfunc)));
 }
 
 // Coroutine Operations
@@ -825,7 +825,7 @@ pub inline fn pcall(self: Self, nargs: u32, nresults: i32, errfunc: i32) Status 
 /// suspends its execution, and the call to `resume` that started this coroutine returns.
 /// The parameter `nresults` is the number of values from the stack that will be passed as results to `resume`.
 pub inline fn yield(self: Self, nresults: u32) Status {
-    return @enumFromInt(c.lua_yield(self.lua, @intCast(nresults)));
+    return @fromBackingInt(@intCast(c.lua_yield(self.lua, @intCast(nresults))));
 }
 
 /// Break execution
@@ -842,18 +842,18 @@ pub inline fn break_(self: Self) void {
 /// This call returns when the coroutine suspends or finishes its execution.
 pub inline fn resume_(self: Self, from: ?Self, narg: u32) Status {
     const from_lua = if (from) |f| f.lua else null;
-    return @enumFromInt(c.lua_resume(self.lua, from_lua, @intCast(narg)));
+    return @fromBackingInt(@intCast(c.lua_resume(self.lua, from_lua, @intCast(narg))));
 }
 
 /// Resume with error
 pub inline fn resumeError(self: Self, from: ?Self) Status {
     const from_lua = if (from) |f| f.lua else null;
-    return @enumFromInt(c.lua_resumeerror(self.lua, from_lua));
+    return @fromBackingInt(@intCast(c.lua_resumeerror(self.lua, from_lua)));
 }
 
 /// Get coroutine status
 pub inline fn status(self: Self) Status {
-    return @enumFromInt(c.lua_status(self.lua));
+    return @fromBackingInt(@intCast(c.lua_status(self.lua)));
 }
 
 /// Check if coroutine is yieldable
@@ -873,7 +873,7 @@ pub inline fn setThreadData(self: Self, data: ?*anyopaque) void {
 
 /// Get coroutine status relative to another
 pub inline fn coStatus(self: Self, co: Self) CoStatus {
-    return @enumFromInt(c.lua_costatus(self.lua, co.lua));
+    return @fromBackingInt(@intCast(c.lua_costatus(self.lua, co.lua)));
 }
 
 // Garbage Collection
@@ -889,7 +889,7 @@ pub inline fn coStatus(self: Self, co: Self) CoStatus {
 /// See <https://luau.org/performance#improved-garbage-collector-pacing> and
 /// <https://www.lua.org/manual/5.2/manual.html#lua_gc>
 pub inline fn gc(self: Self, what: GCOp, data: i32) i32 {
-    return c.lua_gc(self.lua, @intFromEnum(what), data);
+    return c.lua_gc(self.lua, @backingInt(what), data);
 }
 
 // Memory Management
@@ -1003,7 +1003,7 @@ pub inline fn unref(self: Self, ref_id: i32) void {
 /// Pushes onto the stack the value associated with the reference `ref_id` in the registry.
 /// Returns the type of the pushed value.
 pub inline fn getRef(self: Self, ref_id: i32) Type {
-    return @enumFromInt(c.lua_rawgeti(self.lua, REGISTRYINDEX, ref_id));
+    return @fromBackingInt(@intCast(c.lua_rawgeti(self.lua, REGISTRYINDEX, ref_id)));
 }
 
 // Userdata Operations
@@ -1210,7 +1210,7 @@ pub inline fn checkStackMsg(self: Self, sz: i32, msg: [:0]const u8) void {
 
 /// Check argument type
 pub inline fn checkType(self: Self, narg: i32, t: Type) void {
-    c.luaL_checktype(self.lua, narg, @intFromEnum(t));
+    c.luaL_checktype(self.lua, narg, @backingInt(t));
 }
 
 /// Check that argument exists

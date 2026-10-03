@@ -146,10 +146,7 @@ pub fn build(b: *std.Build) !void {
 
         const exe = b.addExecutable(.{ .name = "luau-compile", .root_module = mod });
         const run = b.addRunArtifact(exe);
-
-        if (b.args) |args| {
-            run.addArgs(args);
-        }
+        run.addPassthruArgs();
 
         steps.luau_compile.dependOn(&run.step);
     }
@@ -190,9 +187,7 @@ pub fn build(b: *std.Build) !void {
         });
 
         const run = b.addRunArtifact(exe);
-        if (b.args) |args| {
-            run.addArgs(args);
-        }
+        run.addPassthruArgs();
 
         steps.luau_analysis.dependOn(&run.step);
     }
@@ -294,22 +289,30 @@ pub fn build(b: *std.Build) !void {
 
         // See https://zig.news/squeek502/code-coverage-for-zig-1dk1
         if (opts.cover) {
-            unit_tests.setExecCmd(&[_]?[]const u8{
+            const run_kcov = b.addSystemCommand(&.{
                 "kcov",
                 "--clean", // Don't accumulate data from multiple runs
                 "--include-path=src/",
-                b.pathJoin(&.{ b.install_path, "coverage" }),
-                null,
             });
-        }
+            const coverage_output = run_kcov.addOutputDirectoryArg("coverage");
+            run_kcov.addArtifactArg(unit_tests);
 
-        const run_tests = b.addRunArtifact(unit_tests);
-        steps.@"test".dependOn(&run_tests.step);
+            const install_coverage = b.addInstallDirectory(.{
+                .source_dir = coverage_output,
+                .install_dir = .prefix,
+                .install_subdir = "coverage",
+            });
+
+            steps.@"test".dependOn(&install_coverage.step);
+        } else {
+            const run_tests = b.addRunArtifact(unit_tests);
+            steps.@"test".dependOn(&run_tests.step);
+        }
     }
 
     // zig build check-fmt
     {
-        const run_fmt = b.addFmt(.{ .check = true, .paths = &.{"."} });
+        const run_fmt = b.addFmt(.{ .check = true, .paths = &.{b.path(".")} });
 
         steps.check_fmt.dependOn(&run_fmt.step);
     }
@@ -327,9 +330,7 @@ pub fn build(b: *std.Build) !void {
         const guided_tour = b.addExecutable(.{ .name = "guided-tour", .root_module = mod });
 
         const run_guided_tour = b.addRunArtifact(guided_tour);
-        if (b.args) |args| {
-            run_guided_tour.addArgs(args);
-        }
+        run_guided_tour.addPassthruArgs();
 
         const guided_tour_step = b.step("guided-tour", "Run the guided tour example");
         guided_tour_step.dependOn(&run_guided_tour.step);
@@ -345,8 +346,7 @@ fn addSrcFiles(
 ) !void {
     const extensions = [_][]const u8{ ".cpp", ".c" };
 
-    const abs_path = dep.path(dir_path).getPath(b);
-    var dir = try b.build_root.handle.openDir(b.graph.io, abs_path, .{ .iterate = true });
+    var dir = try dep.builder.root.openDir(b.graph.io, dir_path, .{ .iterate = true });
     defer dir.close(b.graph.io);
 
     var walker = try dir.walk(b.allocator);

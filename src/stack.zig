@@ -67,7 +67,7 @@ pub fn slotCountFor(comptime T: type) i32 {
 
     const type_info = @typeInfo(T);
     if (type_info == .@"struct" and type_info.@"struct".is_tuple) {
-        return @intCast(type_info.@"struct".fields.len);
+        return @intCast(type_info.@"struct".field_names.len);
     }
 
     // Structs, arrays, and slices are all converted to tables (1 slot)
@@ -130,13 +130,13 @@ pub fn push(state: *const State, value: anytype) void {
                 const upvalues = value.upvalues;
                 const upvalues_info = @typeInfo(@TypeOf(upvalues));
                 const upvalue_count = if (upvalues_info == .@"struct" and upvalues_info.@"struct".is_tuple)
-                    upvalues_info.@"struct".fields.len
+                    upvalues_info.@"struct".field_names.len
                 else
                     1;
 
                 // Push upvalues onto the stack
                 if (upvalues_info == .@"struct" and upvalues_info.@"struct".is_tuple) {
-                    inline for (0..upvalues_info.@"struct".fields.len) |i| {
+                    inline for (0..upvalues_info.@"struct".field_names.len) |i| {
                         push(state, upvalues[i]);
                     }
                 } else {
@@ -159,23 +159,23 @@ pub fn push(state: *const State, value: anytype) void {
 
             // Handle tuples by pushing each element individually
             if (type_info.@"struct".is_tuple) {
-                inline for (0..type_info.@"struct".fields.len) |i| {
+                inline for (0..type_info.@"struct".field_names.len) |i| {
                     push(state, value[i]);
                 }
                 return;
             }
 
             // Handle arbitrary structs by converting to Lua table (data fields only)
-            state.createTable(0, type_info.@"struct".fields.len);
+            state.createTable(0, type_info.@"struct".field_names.len);
 
             // Push struct fields only - exclude all methods since they won't work correctly
-            inline for (type_info.@"struct".fields) |field| {
-                if (field.is_comptime) continue; // Skip comptime fields
+            inline for (type_info.@"struct".field_names, type_info.@"struct".field_attrs) |field_name, field_attrs| {
+                if (field_attrs.@"comptime") continue; // Skip comptime fields
 
                 // Push field name as key
-                state.pushString(field.name);
+                state.pushString(field_name);
                 // Push field value
-                push(state, @field(value, field.name));
+                push(state, @field(value, field_name));
                 // Set table[field_name] = field_value
                 state.setTable(-3);
             }
@@ -341,10 +341,10 @@ pub fn pushResult(state: *const State, result: anytype) c_int {
 
     // Handle tuple results by pushing each element individually
     if (result_info == .@"struct" and result_info.@"struct".is_tuple) {
-        inline for (0..result_info.@"struct".fields.len) |i| {
+        inline for (0..result_info.@"struct".field_names.len) |i| {
             push(state, result[i]);
         }
-        return @intCast(result_info.@"struct".fields.len);
+        return @intCast(result_info.@"struct".field_names.len);
     }
 
     // Handle non-tuple results normally
@@ -357,11 +357,11 @@ pub fn pushResult(state: *const State, result: anytype) c_int {
 pub fn createFunc(value: anytype) State.CFunction {
     const T = @TypeOf(value);
     const arg_tuple = std.meta.ArgsTuple(T);
-    const arg_fields = std.meta.fields(arg_tuple);
+    const arg_types = @typeInfo(arg_tuple).@"struct".field_types;
 
     // Detect if first parameter is an Upvalues type
-    const first_param_is_upvalues = if (arg_fields.len > 0) blk: {
-        const FirstParamType = arg_fields[0].type;
+    const first_param_is_upvalues = if (arg_types.len > 0) blk: {
+        const FirstParamType = arg_types[0];
         const type_info = @typeInfo(FirstParamType);
         if (type_info == .@"struct" and @hasDecl(FirstParamType, "is_upvalues")) {
             break :blk FirstParamType.is_upvalues;
@@ -370,11 +370,11 @@ pub fn createFunc(value: anytype) State.CFunction {
     } else false;
 
     // Validate Varargs is only used as the last parameter
-    inline for (arg_fields, 0..) |field, i| {
-        if (field.type == Lua.Varargs) {
-            if (i != arg_fields.len - 1) {
+    inline for (arg_types, 0..) |FieldType, i| {
+        if (FieldType == Lua.Varargs) {
+            if (i != arg_types.len - 1) {
                 @compileError("Varargs must be the last parameter in function signature, but found at position " ++
-                    std.fmt.comptimePrint("{}", .{i}) ++ " of " ++ std.fmt.comptimePrint("{}", .{arg_fields.len}));
+                    std.fmt.comptimePrint("{}", .{i}) ++ " of " ++ std.fmt.comptimePrint("{}", .{arg_types.len}));
             }
         }
     }
@@ -389,18 +389,18 @@ pub fn createFunc(value: anytype) State.CFunction {
             // Handle first parameter - upvalues or regular argument
             const arg_start_idx = if (first_param_is_upvalues) blk: {
                 // First parameter is Upvalues type - populate from upvalue indices
-                const FirstParamType = arg_fields[0].type;
+                const FirstParamType = arg_types[0];
                 const UpvalueType = FirstParamType.UpvalueType;
                 const upvalue_info = @typeInfo(UpvalueType);
 
                 if (upvalue_info == .@"struct" and upvalue_info.@"struct".is_tuple) {
                     // Multiple upvalues as tuple
                     var upvalue_tuple: UpvalueType = undefined;
-                    const upvalue_fields = std.meta.fields(UpvalueType);
-                    inline for (upvalue_fields, 0..) |field, i| {
+                    const upvalue_types = upvalue_info.@"struct".field_types;
+                    inline for (upvalue_types, 0..) |UpvalueFieldType, i| {
                         const idx = State.upvalueIndex(@intCast(i + 1));
-                        upvalue_tuple[i] = toValue(l, field.type, idx) orelse
-                            l.state.typeError(idx, @typeName(field.type));
+                        upvalue_tuple[i] = toValue(l, UpvalueFieldType, idx) orelse
+                            l.state.typeError(idx, @typeName(UpvalueFieldType));
                     }
                     args[0] = FirstParamType{ .value = upvalue_tuple };
                 } else {
@@ -416,8 +416,8 @@ pub fn createFunc(value: anytype) State.CFunction {
             };
 
             // Fill remaining arguments from Lua stack
-            inline for (arg_fields[arg_start_idx..], 0..) |field, i| {
-                args[i + arg_start_idx] = checkArg(l, @intCast(i + 1), field.type);
+            inline for (arg_types[arg_start_idx..], 0..) |FieldType, i| {
+                args[i + arg_start_idx] = checkArg(l, @intCast(i + 1), FieldType);
             }
 
             // Call Zig func and push result

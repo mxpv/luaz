@@ -56,7 +56,7 @@ pub fn isMetaMethod(comptime method_name: []const u8, comptime method: anytype) 
     const meta_method = comptime MetaMethod.fromStr(method_name);
     if (meta_method == null) return null;
     const method_info = @typeInfo(@TypeOf(method));
-    const param_count = method_info.@"fn".params.len;
+    const param_count = method_info.@"fn".param_types.len;
     const return_type = method_info.@"fn".return_type orelse
         @compileError("metamethod " ++ method_name ++ " must have a return type");
 
@@ -84,7 +84,7 @@ pub fn isMetaMethod(comptime method_name: []const u8, comptime method: anytype) 
                     comptimePrint("{}", .{param_count}));
 
             const is_string = switch (@typeInfo(return_type)) {
-                .pointer => |ptr| ptr.size == .slice and ptr.child == u8 and ptr.is_const,
+                .pointer => |ptr| ptr.size == .slice and ptr.child == u8 and ptr.attrs.@"const",
                 else => false,
             };
 
@@ -196,9 +196,8 @@ pub fn createUserDataFunc(comptime T: type, comptime method_name: []const u8, me
 
     const is_init = comptime std.mem.eql(u8, method_name, "init");
     const is_static = comptime blk: {
-        if (method_info.@"fn".params.len == 0) break :blk true;
-        const first_param = method_info.@"fn".params[0];
-        const param_type = first_param.type orelse break :blk true;
+        if (method_info.@"fn".param_types.len == 0) break :blk true;
+        const param_type = method_info.@"fn".param_types[0] orelse break :blk true;
         // Check if param_type is Self (T) or pointer to Self (*T)
         if (param_type == T) break :blk false;
         const param_info = @typeInfo(param_type);
@@ -226,8 +225,8 @@ pub fn createUserDataFunc(comptime T: type, comptime method_name: []const u8, me
 
             // Fetch function params from Lua stack
             var args: ArgsTuple(MethodType) = undefined;
-            inline for (method_info.@"fn".params, 0..) |param, i| {
-                const param_type = param.type orelse @compileError("Parameter type required");
+            inline for (method_info.@"fn".param_types, 0..) |param_type_opt, i| {
+                const param_type = param_type_opt orelse @compileError("Parameter type required");
 
                 const lua_stack_index = i + 1;
                 const is_meta_index = metamethod_type != null and (metamethod_type.? == .index or metamethod_type.? == .newindex);
@@ -265,9 +264,9 @@ pub fn createMetaTable(comptime T: type, lua_state: *State, comptime type_name: 
 
     // Check if user defines __index metamethod
     const has_user_index = comptime blk: {
-        for (struct_info.decls) |decl| {
-            if (@hasDecl(T, decl.name) and std.mem.eql(u8, decl.name, "__index")) {
-                const decl_info = @typeInfo(@TypeOf(@field(T, decl.name)));
+        for (struct_info.decl_names) |decl| {
+            if (@hasDecl(T, decl) and std.mem.eql(u8, decl, "__index")) {
+                const decl_info = @typeInfo(@TypeOf(@field(T, decl)));
                 if (decl_info == .@"fn") break :blk true;
             }
         }
@@ -284,24 +283,24 @@ pub fn createMetaTable(comptime T: type, lua_state: *State, comptime type_name: 
     }
 
     // Register all methods
-    inline for (struct_info.decls) |decl| {
-        if (!@hasDecl(T, decl.name)) continue;
+    inline for (struct_info.decl_names) |decl| {
+        if (!@hasDecl(T, decl)) continue;
 
-        const decl_info = @typeInfo(@TypeOf(@field(T, decl.name)));
+        const decl_info = @typeInfo(@TypeOf(@field(T, decl)));
         if (decl_info != .@"fn") continue;
 
         // Skip deinit - it's handled internally
-        if (comptime std.mem.eql(u8, decl.name, "deinit")) continue;
+        if (comptime std.mem.eql(u8, decl, "deinit")) continue;
 
-        const method_func = @field(T, decl.name);
+        const method_func = @field(T, decl);
 
         // Use "new" for init functions, otherwise use original name
-        const lua_name = if (comptime std.mem.eql(u8, decl.name, "init"))
+        const lua_name = if (comptime std.mem.eql(u8, decl, "init"))
             "new"
         else
-            decl.name;
+            decl;
 
-        lua_state.pushCFunction(createUserDataFunc(T, decl.name, method_func, type_name), lua_name);
+        lua_state.pushCFunction(createUserDataFunc(T, decl, method_func, type_name), lua_name);
         lua_state.setField(-2, lua_name);
     }
 }
