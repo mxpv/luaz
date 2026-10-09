@@ -4,10 +4,12 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const flags = &.{
+    const flags: []const []const u8 = &.{
         "-DLUA_API=extern\"C\"",
         "-DLUACODEGEN_API=extern\"C\"",
         "-DLUACODE_API=extern\"C\"",
+        "-include",
+        try b.root.joinString(b.graph.arena, "src/luau_prelude.h"),
     };
 
     // All build steps
